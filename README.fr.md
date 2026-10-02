@@ -11,7 +11,9 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 - **SMS ou MMS, automatiquement.** VoIP.ms compte sa limite de 160 caractères en *octets* (une lettre accentuée compte pour 2, un émoji pour 4). La zone de saisie affiche le compte et passe en MMS au besoin, ou dès qu'un fichier est joint.
 - **Pièces jointes.** Photos, vidéos, sons et vCard (3 par message) ; les grosses photos sont redimensionnées dans le navigateur pour respecter la limite de 1,2 Mo de VoIP.ms. Les médias reçus sont téléchargés et conservés localement.
 - **Assistant de configuration.** Il explique comment activer l'API, affiche l'adresse IP exacte à autoriser, teste la connexion, liste vos numéros et importe l'historique.
-- **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche, notifications du navigateur, thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
+- **Notifications push**, même quand l'application est fermée ou le téléphone verrouillé, sur chaque appareil où vous les activez.
+- **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive.
+- **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche qui ignore les accents (« belanger » trouve « Bélanger »), thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
 
 ## Visite guidée
 
@@ -63,6 +65,18 @@ Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les 
 | --- | --- |
 | ![Liste des contacts](docs/screenshots/fr/contacts.png) | ![Fenêtre de modification d'un contact](docs/screenshots/fr/contact-dialog.png) |
 
+### Archives
+
+Le bouton d'archivage, dans l'en-tête d'une conversation, la range (avec *Annuler*) ; l'icône de boîte au-dessus de la liste ouvre les archives. Un nouveau texto, reçu ou envoyé, ramène la conversation dans la liste principale. La recherche de la liste principale fouille aussi les conversations archivées et les signale.
+
+![Conversations archivées](docs/screenshots/fr/archived.png)
+
+### Notifications push
+
+Activez-les dans les Réglages, sur chaque appareil : téléphone, ordinateur, tablette. Elles arrivent même quand aucun onglet n'est ouvert et évitent l'appareil où l'application est déjà à l'écran. Voir [Mettre en place les notifications push](#mettre-en-place-les-notifications-push) pour les prérequis.
+
+![Réglages des notifications push](docs/screenshots/fr/push.png)
+
 ### Réglages
 
 Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, synchronisez maintenant ou importez l'historique plus ancien, testez la connexion à VoIP.ms et choisissez les notifications, le thème et la langue.
@@ -105,6 +119,7 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 | `PORT` | `8080` | Port HTTP. |
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
+| `VAPID_SUBJECT` | URL du projet | Contact (`mailto:vous@example.com` ou une URL `https://`) transmis aux services push des navigateurs avec chaque notification. |
 | `DEMO_MODE` | `false` | Données fictives au lieu d'un vrai compte. |
 | `PUID` / `PGID` | `1000` | Docker seulement : utilisateur/groupe propriétaire de `./data` qui exécute l'application (le conteneur démarre en root uniquement pour corriger le propriétaire du dossier, puis abandonne ces droits). |
 
@@ -124,11 +139,21 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 
 Les mises à jour en direct passent par Server-Sent Events (`/api/events`) : désactivez la mise en tampon des réponses. Voir les exemples Caddy et nginx dans le [README anglais](README.md#behind-a-reverse-proxy).
 
+## Mettre en place les notifications push
+
+- **HTTPS obligatoire** pour les navigateurs (`http://localhost` fonctionne pour les essais). Placez l'application derrière un proxy inverse (voir plus haut).
+- **À activer sur chaque appareil** dans *Réglages → Notifications*. *Envoyer une notification test* vérifie toute la chaîne.
+- **iPhone et iPad** (iOS 16.4 ou plus récent) : ouvrez le site dans Safari, *Partager → Sur l'écran d'accueil*, puis activez les notifications depuis l'application installée. Safari n'offre pas le push aux onglets ordinaires.
+- **Délai.** VoIP.ms est interrogé périodiquement : sans onglet ouvert, une notification arrive au plus `POLL_INTERVAL_IDLE` secondes (60 par défaut) après le texto. Réduisez-le (par exemple à `20`) pour être averti plus vite.
+- **Confidentialité.** Les notifications affichent l'expéditeur et le début du texto. Elles sont chiffrées pour le navigateur qui les reçoit : Google, Mozilla, Apple ou Microsoft, qui les relaient, voient seulement qu'une notification a été envoyée. Se déconnecter d'un appareil arrête ses notifications ; changer `APP_PASSWORD` les arrête partout.
+- Les clés VAPID du serveur sont créées au premier démarrage et conservées dans la base (`./data`) ; aucun compte chez un fournisseur de push n'est nécessaire.
+
 ## Fonctionnement
 
 - **Synchronisation.** `getSMS` et `getMMS` sont appelés séparément (avec `all_messages=1`, VoIP.ms mélange les deux sans les distinguer, et leurs identifiants se chevauchent). Chaque message est enregistré une seule fois ; ceux envoyés d'ailleurs (votre cellulaire, le portail VoIP.ms) apparaissent aussi. La toute première synchronisation et les imports d'historique ne marquent rien comme non lu.
 - **Médias.** Les liens des médias VoIP.ms sont publics et peuvent répondre 404 un moment après l'envoi : les téléchargements sont réessayés avec un délai croissant pendant environ 6 heures (et à la demande depuis la conversation).
 - **Dates.** VoIP.ms renvoie l'heure de l'Est ; son paramètre `timezone` ignore l'heure avancée, donc les dates sont converties avec le fuseau IANA.
+- **Push.** Chaque navigateur a un identifiant aléatoire, partagé par ses onglets et son abonnement push ; les onglets ouverts signalent s'ils sont visibles et le serveur évite les navigateurs qui affichent l'application. Les messages sont chiffrés selon la RFC 8291 et signés avec VAPID (RFC 8292) par le module crypto de Node, sans bibliothèque tierce.
 - **Envoi.** Le message est enregistré immédiatement puis livré en arrière-plan ; si VoIP.ms échoue de façon ambiguë (délai, erreur Cloudflare 5xx) alors que le message est bien parti, il est rapproché de l'historique au lieu d'apparaître en double. Un message en échec peut être renvoyé.
 - **Technologies.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript partout. Un seul conteneur, aucun service externe.
 

@@ -11,7 +11,9 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **SMS or MMS, automatically.** VoIP.ms counts its 160-character SMS limit in *bytes* (an accented letter counts for 2, an emoji for 4). The message box shows the count and switches to MMS when needed, or when you attach a file.
 - **Attachments.** Send pictures, videos, audio clips and vCards (up to 3 per message); large photos are resized in the browser to fit VoIP.ms's 1.2 MB limit. Received media is downloaded and kept locally.
 - **Setup wizard.** It walks you through enabling the API, shows the exact IP address to whitelist, tests the connection, lists your numbers and imports your history.
-- **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search, browser notifications, light/dark themes, French and English, installable as an app on phones.
+- **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
+- **Archive** the conversations you are done with; they come back as soon as a new text arrives.
+- **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
 
 ## A quick tour
 
@@ -63,6 +65,18 @@ Contacts are stored on the server, so every browser sees the same names. Add the
 | --- | --- |
 | ![Contact list](docs/screenshots/en/contacts.png) | ![Contact editing dialog](docs/screenshots/en/contact-dialog.png) |
 
+### Archive
+
+The archive button in a conversation's header puts it away (with an *Undo*); the box icon above the list opens the archive. A new text, received or sent, brings the conversation back to the main list. Searching the main list also looks through archived conversations and flags them.
+
+![Archived conversations](docs/screenshots/en/archived.png)
+
+### Push notifications
+
+Turn them on in Settings, on each device: phone, computer, tablet. They arrive even when no tab is open, and skip the device where the app is already on screen. See [Setting up push notifications](#setting-up-push-notifications) for what they need.
+
+![Push notification settings](docs/screenshots/en/push.png)
+
 ### Settings
 
 Rename or recolor numbers, turn off the ones you do not use, sync now or import older history, test the VoIP.ms connection, and choose notifications, theme and language.
@@ -105,6 +119,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `PORT` | `8080` | HTTP port. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
+| `VAPID_SUBJECT` | project URL | Contact (`mailto:you@example.com` or an `https://` URL) sent to browser push services with each notification. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
 | `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |
 
@@ -147,11 +162,21 @@ location / {
 }
 ```
 
+## Setting up push notifications
+
+- **HTTPS is required** by browsers (plain `http://localhost` works for testing). Put the app behind a reverse proxy as shown above.
+- **Turn them on on each device** in *Settings → Notifications*. *Send a test notification* checks the whole chain.
+- **iPhone and iPad** (iOS 16.4 or later): open the site in Safari, *Share → Add to Home Screen*, then turn notifications on from the installed app. Safari does not offer push to regular tabs.
+- **Delay.** VoIP.ms is polled, so a notification arrives at most `POLL_INTERVAL_IDLE` seconds (60 by default) after the text when no tab is open. Lower it (for example to `20`) for quicker alerts.
+- **Privacy.** Notifications show the sender and the beginning of the text. They are encrypted for the receiving browser: Google, Mozilla, Apple or Microsoft, which relay them, only see that a notification was sent. Signing out of a device stops its notifications; changing `APP_PASSWORD` stops them everywhere.
+- The server's VAPID keys are generated on first start and kept in the database (`./data`); no account with a push provider is needed.
+
 ## How it works
 
 - **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread.
 - **Media.** VoIP.ms media links are public and can answer 404 for a while after a message is sent, so downloads are retried with backoff for about 6 hours (and on demand from the conversation).
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
+- **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using Node's crypto, without a third-party library.
 - **Sending.** A message is saved immediately and delivered in the background; if VoIP.ms fails ambiguously (timeout, Cloudflare 5xx) and the message still went out, it is matched with the history instead of appearing twice. Failed messages can be retried.
 - **Stack.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript everywhere. A single container, no external service.
 
@@ -169,9 +194,8 @@ If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_P
 
 ## Roadmap ideas
 
-- Optional VoIP.ms webhook/URL callback for instant delivery when the instance is reachable from the Internet
-- Web Push notifications when no tab is open
-- Deleting messages, archiving conversations, accent-insensitive search
+- Optional VoIP.ms webhook/URL callback for instant delivery (and instant notifications) when the instance is reachable from the Internet
+- Deleting messages and conversations
 
 ## License
 
