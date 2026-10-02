@@ -10,6 +10,8 @@
  * - "No results" comes back as an error status (no_sms, no_did).
  */
 
+import { unescapeQuotes } from './text.js';
+
 export const VOIPMS_API_URL = 'https://voip.ms/api/v1/rest.php';
 
 export class VoipMsError extends Error {
@@ -239,7 +241,7 @@ export function parseMessage(kind: RemoteKind, row: Json): RemoteMessage {
     direction: str(row.type) === '1' ? 'in' : 'out',
     did: str(row.did),
     contact: str(row.contact),
-    body: str(row.message),
+    body: unescapeQuotes(str(row.message)),
     carrierStatus: carrier || null,
     media: [...media],
   };

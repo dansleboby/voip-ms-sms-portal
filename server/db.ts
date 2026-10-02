@@ -11,11 +11,12 @@ import type {
 } from '../shared/types.js';
 import type { MessageKind } from '../shared/message.js';
 import { searchDigits } from '../shared/phone.js';
+import { unescapeQuotes } from './voipms/text.js';
 
 export type DB = Database.Database;
 
 /** Applied in order; the index + 1 is stored in PRAGMA user_version. */
-const MIGRATIONS: string[] = [
+const MIGRATIONS: (string | ((db: DB) => void))[] = [
   `
   CREATE TABLE settings (
     key   TEXT PRIMARY KEY,
@@ -93,6 +94,15 @@ const MIGRATIONS: string[] = [
   `,
   // Downloads back off instead of burning their attempts during a short outage.
   `ALTER TABLE attachments ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;`,
+  // Bodies stored before quotes were unescaped on import ("l\\'accès").
+  (db) => {
+    const rows = db.prepare(`SELECT id, body FROM messages WHERE instr(body, '\\') > 0`).all() as { id: number; body: string }[];
+    const update = db.prepare('UPDATE messages SET body = ? WHERE id = ?');
+    for (const row of rows) {
+      const body = unescapeQuotes(row.body);
+      if (body !== row.body) update.run(body, row.id);
+    }
+  },
 ];
 
 export function openDatabase(file: string): DB {
@@ -107,8 +117,10 @@ export function openDatabase(file: string): DB {
 function migrate(db: DB): void {
   const current = db.pragma('user_version', { simple: true }) as number;
   for (let i = current; i < MIGRATIONS.length; i++) {
+    const migration = MIGRATIONS[i]!;
     db.transaction(() => {
-      db.exec(MIGRATIONS[i]!);
+      if (typeof migration === 'string') db.exec(migration);
+      else migration(db);
       db.pragma(`user_version = ${i + 1}`);
     })();
   }

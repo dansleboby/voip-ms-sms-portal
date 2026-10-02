@@ -116,4 +116,10 @@ describe('parseMessage', () => {
     expect(m.direction).toBe('in');
     expect(m.media).toEqual(['https://voip.ms/media/xyz/media.jpg']);
   });
+
+  it('drops PHP-style escaping in front of quotes, however many times it was applied', () => {
+    const m = parseMessage('sms', { id: '1', type: '1', message: "Malheureusement, tant que l\\\\\\'accès n\\'est pas restauré, \\\"merci\\\"" });
+    expect(m.body).toBe('Malheureusement, tant que l\'accès n\'est pas restauré, "merci"');
+    expect(parseMessage('sms', { id: '2', message: 'C:\\temp et :-\\' }).body).toBe('C:\\temp et :-\\');
+  });
 });

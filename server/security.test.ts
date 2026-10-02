@@ -46,3 +46,20 @@ describe('CredentialStore', () => {
     expect(() => store.save({ username: 'x', password: 'y' })).toThrow();
   });
 });
+
+describe('database migrations', () => {
+  it('unescapes quotes in bodies stored by earlier versions', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mig-')), 'portal.db');
+    const first = openDatabase(file);
+    const repo = new Repo(first);
+    const conversationId = repo.getOrCreateConversation('4506575294', '4383980707');
+    const id = repo.insertMessage({ conversationId, kind: 'sms', remoteId: '9', direction: 'in', body: "l\\\\\\'accès", sentAt: 0, status: 'received' });
+    first.pragma('user_version = 2');
+    first.close();
+    const reopened = new Repo(openDatabase(file));
+    expect(reopened.getMessage(id)!.body).toBe("l'accès");
+  });
+});
