@@ -136,6 +136,12 @@ function debounce(fn: () => Promise<void>, ms: number): () => void {
 }
 
 const reloadConversations = debounce(loadConversations, 300);
+/** After bulk changes (history import): refresh the open thread, forget the others. */
+const reloadThreads = debounce(async () => {
+  const active = state.activeConversationId;
+  setState((s) => ({ threads: active !== null && s.threads[active] ? { [active]: s.threads[active]! } : {} }));
+  if (active !== null) await loadThread(active, { replace: true });
+}, 500);
 const reloadDids = debounce(loadDids, 300);
 const reloadContacts = debounce(loadContacts, 300);
 
@@ -160,13 +166,25 @@ function patchThread(id: number, patch: Partial<ThreadState>): void {
   setState((s) => ({ threads: { ...s.threads, [id]: { ...threadOf(s, id), ...patch } } }));
 }
 
-export async function loadThread(id: number): Promise<void> {
+/**
+ * Loads the newest page of a conversation. When it does not overlap what is
+ * already shown (many messages arrived while offline, or history was
+ * imported), it replaces it so no gap is left; older pages load on scroll.
+ */
+export async function loadThread(id: number, options: { replace?: boolean } = {}): Promise<void> {
   const current = threadOf(state, id);
   if (current.loading) return;
   patchThread(id, { loading: true });
   try {
     const items = await api.messages(id);
-    patchThread(id, { items: mergeMessages(threadOf(state, id).items, items), hasMore: items.length >= 50, loaded: true });
+    const existing = threadOf(state, id).items;
+    const known = new Set(existing.map((m) => m.id));
+    const replace = options.replace || existing.length === 0 || !items.some((m) => known.has(m.id));
+    patchThread(id, {
+      items: replace ? items : mergeMessages(existing, items),
+      hasMore: replace ? items.length >= 50 : threadOf(state, id).hasMore,
+      loaded: true,
+    });
   } finally {
     patchThread(id, { loading: false });
   }
@@ -219,10 +237,15 @@ export async function markRead(conversationId: number): Promise<void> {
 
 export async function sendMessage(input: { did: string; to: string; body: string; files: File[] }): Promise<ConversationDto> {
   const { message, conversation } = await api.send(input);
-  if (!state.threads[conversation.id]?.loaded) await loadThread(conversation.id);
+  // The message is on its way: a failure to refresh the thread must not look like a failed send.
+  if (!state.threads[conversation.id]?.loaded) await loadThread(conversation.id).catch(() => undefined);
   upsertMessage(message);
   upsertConversation(conversation);
   return conversation;
+}
+
+export async function retryMedia(id: number): Promise<void> {
+  await api.retryMedia(id).catch(toastError);
 }
 
 export async function retryMessage(id: number): Promise<void> {
@@ -256,6 +279,7 @@ function handleEvent(event: ServerEvent): void {
       break;
     case 'reload':
       reloadConversations();
+      reloadThreads();
       break;
     case 'dids':
       reloadDids();

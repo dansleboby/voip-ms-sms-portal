@@ -10,7 +10,8 @@ const LoginBody = z.object({ password: z.string().max(1000) });
 export function registerAuthRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/session', async (req): Promise<SessionDto> => ({
     authenticated: s.auth.verify(req.cookies[SESSION_COOKIE]),
-    setupCompleted: s.isSetupCompleted(),
+    // Unreadable credentials (APP_PASSWORD changed) send the user back to the wizard.
+    setupCompleted: s.isSetupCompleted() && s.credentials.get() !== null,
     credentialsSource: s.credentials.source(),
     demo: s.config.demo,
     version: VERSION,

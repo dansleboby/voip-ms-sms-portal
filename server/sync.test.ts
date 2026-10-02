@@ -127,6 +127,31 @@ describe('SyncEngine', () => {
     expect(ctx.sync.status()).toMatchObject({ state: 'idle', lastError: null });
   });
 
+  it('does not let a history import swallow texts newer than the last poll', async () => {
+    await ctx.sync.syncRecent();
+    ctx.repo.setSetting('sync.lastSuccessAt', String(NOW - 5 * 60_000));
+    ctx.client.push({ direction: 'in', body: 'Just arrived', date: '2026-10-02 14:58:00' });
+    ctx.client.push({ direction: 'in', body: 'Old one', date: '2026-08-01 10:00:00', contact: '5145550000' });
+    await ctx.sync.importHistory(90);
+    const byPhone = new Map(ctx.repo.listConversations().map((c) => [c.phone, c]));
+    expect(byPhone.get('4383980707')!.unreadCount).toBe(1);
+    expect(byPhone.get('5145550000')!.unreadCount).toBe(0);
+    expect(ctx.broadcast.some((e) => e.type === 'message' && e.message.body === 'Just arrived')).toBe(true);
+  });
+
+  it('never adopts a message that is still waiting to be sent, nor one of another kind', async () => {
+    await ctx.sync.syncRecent();
+    const conversationId = ctx.repo.getOrCreateConversation('4506575294', '4383980707');
+    const sentAt = zonedToEpoch('2026-10-02 14:50:00', TZ);
+    const queued = ctx.repo.insertMessage({ conversationId, kind: 'sms', remoteId: null, direction: 'out', body: 'ok', sentAt, status: 'sending' });
+    const failedMms = ctx.repo.insertMessage({ conversationId, kind: 'mms', remoteId: null, direction: 'out', body: 'ok', sentAt, status: 'failed' });
+    ctx.client.push({ kind: 'sms', direction: 'out', body: 'ok', date: '2026-10-02 14:50:30' });
+    await ctx.sync.syncRecent();
+    expect(ctx.repo.getMessage(queued)!.status).toBe('sending');
+    expect(ctx.repo.getMessage(failedMms)!.status).toBe('failed');
+    expect(ctx.repo.listMessages(conversationId)).toHaveLength(3);
+  });
+
   it('imports history quietly', async () => {
     ctx.client.push({ direction: 'in', body: 'Summer', date: '2026-07-15 10:00:00' });
     ctx.client.push({ direction: 'in', body: 'Spring', date: '2026-04-15 10:00:00', contact: '5145550000' });

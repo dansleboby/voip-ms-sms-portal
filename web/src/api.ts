@@ -93,6 +93,7 @@ export const api = {
     return request<{ message: MessageDto; conversation: ConversationDto }>('POST', '/api/messages', form);
   },
   retry: (messageId: number) => request<MessageDto>('POST', `/api/messages/${messageId}/retry`),
+  retryMedia: (attachmentId: number) => request<{ ok: true }>('POST', `/api/media/${attachmentId}/retry`),
 
   contacts: () => request<ContactDto[]>('GET', '/api/contacts'),
   createContact: (c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>

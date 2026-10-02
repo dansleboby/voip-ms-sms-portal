@@ -14,7 +14,8 @@ export interface Config {
   pollIdleMs: number;
   /** IANA zone VoIP.ms uses for the dates it returns (Eastern time, DST-aware). */
   voipmsTimezone: string;
-  trustProxy: boolean;
+  /** Fastify trustProxy: false, or the addresses/subnets of trusted proxies. */
+  trustProxy: false | string;
   sessionDays: number;
   /** Serves a fake VoIP.ms account with sample data instead of calling the real API. */
   demo: boolean;
@@ -30,6 +31,18 @@ function seconds(value: string | undefined, fallback: number, min: number): numb
   const n = Number(value);
   if (!Number.isFinite(n) || n < min) throw new ConfigError(`Expected a number of seconds >= ${min}, got "${value}"`);
   return Math.round(n * 1000);
+}
+
+/**
+ * TRUST_PROXY=true trusts proxies on private networks only (Docker networks,
+ * localhost), so a client reaching the port directly cannot spoof
+ * X-Forwarded-For. An explicit list of addresses/subnets is also accepted.
+ */
+function trustProxy(value: string | undefined): false | string {
+  const v = value?.trim().toLowerCase() ?? '';
+  if (v === '' || ['0', 'false', 'no', 'off'].includes(v)) return false;
+  if (['1', 'true', 'yes', 'on'].includes(v)) return 'loopback, linklocal, uniquelocal';
+  return value!.trim();
 }
 
 function bool(value: string | undefined): boolean {
@@ -66,7 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     pollActiveMs: seconds(env.POLL_INTERVAL_ACTIVE, 10, 3),
     pollIdleMs: seconds(env.POLL_INTERVAL_IDLE, 60, 10),
     voipmsTimezone,
-    trustProxy: bool(env.TRUST_PROXY),
+    trustProxy: trustProxy(env.TRUST_PROXY),
     sessionDays: Number(env.SESSION_DAYS ?? 30),
     demo: bool(env.DEMO_MODE),
     logLevel: env.LOG_LEVEL ?? 'info',

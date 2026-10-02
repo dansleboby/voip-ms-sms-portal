@@ -57,7 +57,7 @@ export function registerContactRoutes(app: FastifyInstance, s: Services): void {
   });
 
   /** Imports a .vcf file; numbers already assigned to a contact are left alone. */
-  app.post('/api/contacts/import', async (req) => {
+  app.post('/api/contacts/import', { bodyLimit: 12 * 1024 * 1024 }, async (req) => {
     const { vcard } = ImportBody.parse(req.body);
     let imported = 0;
     let skipped = 0;

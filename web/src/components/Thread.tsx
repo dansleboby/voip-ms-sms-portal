@@ -8,6 +8,7 @@ import {
   loadOlder,
   loadThread,
   markRead,
+  retryMedia,
   retryMessage,
   setActiveConversation,
   threadOf,
@@ -278,7 +279,16 @@ function AttachmentView({
   onLoad: () => void;
 }) {
   if (a.status === 'pending') return <div className="media placeholder loading">{t('attachment.pending')}</div>;
-  if (a.status === 'failed' || !a.url) return <div className="media placeholder">{t('attachment.failed')}</div>;
+  if (a.status === 'failed' || !a.url) {
+    return (
+      <div className="media placeholder" style={{ gap: 4, alignContent: 'center' }}>
+        <span>{t('attachment.failed')}</span>
+        <button className="btn text small" onClick={() => void retryMedia(a.id)}>
+          {t('common.retry')}
+        </button>
+      </div>
+    );
+  }
   const mime = a.mime ?? '';
   if (mime.startsWith('image/')) {
     return (

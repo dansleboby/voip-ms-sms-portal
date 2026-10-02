@@ -149,7 +149,7 @@ export class SyncEngine {
     this.state = 'syncing';
     try {
       // The very first sync only establishes a baseline: no unread badges or notifications for old texts.
-      await this.syncRange(client, from, now + DAY_MS, last > 0);
+      await this.syncRange(client, from, now + DAY_MS, last > 0 ? -Infinity : Infinity);
       this.deps.repo.setSetting(LAST_SUCCESS_KEY, String(now));
       this.state = 'idle';
       this.lastError = null;
@@ -164,19 +164,25 @@ export class SyncEngine {
     this.publishStatus();
   }
 
-  /** Imports older messages without marking them unread. Resolves once done. */
+  /**
+   * Imports older messages without marking them unread. Messages newer than
+   * the last poll are still treated as new: the import must not swallow a
+   * text the next poll would have announced. Resolves once done.
+   */
   async importHistory(days: number): Promise<void> {
     const client = this.deps.getClient();
     if (!client) throw new VoipMsError('not_configured');
     if (this.importing) throw new VoipMsError('import_in_progress');
     const now = this.now();
+    const last = Number(this.deps.repo.getSetting(LAST_SUCCESS_KEY) ?? 0);
+    const liveAfter = last > 0 ? last : Infinity;
     const windows = splitWindows(now - days * DAY_MS, now + DAY_MS, WINDOW_DAYS);
     this.importing = { done: 0, total: windows.length };
     this.publishStatus();
     try {
       // Newest first, so recent conversations show up while older ones load.
       for (const [from, to] of windows.reverse()) {
-        await this.syncRange(client, from, to, false);
+        await this.syncRange(client, from, to, liveAfter);
         this.importing = { done: this.importing.done + 1, total: windows.length };
         this.deps.events.broadcast({ type: 'reload' });
         this.publishStatus();
@@ -188,16 +194,17 @@ export class SyncEngine {
     }
   }
 
-  private async syncRange(client: VoipMsApi, fromMs: number, toMs: number, live: boolean): Promise<void> {
-    let changed = 0;
+  /** Messages sent after `liveAfter` count as new (unread, announced); older ones are stored quietly. */
+  private async syncRange(client: VoipMsApi, fromMs: number, toMs: number, liveAfter: number): Promise<void> {
+    let quiet = 0;
     for (const [from, to] of splitWindows(fromMs, toMs, WINDOW_DAYS)) {
       for (const kind of ['sms', 'mms'] as const) {
         const messages = await this.fetchAll(client, kind, from, to);
-        changed += await this.mutex.run(async () => this.ingest(messages, live));
+        quiet += await this.mutex.run(async () => this.ingest(messages, liveAfter));
       }
     }
-    // Quiet syncs do not announce each message: have the clients reload instead.
-    if (!live && changed > 0) this.deps.events.broadcast({ type: 'reload' });
+    // Quiet changes are not announced one by one: have the clients reload instead.
+    if (quiet > 0) this.deps.events.broadcast({ type: 'reload' });
   }
 
   /** Fetches a window; if it hits the page limit, falls back to one call per day. */
@@ -218,12 +225,14 @@ export class SyncEngine {
   }
 
   /**
-   * Stores messages not seen before. `live` marks incoming ones unread and
-   * announces each one; history imports stay quiet.
+   * Stores messages not seen before. Those sent after `liveAfter` are new:
+   * incoming ones become unread and each one is announced. Returns how many
+   * changes were made quietly.
    */
-  ingest(messages: RemoteMessage[], live: boolean): number {
+  ingest(messages: RemoteMessage[], liveAfter: number): number {
     const { repo, events, timeZone } = this.deps;
     const changed: { messageId: number; conversationId: number }[] = [];
+    let quiet = 0;
     let newDid = false;
     let newMedia = false;
 
@@ -235,7 +244,8 @@ export class SyncEngine {
           if (remote.carrierStatus && remote.carrierStatus !== existing.carrierStatus) {
             repo.updateMessage(existing.id, { carrierStatus: remote.carrierStatus });
             const row = repo.getMessageRow(existing.id);
-            if (row) changed.push({ messageId: row.id, conversationId: row.conversation_id });
+            if (row && row.sent_at > liveAfter) changed.push({ messageId: row.id, conversationId: row.conversation_id });
+            else quiet++;
           }
           continue;
         }
@@ -255,6 +265,7 @@ export class SyncEngine {
           sentAt = this.now();
         }
 
+        const live = sentAt > liveAfter;
         if (remote.direction === 'out') {
           const adopted = this.adoptLocalSend(conversationId, remote, sentAt);
           if (adopted !== null) {
@@ -278,36 +289,45 @@ export class SyncEngine {
           newMedia = true;
         });
         repo.touchConversation(conversationId, live && remote.direction === 'in' ? 1 : 0);
-        changed.push({ messageId, conversationId });
+        if (live) changed.push({ messageId, conversationId });
+        else quiet++;
       }
     });
 
     if (newDid) events.broadcast({ type: 'dids' });
     if (newMedia) this.deps.media.kick();
-    if (!live) return changed.length;
     for (const { messageId, conversationId } of changed) {
       const message = repo.getMessage(messageId);
       const conversation = repo.getConversation(conversationId);
       if (message && conversation) events.broadcast({ type: 'message', message, conversation });
     }
     if (changed.length) events.broadcast({ type: 'dids' });
-    return changed.length;
+    return quiet;
   }
 
   /**
-   * A send can fail ambiguously (timeout, Cloudflare 5xx) after VoIP.ms
-   * accepted it. When the message then shows up in the history, attach it
-   * to the local copy instead of displaying it twice.
+   * A send can fail ambiguously (timeout, Cloudflare 5xx, restart) after
+   * VoIP.ms accepted it. When the message then shows up in the history,
+   * attach it to the local copy instead of displaying it twice. Only failed
+   * attempts qualify: a message still waiting to be sent must go out.
    */
   private adoptLocalSend(conversationId: number, remote: RemoteMessage, sentAt: number): number | null {
     const row = this.deps.repo.db
       .prepare(
-        `SELECT id FROM messages
-         WHERE conversation_id = ? AND direction = 'out' AND remote_id IS NULL AND body = ?
-           AND sent_at BETWEEN ? AND ?
-         ORDER BY sent_at LIMIT 1`,
+        `SELECT m.id FROM messages m
+         WHERE m.conversation_id = ? AND m.direction = 'out' AND m.remote_id IS NULL AND m.status = 'failed'
+           AND m.kind = ? AND m.body = ? AND m.sent_at BETWEEN ? AND ?
+           AND (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) = ?
+         ORDER BY m.sent_at LIMIT 1`,
       )
-      .get(conversationId, remote.body, sentAt - ADOPT_WINDOW_MS, sentAt + ADOPT_WINDOW_MS) as { id: number } | undefined;
+      .get(
+        conversationId,
+        remote.kind,
+        remote.body,
+        sentAt - ADOPT_WINDOW_MS,
+        sentAt + ADOPT_WINDOW_MS,
+        remote.media.length,
+      ) as { id: number } | undefined;
     if (!row) return null;
     this.deps.repo.updateMessage(row.id, {
       kind: remote.kind,

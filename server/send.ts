@@ -8,6 +8,9 @@ import { checkOutgoing, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 import { isValidNanp, normalizePhone } from '../shared/phone.js';
 import type { ConversationDto, MessageDto } from '../shared/types.js';
 
+/** Failures after which the text may still have gone out. */
+const AMBIGUOUS_ERRORS = new Set(['http_error', 'network_error', 'invalid_response', 'interrupted']);
+
 export class SendError extends Error {
   constructor(
     readonly code: string,
@@ -83,6 +86,12 @@ export class MessageSender {
     const row = this.deps.repo.getMessageRow(messageId);
     if (!row || row.direction !== 'out') throw new SendError('not_found', 404);
     if (row.status !== 'failed') throw new SendError('not_failed', 409);
+    if (AMBIGUOUS_ERRORS.has(row.error ?? '')) {
+      // VoIP.ms may have accepted the first attempt: look at the history (which
+      // adopts it) before texting the recipient a second time.
+      await this.deps.sync.syncRecent();
+      if (this.deps.repo.getMessageRow(messageId)?.status === 'sent') return this.publish(messageId, row.conversation_id).message;
+    }
     this.deps.repo.updateMessage(messageId, { status: 'sending', error: null });
     const { message } = this.publish(messageId, row.conversation_id);
     void this.deliver(messageId);
@@ -97,10 +106,10 @@ export class MessageSender {
       if (!row || row.status !== 'sending') return;
       const conversation = repo.getConversation(row.conversation_id);
       const client = this.deps.getClient();
+      let kind = row.kind;
       try {
         if (!conversation) throw new VoipMsError('not_found');
         if (!client) throw new VoipMsError('not_configured');
-        let kind = row.kind;
         let remoteId: string | null = null;
         if (kind === 'sms') {
           try {
@@ -120,7 +129,8 @@ export class MessageSender {
       } catch (err) {
         const code = err instanceof VoipMsError ? err.code : 'internal_error';
         log.warn({ err, messageId }, 'Sending failed');
-        repo.updateMessage(messageId, { status: 'failed', error: code });
+        // Keep the kind actually attempted, so the history can be matched against it.
+        repo.updateMessage(messageId, { kind, status: 'failed', error: code });
       }
     });
     const row = repo.getMessageRow(messageId);

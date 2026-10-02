@@ -67,6 +67,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   const db = openDatabase(path.join(config.dataDir, 'portal.db'));
   const repo = new Repo(db);
+  const interrupted = repo.failInterruptedSends();
+  if (interrupted) log.warn({ count: interrupted }, 'Messages left sending by a restart were marked failed');
   const events = new EventHub();
   const auth = new Auth(repo, config.appPassword, config.sessionDays);
   const credentials = new CredentialStore(
@@ -156,8 +158,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   const publicRoutes = new Set(['/api/health', '/api/session', '/api/auth/login', '/api/auth/logout']);
   app.addHook('onRequest', async (req, reply) => {
-    if (!req.url.startsWith('/api/')) return;
-    const route = req.url.split('?')[0]!;
+    // Decide on the route the router matched, never on the raw URL: "/%61pi/..." or an
+    // absolute-form request line would otherwise reach /api handlers unauthenticated.
+    const route = req.routeOptions.url;
+    if (!route?.startsWith('/api/')) return;
     if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
       return reply.code(403).send({ error: 'bad_origin' });
     }
@@ -172,9 +176,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     if (err instanceof SendError) return reply.code(err.statusCode).send({ error: err.code });
     if (err instanceof VoipMsError) return reply.code(502).send({ error: err.code, message: err.message });
     const status = (err as { statusCode?: number }).statusCode;
-    if (status === 413 || (err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
-      return reply.code(413).send({ error: 'attachment_too_large' });
-    }
+    const code = (err as { code?: string }).code;
+    if (code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ error: 'attachment_too_large' });
+    if (code === 'FST_FILES_LIMIT') return reply.code(413).send({ error: 'too_many_attachments' });
+    if (status === 413) return reply.code(413).send({ error: 'payload_too_large' });
     if (status && status >= 400 && status < 500) {
       return reply.code(status).send({ error: (err as { code?: string }).code ?? 'bad_request', message: (err as Error).message });
     }

@@ -84,6 +84,27 @@ describe('authentication', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('cannot be bypassed with an encoded or absolute-form path', async () => {
+    expect((await app.inject({ url: '/%61pi/setup/status' })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/%63onversations' })).statusCode).toBe(401);
+    const write = await app.inject({
+      method: 'POST',
+      url: '/%61pi/contacts',
+      payload: { name: 'x', phones: ['4383980707'] },
+    });
+    expect(write.statusCode).toBe(401);
+    expect(services.repo.listContacts()).toEqual([]);
+  });
+
+  it('sends the user back to the wizard when stored credentials cannot be read', async () => {
+    services.credentials.save({ username: 'a@b.c', password: 'x' });
+    services.setSetupCompleted(true);
+    await login();
+    expect((await app.inject({ url: '/api/session', headers: { cookie } })).json().setupCompleted).toBe(true);
+    services.repo.setSetting('voipms.credentials', '{"iv":"AAAA","tag":"AAAA","data":"AAAA"}');
+    expect((await app.inject({ url: '/api/session', headers: { cookie } })).json().setupCompleted).toBe(false);
+  });
+
   it('refuses to start without APP_PASSWORD', () => {
     expect(() => loadConfig({})).toThrow(/APP_PASSWORD/);
   });
@@ -202,6 +223,48 @@ describe('messaging', () => {
     expect(retry.statusCode).toBe(200);
     await waitFor(() => services.repo.getMessage(message.id)?.status === 'sent');
     expect(services.repo.getMessage(message.id)!.status).toBe('sent');
+  });
+
+  it('checks the history before re-sending after an ambiguous failure', async () => {
+    client.failNext.sendSms = 'http_error';
+    const { message } = (await send({ did: '4506575294', to: '4383980707', body: 'Maybe sent' })).json();
+    await waitFor(() => services.repo.getMessage(message.id)?.status === 'failed');
+    // VoIP.ms had accepted it after all.
+    client.push({ kind: 'sms', direction: 'out', body: 'Maybe sent' });
+    const retry = await app.inject({ method: 'POST', url: `/api/messages/${message.id}/retry`, headers: { cookie } });
+    expect(retry.json()).toMatchObject({ id: message.id, status: 'sent' });
+    expect(client.sent).toEqual([]);
+    expect(services.repo.listMessages(message.conversationId)).toHaveLength(1);
+  });
+
+  it('marks sends interrupted by a restart as failed', async () => {
+    const conversationId = services.repo.getOrCreateConversation('4506575294', '4383980707');
+    const id = services.repo.insertMessage({
+      conversationId,
+      kind: 'sms',
+      remoteId: null,
+      direction: 'out',
+      body: 'cut off',
+      sentAt: Date.now(),
+      status: 'sending',
+    });
+    const config = services.config;
+    await app.close();
+    ({ app, services } = await buildApp(config, { clientFactory: () => client, logger: false }));
+    expect(services.repo.getMessage(id)).toMatchObject({ status: 'failed', error: 'interrupted' });
+  });
+
+  it('reports too many attachments distinctly', async () => {
+    const file = { name: 'a.png', type: 'image/png', data: PNG };
+    const res = await send({ did: '4506575294', to: '4383980707', body: '' }, [file, file, file, file]);
+    expect(res.statusCode).toBe(413);
+    expect(res.json()).toEqual({ error: 'too_many_attachments' });
+  });
+
+  it('finds conversations by number typed with the country code', async () => {
+    await send({ did: '4506575294', to: '4383980707', body: 'Hi' });
+    const found = (await app.inject({ url: `/api/conversations?q=${encodeURIComponent('+1 438-398')}`, headers: { cookie } })).json();
+    expect(found).toHaveLength(1);
   });
 
   it('does not show a sent message twice once the poll sees it', async () => {

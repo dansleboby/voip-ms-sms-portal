@@ -209,6 +209,9 @@ export const fr = {
   'error.not_configured': 'VoIP.ms n’est pas encore configuré.',
   'error.unauthorized': 'Session expirée. Reconnectez-vous.',
   'error.internal_error': 'Erreur interne du serveur.',
+  'error.interrupted': 'Envoi interrompu par un redémarrage du serveur. Vérifiez avant de réessayer : il est peut-être parti.',
+  'error.payload_too_large': 'Fichier trop volumineux.',
+  'error.too_many_attachments': '3 pièces jointes au maximum.',
   'error.offline': 'Connexion au serveur perdue.',
   'error.unknown': 'Erreur : {code}',
 } as const;

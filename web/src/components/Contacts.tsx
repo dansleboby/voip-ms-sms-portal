@@ -6,7 +6,7 @@ import { navigate } from '../lib/router';
 import { loadContacts, loadConversations, toast, toastError, useStore } from '../store';
 import { ContactDialog } from './ContactDialog';
 import { Avatar } from './ui';
-import { formatPhone } from '../../../shared/phone';
+import { formatPhone, searchDigits } from '../../../shared/phone';
 import type { ContactDto } from '../../../shared/types';
 
 export function Contacts() {
@@ -17,7 +17,7 @@ export function Contacts() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const digits = q.replace(/\D/g, '');
+    const digits = searchDigits(q);
     if (!q) return contacts;
     return contacts.filter((c) => c.name.toLowerCase().includes(q) || (digits.length >= 3 && c.phones.some((p) => p.includes(digits))));
   }, [contacts, query]);

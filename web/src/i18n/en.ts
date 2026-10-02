@@ -211,6 +211,9 @@ export const en: Record<MessageKey, string> = {
   'error.not_configured': 'VoIP.ms is not configured yet.',
   'error.unauthorized': 'Session expired. Please sign in again.',
   'error.internal_error': 'Internal server error.',
+  'error.interrupted': 'Sending was interrupted by a server restart. It may have gone out: check before retrying.',
+  'error.payload_too_large': 'File too large.',
+  'error.too_many_attachments': '3 attachments at most.',
   'error.offline': 'Lost connection to the server.',
   'error.unknown': 'Error: {code}',
 };

@@ -10,6 +10,7 @@ import type {
   MessageStatus,
 } from '../shared/types.js';
 import type { MessageKind } from '../shared/message.js';
+import { searchDigits } from '../shared/phone.js';
 
 export type DB = Database.Database;
 
@@ -90,6 +91,8 @@ const MIGRATIONS: string[] = [
   CREATE INDEX attachments_message ON attachments(message_id);
   CREATE INDEX attachments_pending ON attachments(status) WHERE status = 'pending';
   `,
+  // Downloads back off instead of burning their attempts during a short outage.
+  `ALTER TABLE attachments ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 export function openDatabase(file: string): DB {
@@ -165,6 +168,7 @@ export interface AttachmentRow {
   size: number | null;
   status: AttachmentStatus;
   attempts: number;
+  next_attempt_at: number;
 }
 
 export interface NewMessage {
@@ -346,7 +350,8 @@ export class Repo {
     const q = opts.query?.trim();
     if (q) {
       const like = `%${escapeLike(q)}%`;
-      const digits = q.replace(/\D/g, '');
+      // "+1 514..." must match the stored 10 digits.
+      const digits = searchDigits(q);
       const clauses = [
         "ct.name LIKE ? ESCAPE '\\'",
         "EXISTS (SELECT 1 FROM messages mm WHERE mm.conversation_id = c.id AND mm.body LIKE ? ESCAPE '\\')",
@@ -510,17 +515,46 @@ export class Repo {
     return this.db.prepare('SELECT * FROM attachments WHERE message_id = ? ORDER BY position').all(messageId) as AttachmentRow[];
   }
 
-  pendingAttachments(maxAttempts: number, afterId = 0, limit = 20): AttachmentRow[] {
+  /** Pending downloads that are due. */
+  pendingAttachments(now: number, afterId = 0, limit = 20): AttachmentRow[] {
     return this.db
-      .prepare(`SELECT * FROM attachments WHERE status = 'pending' AND attempts < ? AND id > ? ORDER BY id LIMIT ?`)
-      .all(maxAttempts, afterId, limit) as AttachmentRow[];
+      .prepare(`SELECT * FROM attachments WHERE status = 'pending' AND next_attempt_at <= ? AND id > ? ORDER BY id LIMIT ?`)
+      .all(now, afterId, limit) as AttachmentRow[];
+  }
+
+  /** Puts a failed download back in the queue. */
+  resetAttachment(id: number): boolean {
+    return (
+      this.db
+        .prepare(`UPDATE attachments SET status = 'pending', attempts = 0, next_attempt_at = 0 WHERE id = ? AND status = 'failed'`)
+        .run(id).changes > 0
+    );
+  }
+
+  /** Sends cut short by a restart can neither finish nor be retried while "sending". */
+  failInterruptedSends(): number {
+    return this.db.prepare(`UPDATE messages SET status = 'failed', error = 'interrupted' WHERE status = 'sending'`).run().changes;
   }
 
   updateAttachment(
     id: number,
-    patch: { fileName?: string | null; mime?: string | null; size?: number | null; status?: AttachmentStatus; attempts?: number },
+    patch: {
+      fileName?: string | null;
+      mime?: string | null;
+      size?: number | null;
+      status?: AttachmentStatus;
+      attempts?: number;
+      nextAttemptAt?: number;
+    },
   ): void {
-    const map: Record<string, string> = { fileName: 'file_name', mime: 'mime', size: 'size', status: 'status', attempts: 'attempts' };
+    const map: Record<string, string> = {
+      fileName: 'file_name',
+      mime: 'mime',
+      size: 'size',
+      status: 'status',
+      attempts: 'attempts',
+      nextAttemptAt: 'next_attempt_at',
+    };
     const sets: string[] = [];
     const values: unknown[] = [];
     for (const [key, column] of Object.entries(map)) {

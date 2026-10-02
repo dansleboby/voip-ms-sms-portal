@@ -24,3 +24,13 @@ export function formatPhone(phone: string): string {
   if (d.length !== 10) return phone;
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 }
+
+/**
+ * Digits to look for when searching by (partial) number: drops a leading
+ * country code typed as "+1 438…", "1-514…" or a full 11-digit number.
+ */
+export function searchDigits(query: string): string {
+  const digits = query.replace(/\D/g, '');
+  if (/^\s*(\+\s*1|1[\s.\-(])/.test(query) || (digits.length === 11 && digits.startsWith('1'))) return digits.slice(1);
+  return digits;
+}

@@ -52,7 +52,14 @@ function mimeFromUrl(url: string): string | null {
 }
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
-export const MAX_DOWNLOAD_ATTEMPTS = 5;
+/**
+ * VoIP.ms media links can answer 404 for a while (seen live: over 40 minutes)
+ * before the file appears, so downloads keep trying for about 6 hours, from
+ * 30 s up to 2 h apart. A failed one can still be retried from the UI.
+ */
+export const MAX_DOWNLOAD_ATTEMPTS = 10;
+const RETRY_BASE_MS = 30_000;
+const RETRY_MAX_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Stores attachment files under DATA_DIR/media and downloads the ones
@@ -117,11 +124,11 @@ export class MediaStore {
     });
   }
 
-  /** One pass over the pending rows; failures are retried on a later kick (the next poll). */
+  /** One pass over the due rows; failures are retried with backoff on a later kick (each poll kicks). */
   private async drain(): Promise<void> {
     let cursor = 0;
     for (;;) {
-      const batch = this.repo.pendingAttachments(MAX_DOWNLOAD_ATTEMPTS, cursor);
+      const batch = this.repo.pendingAttachments(Date.now(), cursor);
       if (batch.length === 0) return;
       for (const row of batch) {
         cursor = row.id;
@@ -140,7 +147,11 @@ export class MediaStore {
     } catch (err) {
       const failed = attempts >= MAX_DOWNLOAD_ATTEMPTS;
       this.options.log.warn({ err, attachment: row.id, attempts }, 'Media download failed');
-      this.repo.updateAttachment(row.id, { attempts, status: failed ? 'failed' : 'pending' });
+      this.repo.updateAttachment(row.id, {
+        attempts,
+        status: failed ? 'failed' : 'pending',
+        nextAttemptAt: Date.now() + Math.min(RETRY_BASE_MS * 2 ** (attempts - 1), RETRY_MAX_MS),
+      });
       if (!failed) return;
     }
     this.options.onAttachmentChange?.(row.message_id);

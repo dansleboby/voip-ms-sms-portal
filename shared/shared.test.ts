@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkOutgoing, pickMessageKind, utf8Length } from './message.js';
-import { formatPhone, isValidNanp, normalizePhone } from './phone.js';
+import { formatPhone, isValidNanp, normalizePhone, searchDigits } from './phone.js';
 
 describe('phone', () => {
   it('normalizes to the 10 digits VoIP.ms uses', () => {
@@ -15,6 +15,14 @@ describe('phone', () => {
     expect(isValidNanp('1506575294')).toBe(false);
     expect(isValidNanp('4501575294')).toBe(false);
     expect(isValidNanp('32665')).toBe(false);
+  });
+
+  it('extracts search digits without the country code', () => {
+    expect(searchDigits('+1 438-398')).toBe('438398');
+    expect(searchDigits('1-514-555-1234')).toBe('5145551234');
+    expect(searchDigits('15145551234')).toBe('5145551234');
+    expect(searchDigits('1234')).toBe('1234');
+    expect(searchDigits('(514) 5')).toBe('5145');
   });
 
   it('formats 10-digit numbers and leaves the rest alone', () => {

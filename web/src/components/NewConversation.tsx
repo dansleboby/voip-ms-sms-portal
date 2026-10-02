@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '../api';
 import { t } from '../i18n';
@@ -7,7 +7,7 @@ import { navigate } from '../lib/router';
 import { useStore } from '../store';
 import { Composer } from './Composer';
 import { Avatar } from './ui';
-import { formatPhone, isValidNanp, normalizePhone } from '../../../shared/phone';
+import { formatPhone, isValidNanp, normalizePhone, searchDigits } from '../../../shared/phone';
 
 interface Suggestion {
   name: string;
@@ -29,9 +29,11 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
     setFrom(sendable.find((d) => d.did === didFilter)?.did ?? sendable[0]?.did ?? null);
   }, [sendable, didFilter, from]);
 
-  // Prefilled number (from the contacts page): pick it right away.
+  // Prefilled number (from the contacts page): pick it once, without undoing a later change.
+  const prefilled = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialPhone) return;
+    if (!initialPhone || prefilled.current === initialPhone) return;
+    prefilled.current = initialPhone;
     const phone = normalizePhone(initialPhone);
     const contact = contacts.find((c) => c.phones.includes(phone));
     setRecipient({ name: contact?.name ?? formatPhone(phone), phone });
@@ -54,7 +56,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
 
   const suggestions = useMemo((): Suggestion[] => {
     const q = query.trim().toLowerCase();
-    const digits = normalizePhone(q);
+    const digits = searchDigits(q);
     const list: Suggestion[] = [];
     if (isValidNanp(digits)) list.push({ name: formatPhone(digits), phone: digits });
     if (q) {
@@ -148,6 +150,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
 
       {recipient && fromDid && (
         <Composer
+          key={`${fromDid.did}:${recipient.phone}`}
           did={fromDid.did}
           to={recipient.phone}
           mmsAvailable={fromDid.mmsAvailable}

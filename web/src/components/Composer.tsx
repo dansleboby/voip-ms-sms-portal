@@ -92,11 +92,14 @@ export function Composer({
   const send = async () => {
     if (!canSend || !did || !to) return;
     setSending(true);
+    const sentBody = body;
+    const sentItems = new Set(ready.map((i) => i.id));
     try {
       const conversation = await sendMessage({ did, to, body: body.trim() ? body : '', files: ready.map((i) => i.file!) });
-      items.forEach((i) => i.preview && URL.revokeObjectURL(i.preview));
-      setItems([]);
-      setBody('');
+      // Keep whatever was typed or attached while the message was being sent.
+      items.forEach((i) => sentItems.has(i.id) && i.preview && URL.revokeObjectURL(i.preview));
+      setItems((cur) => cur.filter((i) => !sentItems.has(i.id)));
+      setBody((cur) => (cur === sentBody ? '' : cur));
       onSent?.(conversation);
       textarea.current?.focus();
     } catch (err) {

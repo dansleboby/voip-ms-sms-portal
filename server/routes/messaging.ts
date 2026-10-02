@@ -135,6 +135,17 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     return reply.send(fs.createReadStream(file));
   });
 
+  app.post('/api/media/:id/retry', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    if (!s.repo.resetAttachment(id)) return reply.code(404).send({ error: 'not_found' });
+    s.media.kick();
+    const row = s.repo.getAttachment(id)!;
+    const message = s.repo.getMessage(row.message_id);
+    const conversation = message ? s.repo.getConversation(message.conversationId) : null;
+    if (message && conversation) s.events.broadcast({ type: 'message', message, conversation });
+    return { ok: true };
+  });
+
   // --------------------------------------------------------------------- sync
 
   app.get('/api/sync/status', async (): Promise<SyncStatusDto> => s.sync.status());

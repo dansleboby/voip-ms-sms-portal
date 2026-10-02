@@ -38,7 +38,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | VoIP.ms account email and API password. Optional: otherwise they are entered in the wizard and stored encrypted with a key derived from `APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
-| `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). |
+| `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` in Docker) | Database and media location. |
 | `PORT` | `8080` | HTTP port. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
@@ -54,7 +54,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 ## Security
 
 - The VoIP.ms API password **gives access to the whole account** (ordering and cancelling numbers, call routing, voicemail…) and cannot be restricted. Keep this instance private and protected by a strong `APP_PASSWORD`.
-- Put it behind HTTPS if you open it to the Internet (see below) and set `TRUST_PROXY=true`.
+- Put it behind HTTPS if you open it to the Internet (see below) and set `TRUST_PROXY=true`. Then make sure the app's port is only reachable through the proxy (for example `127.0.0.1:8080:8080` in `docker-compose.yml`).
 - Sign-in attempts are rate limited, sessions are signed `HttpOnly`/`SameSite=Lax` cookies and cross-site writes are refused. Received files are served with a sandboxing CSP.
 
 ### Behind a reverse proxy
@@ -87,6 +87,7 @@ location / {
 ## How it works
 
 - **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread.
+- **Media.** VoIP.ms media links are public and can answer 404 for a while after a message is sent, so downloads are retried with backoff for about 6 hours (and on demand from the conversation).
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
 - **Sending.** A message is saved immediately and delivered in the background; if VoIP.ms fails ambiguously (timeout, Cloudflare 5xx) and the message still went out, it is matched with the history instead of appearing twice. Failed messages can be retried.
 - **Stack.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript everywhere. A single container, no external service.
