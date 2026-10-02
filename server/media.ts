@@ -69,6 +69,9 @@ const RETRY_MAX_MS = 2 * 60 * 60 * 1000;
 export class MediaStore {
   private working = false;
   private again = false;
+  private stopped = false;
+  private readonly abort = new AbortController();
+  private current: Promise<void> | null = null;
 
   constructor(
     readonly dir: string,
@@ -110,27 +113,44 @@ export class MediaStore {
 
   /** Processes pending downloads in the background; safe to call often. */
   kick(): void {
+    if (this.stopped) return;
     if (this.working) {
       this.again = true;
       return;
     }
     this.working = true;
-    void this.drain().finally(() => {
-      this.working = false;
-      if (this.again) {
-        this.again = false;
-        this.kick();
-      }
-    });
+    this.current = this.drain()
+      .catch((err: unknown) => this.options.log.warn({ err }, 'Media downloads interrupted'))
+      .finally(() => {
+        this.working = false;
+        this.current = null;
+        if (this.again && !this.stopped) {
+          this.again = false;
+          this.kick();
+        }
+      });
+  }
+
+  /**
+   * Aborts the download in progress and waits for the queue to wind down,
+   * so nothing touches the database once it is closed. Interrupted
+   * downloads stay pending for the next start.
+   */
+  async stop(): Promise<void> {
+    this.stopped = true;
+    this.abort.abort();
+    await this.current;
   }
 
   /** One pass over the due rows; failures are retried with backoff on a later kick (each poll kicks). */
   private async drain(): Promise<void> {
     let cursor = 0;
     for (;;) {
+      if (this.stopped) return;
       const batch = this.repo.pendingAttachments(Date.now(), cursor);
       if (batch.length === 0) return;
       for (const row of batch) {
+        if (this.stopped) return;
         cursor = row.id;
         await this.downloadOne(row);
       }
@@ -142,9 +162,11 @@ export class MediaStore {
     try {
       if (!row.remote_url) throw new Error('No remote URL');
       const { buffer, mime } = await this.fetchRemote(row.remote_url);
+      if (this.stopped) return;
       const saved = await this.save(buffer, mime);
       this.repo.updateAttachment(row.id, { ...saved, status: 'ready', attempts });
     } catch (err) {
+      if (this.stopped) return;
       const failed = attempts >= MAX_DOWNLOAD_ATTEMPTS;
       this.options.log.warn({ err, attachment: row.id, attempts }, 'Media download failed');
       this.repo.updateAttachment(row.id, {
@@ -164,7 +186,9 @@ export class MediaStore {
       const buffer = m[2] ? Buffer.from(m[3]!, 'base64') : Buffer.from(decodeURIComponent(m[3]!), 'utf8');
       return { buffer, mime: cleanMime(m[1]) };
     }
-    const res = await (this.options.fetch ?? fetch)(url, { signal: AbortSignal.timeout(60_000) });
+    const res = await (this.options.fetch ?? fetch)(url, {
+      signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(60_000)]),
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     if (buffer.length > MAX_DOWNLOAD_BYTES) throw new Error('Media too large');

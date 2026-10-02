@@ -27,13 +27,25 @@ const pushFetch = (async (url: string, init: RequestInit) => {
   return new Response(null, { status: pushStatus });
 }) as unknown as typeof fetch;
 
+/** Media servers stay offline in tests; answers come late, like a real network. */
+const mediaFetch = (async (_url: string, init?: RequestInit) => {
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, 200);
+    init?.signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(init.signal!.reason);
+    });
+  });
+  return new Response('not found', { status: 404 });
+}) as unknown as typeof fetch;
+
 async function start(env: Record<string, string> = {}, dir?: string) {
   dataDir = dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'portal-test-'));
   client = new FakeVoipMs();
   pushed = [];
   pushStatus = 201;
   const config = loadConfig({ APP_PASSWORD: 'hunter2', DATA_DIR: dataDir, WEB_DIR: path.join(dataDir, 'none'), ...env });
-  ({ app, services } = await buildApp(config, { clientFactory: () => client, logger: false, pushFetch }));
+  ({ app, services } = await buildApp(config, { clientFactory: () => client, logger: false, pushFetch, mediaFetch }));
 }
 
 async function login() {

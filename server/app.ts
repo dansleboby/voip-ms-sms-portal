@@ -241,6 +241,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook('onClose', async () => {
     sync.stop();
     events.close();
+    await media.stop();
     db.close();
   });
 
