@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { FileText, Loader2, Paperclip, SendHorizontal, X } from 'lucide-react';
+import { FileText, Loader2, Paperclip, SendHorizontal, Smile, X } from 'lucide-react';
 import { t } from '../i18n';
 import { AttachmentTooLarge, prepareAttachment } from '../lib/image';
 import { prefs } from '../lib/prefs';
 import { sendMessage, toast, toastError } from '../store';
+import { EmojiPicker } from './EmojiPicker';
 import { checkOutgoing, MAX_ATTACHMENTS, SMS_MAX_BYTES } from '../../../shared/message';
 import type { ConversationDto } from '../../../shared/types';
 
@@ -38,14 +39,19 @@ export function Composer({
   onSent?: (conversation: ConversationDto) => void;
 }) {
   const draftKey = did && to ? (`draft:${did}:${to}` as const) : null;
-  const [body, setBody] = useState(() => (draftKey ? prefs.get(draftKey) ?? '' : ''));
+  const [body, setBody] = useState(() => {
+    const draft = draftKey ? prefs.get(draftKey) : null;
+    return draft?.trim() ? draft : '';
+  });
   const [items, setItems] = useState<Pending[]>([]);
   const [sending, setSending] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (draftKey) prefs.set(draftKey, body || null);
+    // A draft made only of blank lines is not worth restoring (and would look like an empty box).
+    if (draftKey) prefs.set(draftKey, body.trim() ? body : null);
   }, [draftKey, body]);
 
   useEffect(() => {
@@ -79,6 +85,21 @@ export function Composer({
         toast(err instanceof AttachmentTooLarge ? t('error.attachment_too_large') : t('error.unsupported_attachment'), 'error');
       }
     }
+  };
+
+  /** Inserts at the caret (or replaces the selection), like typing it. */
+  const insertEmoji = (emoji: string) => {
+    const el = textarea.current;
+    const value = el?.value ?? body;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    setBody(value.slice(0, start) + emoji + value.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      // On touch screens, focusing would raise the keyboard over the panel.
+      if (!coarsePointer) el.focus();
+      el.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
   };
 
   const remove = (id: number) => {
@@ -121,6 +142,7 @@ export function Composer({
   return (
     <div className="composer">
       <div className="composer-inner">
+        {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
         <div className="composer-row">
           <div
             className="composer-box"
@@ -157,6 +179,17 @@ export function Composer({
               >
                 <Paperclip size={20} />
               </button>
+              <button
+                className="icon-btn"
+                data-emoji-toggle
+                aria-label={t('composer.emoji')}
+                title={t('composer.emoji')}
+                aria-expanded={emojiOpen}
+                disabled={disabled}
+                onClick={() => setEmojiOpen((open) => !open)}
+              >
+                <Smile size={20} />
+              </button>
               <input
                 ref={fileInput}
                 type="file"
@@ -186,7 +219,7 @@ export function Composer({
                 }}
               />
             </div>
-            {(showCounter || blocked) && (
+            {(showCounter || (blocked && check.problem !== 'empty')) && (
               <div className="composer-meta" title={t('composer.counterHint')}>
                 {check.kind === 'mms' && <span className="kind-chip">{t('composer.mms')}</span>}
                 {check.problem === 'too_long' ? (

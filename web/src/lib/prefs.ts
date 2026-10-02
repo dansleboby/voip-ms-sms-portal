@@ -1,6 +1,6 @@
 /** Per-browser preferences in localStorage; storage may be unavailable (private mode), so every access is guarded. */
 
-type PrefKey = 'lang' | 'theme' | 'did' | 'notify' | 'sound' | `draft:${string}`;
+type PrefKey = 'lang' | 'theme' | 'did' | 'notify' | 'sound' | 'emoji:recent' | `draft:${string}`;
 
 const PREFIX = 'sms-portal:';
 

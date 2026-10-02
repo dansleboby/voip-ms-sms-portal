@@ -103,7 +103,11 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, suggestions.length - 1));
               if (e.key === 'ArrowUp') setActive((a) => Math.max(a - 1, 0));
-              if (e.key === 'Enter' && suggestions[active]) setRecipient(suggestions[active]!);
+              if (e.key === 'Enter' && suggestions[active]) {
+                // Otherwise the same Enter lands in the message box that takes focus right after.
+                e.preventDefault();
+                setRecipient(suggestions[active]!);
+              }
             }}
           />
         )}
@@ -114,7 +118,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
             <select value={from ?? ''} onChange={(e) => setFrom(e.target.value)} aria-label={t('new.from')}>
               {sendable.map((d) => (
                 <option key={d.did} value={d.did}>
-                  {t('new.from')} : {didName(d, d.did)}
+                  {t('new.fromDid', { name: didName(d, d.did) })}
                   {d.label ? ` · ${formatPhone(d.did)}` : ''}
                 </option>
               ))}

@@ -103,7 +103,7 @@ function Rail({ route, dids }: { route: Route; dids: DidDto[] }) {
             <span className="rail-label">{d.label || formatPhone(d.did).slice(0, 5)}</span>
           </button>
         ))}
-      <div className="rail-divider" />
+      <div className="rail-spacer" />
       <button className="rail-item" aria-current={route.name === 'contacts'} onClick={() => navigate({ name: 'contacts' })}>
         <span className="rail-icon">
           <BookUser size={22} />
