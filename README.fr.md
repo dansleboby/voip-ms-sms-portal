@@ -26,7 +26,7 @@ cp .env.example .env        # puis définissez APP_PASSWORD
 docker compose up -d --build
 ```
 
-Ouvrez <http://localhost:8080>, connectez-vous avec `APP_PASSWORD` et suivez l'assistant. Les données (base SQLite et médias) sont dans `./data`.
+Ouvrez <http://localhost:8080>, connectez-vous avec `APP_PASSWORD` et suivez l'assistant. Les données (base SQLite et médias) sont dans `./data` ; le conteneur rend ce dossier accessible en écriture à l'utilisateur de l'application au démarrage (voir `PUID`/`PGID`).
 
 Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des numéros et des conversations fictifs, avec une réponse automatique, sans envoyer de vrais textos.
 
@@ -44,6 +44,7 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
 | `DEMO_MODE` | `false` | Données fictives au lieu d'un vrai compte. |
+| `PUID` / `PGID` | `1000` | Docker seulement : utilisateur/groupe propriétaire de `./data` qui exécute l'application (le conteneur démarre en root uniquement pour corriger le propriétaire du dossier, puis abandonne ces droits). |
 
 ## Préparer votre compte VoIP.ms
 

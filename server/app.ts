@@ -7,7 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
 import { Auth, SESSION_COOKIE } from './auth.js';
-import type { Config } from './config.js';
+import { ConfigError, type Config } from './config.js';
 import { openDatabase, Repo } from './db.js';
 import { EventHub } from './events.js';
 import type { Logger } from './logger.js';
@@ -54,7 +54,16 @@ export interface BuildOptions {
 }
 
 export async function buildApp(config: Config, options: BuildOptions = {}): Promise<{ app: FastifyInstance; services: Services }> {
-  fs.mkdirSync(config.dataDir, { recursive: true });
+  try {
+    fs.mkdirSync(config.dataDir, { recursive: true });
+    fs.accessSync(config.dataDir, fs.constants.W_OK);
+  } catch {
+    const uid = process.getuid?.() ?? '?';
+    throw new ConfigError(
+      `Cannot write to the data folder ${config.dataDir} (running as uid ${uid}). ` +
+        `Give it to this user (chown -R ${uid} <folder> on the host) or, with Docker, start the container as root (the default).`,
+    );
+  }
 
   const app = Fastify({
     logger: options.logger === false ? false : { level: config.logLevel },

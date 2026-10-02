@@ -26,7 +26,7 @@ cp .env.example .env        # then set APP_PASSWORD
 docker compose up -d --build
 ```
 
-Open <http://localhost:8080>, sign in with `APP_PASSWORD` and follow the wizard. Data (SQLite database and media) lives in `./data`.
+Open <http://localhost:8080>, sign in with `APP_PASSWORD` and follow the wizard. Data (SQLite database and media) lives in `./data`; the container makes it writable for the app user on startup (see `PUID`/`PGID`).
 
 Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and conversations, an auto-reply, and no real texts sent.
 
@@ -44,6 +44,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
+| `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |
 
 ## Preparing your VoIP.ms account
 

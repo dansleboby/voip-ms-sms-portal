@@ -13,7 +13,17 @@ async function main(): Promise<void> {
     throw err;
   }
 
-  const { app, services } = await buildApp(config);
+  let built;
+  try {
+    built = await buildApp(config);
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error(`Startup error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const { app, services } = built;
   await app.listen({ port: config.port, host: config.host });
   if (config.demo) app.log.warn('DEMO_MODE is on: using sample data, no real texts are sent.');
   services.sync.start();
