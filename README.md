@@ -4,18 +4,80 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 
 *[Version française](README.fr.md)*
 
-![Conversation view](docs/screenshots/thread.png)
+![Conversations from two numbers, with a picture received by MMS](docs/screenshots/en/hero.png)
 
 - **All your numbers in one place.** A side rail (filter chips on mobile) switches between "all numbers" and each DID. Give every number a name and a color to recognize it at a glance; each conversation shows which of your numbers it belongs to and replies always leave from that number.
 - **Incoming texts without exposing anything to the Internet.** The server polls VoIP.ms: every 10 s while the app is open in a browser, every 60 s otherwise. Messages received while the server was down are fetched when it comes back.
 - **SMS or MMS, automatically.** VoIP.ms counts its 160-character SMS limit in *bytes* (an accented letter counts for 2, an emoji for 4). The message box shows the count and switches to MMS when needed, or when you attach a file.
 - **Attachments.** Send pictures, videos, audio clips and vCards (up to 3 per message); large photos are resized in the browser to fit VoIP.ms's 1.2 MB limit. Received media is downloaded and kept locally.
 - **Setup wizard.** It walks you through enabling the API, shows the exact IP address to whitelist, tests the connection, lists your numbers and imports your history.
-- **Contacts** with vCard import (Google Contacts, iCloud, Android…), search, browser notifications, light/dark themes, French and English, installable as an app on phones.
+- **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search, browser notifications, light/dark themes, French and English, installable as an app on phones.
 
-| Mobile | Dark theme | Setup |
-| --- | --- | --- |
-| ![Mobile](docs/screenshots/mobile.png) | ![Dark](docs/screenshots/dark.png) | ![Setup](docs/screenshots/setup.png) |
+## A quick tour
+
+*All screenshots come from the demo mode (`DEMO_MODE=true`): the numbers, names and messages are made up.*
+
+### One inbox, several numbers
+
+The rail on the left lists your VoIP.ms numbers. "All" mixes every conversation, with a colored chip telling which number each one belongs to; picking a number shows only its conversations. Contacts and Settings sit at the bottom.
+
+| All numbers | Only the "Work" number |
+| --- | --- |
+| ![Conversation list for all numbers](docs/screenshots/en/numbers.png) | ![Conversation list filtered on one number](docs/screenshots/en/filter.png) |
+
+### SMS or MMS: the message box decides
+
+As long as the text fits in 160 bytes, it leaves as an SMS and the counter shows how much room is left:
+
+![Message box with the SMS byte counter](docs/screenshots/en/composer-sms.png)
+
+A longer text, or a file, turns it into an MMS (up to 2048 bytes). The chip says so before you hit send; there is no splitting into several SMS.
+
+![Message box switched to MMS with an attached photo](docs/screenshots/en/composer-mms.png)
+
+### Emoji
+
+The smiley button opens a picker above the message box, with your recent emoji first. It stays open so you can add several in a row, and inserts them where the cursor is.
+
+![Emoji picker](docs/screenshots/en/emoji.png)
+
+### Starting a conversation
+
+Type a name or a number: contacts are suggested as you type. With several numbers, choose which one the text leaves from. If a conversation already exists with that person on that number, you land in it.
+
+![New conversation with contact suggestions](docs/screenshots/en/new.png)
+
+### Setup wizard
+
+On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Numbers where SMS is not enabled yet are flagged, with where to enable it.
+
+| Allowing the IP address | Choosing your numbers |
+| --- | --- |
+| ![Wizard step showing the IP address to allow](docs/screenshots/en/setup-ip.png) | ![Wizard step listing the account's numbers](docs/screenshots/en/setup-numbers.png) |
+
+### Contacts
+
+Contacts are stored on the server, so every browser sees the same names. Add them by hand or import a `.vcf` file exported from Google Contacts, iCloud or your phone.
+
+| Contact list | Editing a contact |
+| --- | --- |
+| ![Contact list](docs/screenshots/en/contacts.png) | ![Contact editing dialog](docs/screenshots/en/contact-dialog.png) |
+
+### Settings
+
+Rename or recolor numbers, turn off the ones you do not use, sync now or import older history, test the VoIP.ms connection, and choose notifications, theme and language.
+
+![Settings page](docs/screenshots/en/settings.png)
+
+### On a phone, and in the dark
+
+The layout adapts to small screens (numbers become filter chips) and can be installed on the home screen. The dark theme follows the system or can be forced.
+
+| Conversations | A conversation |
+| --- | --- |
+| ![Conversation list on a phone](docs/screenshots/en/mobile-list.png) | ![Conversation on a phone](docs/screenshots/en/mobile-thread.png) |
+
+![Dark theme](docs/screenshots/en/dark.png)
 
 ## Quick start (Docker)
 

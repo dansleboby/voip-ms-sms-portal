@@ -4,18 +4,80 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 
 *[English version](README.md)*
 
-![Vue d'une conversation](docs/screenshots/thread.png)
+![Conversations sur deux numéros, avec une photo reçue par MMS](docs/screenshots/fr/hero.png)
 
 - **Tous vos numéros au même endroit.** Un menu latéral (des pastilles sur mobile) bascule entre « tous les numéros » et chaque DID. Donnez un nom et une couleur à chaque numéro ; chaque conversation indique à quel numéro elle appartient et les réponses partent toujours de ce numéro.
 - **Réception sans rien exposer sur Internet.** Le serveur interroge VoIP.ms : toutes les 10 s quand l'application est ouverte dans un navigateur, toutes les 60 s sinon. Les messages reçus pendant un arrêt du serveur sont récupérés au redémarrage.
 - **SMS ou MMS, automatiquement.** VoIP.ms compte sa limite de 160 caractères en *octets* (une lettre accentuée compte pour 2, un émoji pour 4). La zone de saisie affiche le compte et passe en MMS au besoin, ou dès qu'un fichier est joint.
 - **Pièces jointes.** Photos, vidéos, sons et vCard (3 par message) ; les grosses photos sont redimensionnées dans le navigateur pour respecter la limite de 1,2 Mo de VoIP.ms. Les médias reçus sont téléchargés et conservés localement.
 - **Assistant de configuration.** Il explique comment activer l'API, affiche l'adresse IP exacte à autoriser, teste la connexion, liste vos numéros et importe l'historique.
-- **Contacts** avec import vCard (Google Contacts, iCloud, Android…), recherche, notifications du navigateur, thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
+- **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche, notifications du navigateur, thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
 
-| Mobile | Thème sombre | Configuration |
-| --- | --- | --- |
-| ![Mobile](docs/screenshots/mobile.png) | ![Sombre](docs/screenshots/dark.png) | ![Configuration](docs/screenshots/setup.png) |
+## Visite guidée
+
+*Toutes les captures viennent du mode démo (`DEMO_MODE=true`) : les numéros, les noms et les messages sont fictifs.*
+
+### Une boîte de réception, plusieurs numéros
+
+Le menu de gauche liste vos numéros VoIP.ms. « Tous » regroupe toutes les conversations, avec une pastille de couleur qui indique le numéro de chacune ; choisir un numéro n'affiche que ses conversations. Contacts et Réglages sont en bas.
+
+| Tous les numéros | Seulement le numéro « Bureau » |
+| --- | --- |
+| ![Liste des conversations de tous les numéros](docs/screenshots/fr/numbers.png) | ![Liste des conversations filtrée sur un numéro](docs/screenshots/fr/filter.png) |
+
+### SMS ou MMS : la zone de saisie décide
+
+Tant que le texte tient dans 160 octets, il part en SMS et le compteur indique la place restante :
+
+![Zone de saisie avec le compteur d'octets du SMS](docs/screenshots/fr/composer-sms.png)
+
+Un texte plus long, ou un fichier, le fait passer en MMS (jusqu'à 2048 octets). La pastille l'annonce avant l'envoi ; le message n'est jamais découpé en plusieurs SMS.
+
+![Zone de saisie passée en MMS avec une photo jointe](docs/screenshots/fr/composer-mms.png)
+
+### Émojis
+
+Le bouton en forme de bonhomme sourire ouvre un sélecteur au-dessus de la zone de saisie, avec vos émojis récents en premier. Il reste ouvert pour en ajouter plusieurs d'affilée et les insère à l'endroit du curseur.
+
+![Sélecteur d'émojis](docs/screenshots/fr/emoji.png)
+
+### Démarrer une discussion
+
+Tapez un nom ou un numéro : les contacts sont suggérés au fil de la frappe. Avec plusieurs numéros, choisissez celui d'où part le texto. Si une conversation existe déjà avec cette personne sur ce numéro, vous y êtes amené.
+
+![Nouvelle conversation avec suggestions de contacts](docs/screenshots/fr/new.png)
+
+### Assistant de configuration
+
+Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Les numéros dont le SMS n'est pas encore activé sont signalés, avec l'endroit où l'activer.
+
+| Autoriser l'adresse IP | Choisir ses numéros |
+| --- | --- |
+| ![Étape de l'assistant affichant l'adresse IP à autoriser](docs/screenshots/fr/setup-ip.png) | ![Étape de l'assistant listant les numéros du compte](docs/screenshots/fr/setup-numbers.png) |
+
+### Contacts
+
+Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone.
+
+| Liste des contacts | Modifier un contact |
+| --- | --- |
+| ![Liste des contacts](docs/screenshots/fr/contacts.png) | ![Fenêtre de modification d'un contact](docs/screenshots/fr/contact-dialog.png) |
+
+### Réglages
+
+Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, synchronisez maintenant ou importez l'historique plus ancien, testez la connexion à VoIP.ms et choisissez les notifications, le thème et la langue.
+
+![Page des réglages](docs/screenshots/fr/settings.png)
+
+### Sur téléphone, et dans le noir
+
+L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles de filtre) et s'installe sur l'écran d'accueil. Le thème sombre suit celui du système ou peut être imposé.
+
+| Conversations | Une conversation |
+| --- | --- |
+| ![Liste des conversations sur téléphone](docs/screenshots/fr/mobile-list.png) | ![Conversation sur téléphone](docs/screenshots/fr/mobile-thread.png) |
+
+![Thème sombre](docs/screenshots/fr/dark.png)
 
 ## Démarrage rapide (Docker)
 
