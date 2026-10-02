@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { displayName, didName } from './format';
 import { prefs } from './prefs';
+import { pushEnabledHere, serviceWorker } from './push';
 import { navigate } from './router';
 import type { ConversationDto, DidDto, MessageDto } from '../../../shared/types';
 
@@ -53,20 +54,23 @@ function chime(): void {
 }
 
 export function notifyIncoming(message: MessageDto, conversation: ConversationDto, dids: DidDto[]): void {
+  // With push on, the server notifies this device itself whenever the app is not on screen.
+  if (document.visibilityState !== 'visible' && pushEnabledHere()) return;
   if (soundEnabled()) chime();
   if (!notificationsEnabled()) return;
   const did = dids.find((d) => d.did === conversation.did);
   const title = displayName(conversation.phone, conversation.contact);
   const text = message.body || (message.attachments.length ? `📎 ${t('list.photo')}` : '');
   const body = dids.filter((d) => d.visible).length > 1 ? `${text}\n— ${didName(did, conversation.did)}` : text;
-  try {
-    const n = new Notification(title, { body, tag: `conversation-${conversation.id}`, icon: '/icon.svg' });
+  const tag = `conversation-${conversation.id}`;
+  void serviceWorker().then((reg) => {
+    // Mobile browsers only allow notifications from a service worker, which also handles the click.
+    if (reg) return reg.showNotification(title, { body, tag, icon: '/icon-192.png', badge: '/badge-96.png', data: { url: `/c/${conversation.id}` } });
+    const n = new Notification(title, { body, tag, icon: '/icon-192.png' });
     n.onclick = () => {
       window.focus();
       navigate({ name: 'conversation', id: conversation.id });
       n.close();
     };
-  } catch {
-    // Some mobile browsers only allow notifications from a service worker.
-  }
+  }).catch(() => undefined);
 }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp, type Services } from './app.js';
 import { loadConfig } from './config.js';
 import { FakeVoipMs } from './test/fake-client.js';
+import { browserKeys, decryptPayload } from './test/webpush-helpers.js';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -17,12 +18,22 @@ let services: Services;
 let client: FakeVoipMs;
 let dataDir: string;
 let cookie = '';
+/** Requests made to push services, and the status they answer. */
+let pushed: { url: string; headers: Record<string, string>; body: Buffer }[] = [];
+let pushStatus = 201;
 
-async function start(env: Record<string, string> = {}) {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-test-'));
+const pushFetch = (async (url: string, init: RequestInit) => {
+  pushed.push({ url, headers: init.headers as Record<string, string>, body: init.body as Buffer });
+  return new Response(null, { status: pushStatus });
+}) as unknown as typeof fetch;
+
+async function start(env: Record<string, string> = {}, dir?: string) {
+  dataDir = dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'portal-test-'));
   client = new FakeVoipMs();
+  pushed = [];
+  pushStatus = 201;
   const config = loadConfig({ APP_PASSWORD: 'hunter2', DATA_DIR: dataDir, WEB_DIR: path.join(dataDir, 'none'), ...env });
-  ({ app, services } = await buildApp(config, { clientFactory: () => client, logger: false }));
+  ({ app, services } = await buildApp(config, { clientFactory: () => client, logger: false, pushFetch }));
 }
 
 async function login() {
@@ -107,6 +118,12 @@ describe('authentication', () => {
 
   it('refuses to start without APP_PASSWORD', () => {
     expect(() => loadConfig({})).toThrow(/APP_PASSWORD/);
+  });
+
+  it('checks VAPID_SUBJECT', () => {
+    expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: '' }).vapidSubject).toMatch(/^https:\/\//);
+    expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: 'mailto:me@example.com' }).vapidSubject).toBe('mailto:me@example.com');
+    expect(() => loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: 'me@example.com' })).toThrow(/VAPID_SUBJECT/);
   });
 });
 
@@ -292,6 +309,70 @@ describe('messaging', () => {
     const found = (await app.inject({ url: '/api/conversations?q=dentiste', headers: { cookie } })).json();
     expect(found.map((c: { id: number }) => c.id)).toEqual([conv.id]);
   });
+
+  it('searches without regard to accents or case, in messages and contact names', async () => {
+    await services.sync.syncRecent();
+    client.push({ direction: 'in', body: 'Ça coûte 40 $ pour la vidange, à tantôt', contact: '5145551234' });
+    client.push({ direction: 'in', body: 'Bonjour', contact: '4505550111' });
+    services.repo.setSetting('sync.lastSuccessAt', String(Date.now()));
+    await services.sync.syncRecent();
+    services.repo.saveContact({ name: 'Garage Bélanger', phones: ['4505550111'] });
+    const search = async (q: string) =>
+      (await app.inject({ url: `/api/conversations?q=${encodeURIComponent(q)}`, headers: { cookie } }))
+        .json()
+        .map((c: { phone: string }) => c.phone);
+    expect(await search('cout')).toEqual(['5145551234']);
+    expect(await search('A TANTOT')).toEqual(['5145551234']);
+    expect(await search('Coûte')).toEqual(['5145551234']);
+    expect(await search('belanger')).toEqual(['4505550111']);
+    expect(await search('BÉLANGER')).toEqual(['4505550111']);
+    expect(await search('40 %')).toEqual([]);
+  });
+
+  it('archives conversations until a new message arrives', async () => {
+    await services.sync.syncRecent();
+    client.push({ direction: 'in', body: 'Premier', contact: '5145551234' });
+    services.repo.setSetting('sync.lastSuccessAt', String(Date.now() - 60_000));
+    await services.sync.syncRecent();
+    const conv = services.repo.listConversations()[0]!;
+    expect(services.repo.listDids().find((d) => d.did === conv.did)!.unreadCount).toBe(1);
+
+    const res = await app.inject({ method: 'PATCH', url: `/api/conversations/${conv.id}`, headers: { cookie }, payload: { archived: true } });
+    expect(res.json()).toMatchObject({ id: conv.id, archived: true });
+    const list = async (query = '') => (await app.inject({ url: `/api/conversations${query}`, headers: { cookie } })).json();
+    expect(await list()).toEqual([]);
+    expect((await list('?archived=1')).map((c: { id: number }) => c.id)).toEqual([conv.id]);
+    // Search looks into archived conversations too, unless told otherwise.
+    expect(await list('?q=premier')).toHaveLength(1);
+    expect(await list('?q=premier&archived=0')).toHaveLength(0);
+    // Archived conversations do not count in the badges.
+    expect(services.repo.listDids().find((d) => d.did === conv.did)!.unreadCount).toBe(0);
+
+    client.push({ direction: 'in', body: 'Deuxième', contact: '5145551234' });
+    await services.sync.syncRecent();
+    expect(services.repo.getConversation(conv.id)!.archived).toBe(false);
+
+    await app.inject({ method: 'PATCH', url: `/api/conversations/${conv.id}`, headers: { cookie }, payload: { archived: true } });
+    await send({ did: conv.did, to: conv.phone, body: 'Réponse' });
+    expect(services.repo.getConversation(conv.id)!.archived).toBe(false);
+
+    const missing = await app.inject({ method: 'PATCH', url: '/api/conversations/999', headers: { cookie }, payload: { archived: true } });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it('keeps conversations archived when older history is imported', async () => {
+    await services.sync.syncRecent();
+    client.push({ direction: 'in', body: 'Récent', contact: '5145551234' });
+    services.repo.setSetting('sync.lastSuccessAt', String(Date.now() - 60_000));
+    await services.sync.syncRecent();
+    const conv = services.repo.listConversations()[0]!;
+    services.repo.setArchived(conv.id, true);
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    client.push({ direction: 'in', body: 'Vieux', contact: '5145551234', date: old.toISOString().slice(0, 19).replace('T', ' ') });
+    await services.sync.importHistory(60);
+    expect(services.repo.listMessages(conv.id)).toHaveLength(2);
+    expect(services.repo.getConversation(conv.id)!.archived).toBe(true);
+  });
 });
 
 describe('contacts', () => {
@@ -345,5 +426,139 @@ describe('contacts', () => {
       expect.objectContaining({ name: 'Garage Bélanger', phones: ['4505550111'] }),
       expect.objectContaining({ name: 'Marie Tremblay', phones: ['4385550142'] }),
     ]);
+  });
+});
+
+describe('push notifications', () => {
+  const ua = browserKeys();
+  const endpoint = 'https://push.example.net/send/abc123';
+  const subscription = { endpoint, expirationTime: null, keys: { p256dh: ua.p256dh, auth: ua.auth } };
+
+  beforeEach(async () => {
+    await start({ VOIPMS_API_USERNAME: 'me@example.com', VOIPMS_API_PASSWORD: 'x' });
+    await login();
+    await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+    await app.inject({ method: 'POST', url: '/api/setup/complete', headers: { cookie } });
+    await services.sync.syncRecent();
+    services.repo.setSetting('sync.lastSuccessAt', String(Date.now() - 60_000));
+  });
+
+  const subscribe = (body: object) => app.inject({ method: 'POST', url: '/api/push/subscriptions', headers: { cookie }, payload: body });
+  const received = () => pushed.map((p) => JSON.parse(decryptPayload(p.body, ua.private, ua.authSecret)));
+
+  it('needs a session and validates subscriptions', async () => {
+    expect((await app.inject({ url: '/api/push/key' })).statusCode).toBe(401);
+    const key = (await app.inject({ url: '/api/push/key', headers: { cookie } })).json().publicKey;
+    expect(Buffer.from(key, 'base64url')).toHaveLength(65);
+    expect((await subscribe({ ...subscription, endpoint: 'http://push.example.net/x' })).statusCode).toBe(400);
+    expect((await subscribe({ ...subscription, keys: { ...subscription.keys, p256dh: 'AAAA' } })).statusCode).toBe(400);
+    expect((await subscribe({ ...subscription, keys: { ...subscription.keys, auth: 'AAAA' } })).statusCode).toBe(400);
+    expect((await subscribe({ ...subscription, device: 'device-0001', lang: 'en' })).statusCode).toBe(200);
+    expect(services.repo.listPushSubscriptions()).toMatchObject([{ endpoint, device: 'device-0001', lang: 'en' }]);
+  });
+
+  it('sends one encrypted notification per conversation for new incoming texts', async () => {
+    await subscribe({ ...subscription, device: 'device-0001', lang: 'fr' });
+    services.repo.saveContact({ name: 'Marie Tremblay', phones: ['4383980707'] });
+    client.push({ direction: 'in', body: 'Premier', contact: '4383980707' });
+    client.push({ direction: 'in', body: 'Tu viens au chalet?', contact: '4383980707' });
+    client.push({ direction: 'in', body: '', contact: '5145551234', media: ['https://voip.ms/media/x/a.jpg'] });
+    client.push({ direction: 'out', body: 'Envoyé du cell', contact: '5145551234' });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 2);
+    expect(pushed).toHaveLength(2);
+    expect(pushed[0]!.url).toBe(endpoint);
+    expect(pushed[0]!.headers).toMatchObject({ 'Content-Encoding': 'aes128gcm', Urgency: 'high' });
+    expect(pushed[0]!.headers.Authorization).toMatch(/^vapid t=.+, k=/);
+    const [marie, other] = received();
+    const conversation = services.repo.findConversation('4506575294', '4383980707');
+    expect(marie).toMatchObject({ title: 'Marie Tremblay (2)', tag: `conversation-${conversation}`, url: `/c/${conversation}` });
+    // Two numbers are shown, so the notification says which one received the text.
+    expect(marie.body).toBe('Tu viens au chalet?\n— (450) 657-5294');
+    expect(other).toMatchObject({ title: '(514) 555-1234', body: '📎 Pièce jointe\n— (450) 657-5294' });
+
+    // History imports and outgoing texts never notify.
+    pushed = [];
+    await services.sync.importHistory(30);
+    expect(pushed).toHaveLength(0);
+  });
+
+  it('shows the latest text of a burst, whatever order VoIP.ms lists them in', async () => {
+    await subscribe(subscription);
+    const now = Date.now();
+    const at = (ms: number) => new Date(ms).toLocaleString('sv-SE', { timeZone: 'America/New_York' });
+    client.push({ direction: 'in', body: 'Le plus récent', contact: '4383980707', date: at(now - 1000) });
+    client.push({ direction: 'in', body: 'Le plus ancien', contact: '4383980707', date: at(now - 20_000) });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 1);
+    expect(received()[0]).toMatchObject({ body: expect.stringMatching(/^Le plus récent/) });
+  });
+
+  it('skips the device where the app is on screen', async () => {
+    await subscribe({ ...subscription, device: 'device-0001' });
+    const other = browserKeys();
+    await subscribe({ endpoint: 'https://push.example.net/send/other', keys: { p256dh: other.p256dh, auth: other.auth }, device: 'device-0002' });
+    const tab = { device: 'device-0001', tab: 'tab-00000001', visible: true };
+    const fakeResponse = { writeHead() {}, write() {}, on() {}, end() {} } as unknown as import('node:http').ServerResponse;
+    services.events.attach(fakeResponse, tab);
+
+    client.push({ direction: 'in', body: 'Salut', contact: '4383980707' });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 1);
+    expect(pushed.map((p) => p.url)).toEqual(['https://push.example.net/send/other']);
+
+    // Once the tab is hidden, the device gets notifications again.
+    const res = await app.inject({ method: 'POST', url: '/api/presence', headers: { cookie }, payload: { tab: tab.tab, visible: false } });
+    expect(res.json()).toEqual({ ok: true });
+    pushed = [];
+    client.push({ direction: 'in', body: 'Encore', contact: '4383980707' });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 2);
+    expect(pushed.map((p) => p.url).sort()).toEqual([endpoint, 'https://push.example.net/send/other']);
+  });
+
+  it('forgets subscriptions the push service says are gone', async () => {
+    await subscribe(subscription);
+    pushStatus = 410;
+    client.push({ direction: 'in', body: 'Allô?', contact: '4383980707' });
+    await services.sync.syncRecent();
+    await waitFor(() => services.repo.listPushSubscriptions().length === 0);
+    expect(services.repo.listPushSubscriptions()).toEqual([]);
+  });
+
+  it('sends a test notification and reports refusals', async () => {
+    await subscribe({ ...subscription, lang: 'en' });
+    const ok = await app.inject({ method: 'POST', url: '/api/push/test', headers: { cookie }, payload: { endpoint } });
+    expect(ok.json()).toEqual({ ok: true });
+    expect(received()[0]).toMatchObject({ title: 'Notifications are on', url: '/settings' });
+    pushStatus = 403;
+    const refused = await app.inject({ method: 'POST', url: '/api/push/test', headers: { cookie }, payload: { endpoint } });
+    expect(refused.statusCode).toBe(502);
+    expect(refused.json()).toEqual({ error: 'push_failed', status: 403 });
+    const unknown = await app.inject({ method: 'POST', url: '/api/push/test', headers: { cookie }, payload: { endpoint: 'https://x.example/1' } });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it('moves a renewed subscription over and unsubscribes', async () => {
+    await subscribe({ ...subscription, device: 'device-0001', lang: 'en' });
+    const renewed = browserKeys();
+    await subscribe({ endpoint: 'https://push.example.net/send/new', keys: { p256dh: renewed.p256dh, auth: renewed.auth }, replaces: endpoint });
+    expect(services.repo.listPushSubscriptions()).toMatchObject([
+      { endpoint: 'https://push.example.net/send/new', device: 'device-0001', lang: 'en' },
+    ]);
+    await app.inject({ method: 'POST', url: '/api/push/unsubscribe', headers: { cookie }, payload: { endpoint: 'https://push.example.net/send/new' } });
+    expect(services.repo.listPushSubscriptions()).toEqual([]);
+  });
+
+  it('drops every subscription when APP_PASSWORD changes, and keeps its keys', async () => {
+    await subscribe(subscription);
+    const key = services.push.publicKey;
+    await app.close();
+    await start({ VOIPMS_API_USERNAME: 'me@example.com', VOIPMS_API_PASSWORD: 'x' }, dataDir);
+    expect(services.repo.listPushSubscriptions()).toHaveLength(1);
+    expect(services.push.publicKey).toBe(key);
+    await app.close();
+    await start({ APP_PASSWORD: 'changed', VOIPMS_API_USERNAME: 'me@example.com', VOIPMS_API_PASSWORD: 'x' }, dataDir);
+    expect(services.repo.listPushSubscriptions()).toEqual([]);
   });
 });

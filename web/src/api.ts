@@ -72,9 +72,16 @@ export const api = {
   updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position'>>) =>
     request<DidDto>('PATCH', `/api/dids/${did}`, patch),
 
-  conversations: (q?: string) =>
-    request<ConversationDto[]>('GET', `/api/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  conversations: (params: { q?: string; archived?: boolean } = {}) => {
+    const query = new URLSearchParams();
+    if (params.q) query.set('q', params.q);
+    if (params.archived !== undefined) query.set('archived', params.archived ? '1' : '0');
+    const qs = query.toString();
+    return request<ConversationDto[]>('GET', `/api/conversations${qs ? `?${qs}` : ''}`);
+  },
   conversation: (id: number) => request<ConversationDto>('GET', `/api/conversations/${id}`),
+  updateConversation: (id: number, patch: { archived: boolean }) =>
+    request<ConversationDto>('PATCH', `/api/conversations/${id}`, patch),
   lookupConversation: (did: string, phone: string) =>
     request<{ conversation: ConversationDto | null }>(
       'GET',
@@ -102,6 +109,20 @@ export const api = {
     request<ContactDto>('PUT', `/api/contacts/${id}`, c),
   deleteContact: (id: number) => request<{ ok: true }>('DELETE', `/api/contacts/${id}`),
   importContacts: (vcard: string) => request<{ imported: number; skipped: number }>('POST', '/api/contacts/import', { vcard }),
+
+  pushKey: () => request<{ publicKey: string }>('GET', '/api/push/key'),
+  savePushSubscription: (subscription: object) => request<{ ok: true }>('POST', '/api/push/subscriptions', subscription),
+  unsubscribePush: (endpoint: string) => request<{ ok: boolean }>('POST', '/api/push/unsubscribe', { endpoint }),
+  testPush: (endpoint: string) => request<{ ok: true }>('POST', '/api/push/test', { endpoint }),
+  presence: (tab: string, visible: boolean) =>
+    fetch('/api/presence', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tab, visible }),
+      // Still delivered when the page is being hidden or frozen.
+      keepalive: true,
+    }).catch(() => undefined),
 
   syncStatus: () => request<SyncStatusDto>('GET', '/api/sync/status'),
   syncNow: () => request<SyncStatusDto>('POST', '/api/sync/now'),

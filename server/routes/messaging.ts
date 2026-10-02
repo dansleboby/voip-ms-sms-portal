@@ -22,9 +22,17 @@ const DidPatch = z.object({
 const ConversationQuery = z.object({
   did: z.string().optional(),
   q: z.string().max(200).optional(),
+  /** "1": archived only, "0": main list only; by default a search looks through both. */
+  archived: z.enum(['0', '1']).optional(),
 });
 
+const ConversationPatch = z.object({ archived: z.boolean() });
+
 const LookupQuery = z.object({ did: z.string(), phone: z.string() });
+
+const ClientId = z.string().regex(/^[\w-]{8,64}$/);
+const TabQuery = z.object({ device: ClientId.optional(), tab: ClientId.optional(), visible: z.enum(['0', '1']).optional() });
+const PresenceBody = z.object({ tab: ClientId, visible: z.boolean() });
 
 const MessagesQuery = z.object({
   before: z.coerce.number().int().positive().optional(),
@@ -51,8 +59,12 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
   // ------------------------------------------------------------ conversations
 
   app.get('/api/conversations', async (req): Promise<ConversationDto[]> => {
-    const { did, q } = ConversationQuery.parse(req.query);
-    return s.repo.listConversations({ did: did || undefined, query: q });
+    const { did, q, archived } = ConversationQuery.parse(req.query);
+    return s.repo.listConversations({
+      did: did || undefined,
+      query: q,
+      archived: archived === undefined ? undefined : archived === '1',
+    });
   });
 
   app.get('/api/conversations/lookup', async (req) => {
@@ -65,6 +77,16 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     const { id } = IdParams.parse(req.params);
     const conversation = s.repo.getConversation(id);
     if (!conversation) return reply.code(404).send({ error: 'not_found' });
+    return conversation;
+  });
+
+  app.patch('/api/conversations/:id', async (req, reply): Promise<ConversationDto | void> => {
+    const { id } = IdParams.parse(req.params);
+    const { archived } = ConversationPatch.parse(req.body);
+    if (!s.repo.setArchived(id, archived)) return reply.code(404).send({ error: 'not_found' });
+    const conversation = s.repo.getConversation(id)!;
+    s.events.broadcast({ type: 'conversation', conversation });
+    s.events.broadcast({ type: 'dids' });
     return conversation;
   });
 
@@ -155,9 +177,19 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     return s.sync.status();
   });
 
+  /** A tab reports being shown or hidden, so push notifications skip the device it is on screen on. */
+  app.post('/api/presence', async (req) => {
+    const { tab, visible } = PresenceBody.parse(req.body);
+    return { ok: s.events.setVisibility(tab, visible) };
+  });
+
   app.get('/api/events', (req, reply) => {
+    const tab = TabQuery.safeParse(req.query);
     reply.hijack();
-    s.events.attach(reply.raw);
+    s.events.attach(
+      reply.raw,
+      tab.success ? { device: tab.data.device, tab: tab.data.tab, visible: tab.data.visible !== '0' } : {},
+    );
     reply.raw.write(`data: ${JSON.stringify({ type: 'sync', status: s.sync.status() })}\n\n`);
     req.raw.on('close', () => reply.raw.end());
   });

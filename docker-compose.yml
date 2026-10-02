@@ -16,6 +16,8 @@ services:
       POLL_INTERVAL_IDLE: ${POLL_INTERVAL_IDLE:-60}
       # Set to true when served over HTTPS behind a reverse proxy.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Optional: contact given to browser push services (mailto: or https: URL).
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Owner of ./data and user running the app (default 1000:1000).
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}

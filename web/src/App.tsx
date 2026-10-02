@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { setUnauthorizedHandler } from './api';
 import { useLang } from './i18n';
+import { refreshPush, serviceWorker } from './lib/push';
 import { navigate, useRoute } from './lib/router';
 import { connectEvents, disconnectEvents, loadAll, loadSession, useStore } from './store';
 import { Login } from './components/Login';
@@ -15,6 +16,8 @@ export function App() {
   const [booted, setBooted] = useState(false);
 
   useEffect(() => {
+    // Displays notifications on mobile browsers and opens conversations from them.
+    void serviceWorker();
     setUnauthorizedHandler(() => void loadSession().catch(() => undefined));
     loadSession()
       .catch(() => undefined)
@@ -26,6 +29,7 @@ export function App() {
     if (!authenticated) return;
     connectEvents();
     void loadAll().catch(() => undefined);
+    void refreshPush().catch(() => undefined);
     return () => disconnectEvents();
   }, [authenticated]);
 

@@ -33,6 +33,8 @@ export interface SyncDeps {
   pollIdleMs: number;
   log: Logger;
   now?: () => number;
+  /** Called once per batch with the new incoming texts (not history), e.g. to send push notifications. */
+  onIncoming?: (messages: { messageId: number; conversationId: number }[]) => void;
 }
 
 /** Serializes work that must not interleave (a poll and the bookkeeping of a send). */
@@ -232,6 +234,7 @@ export class SyncEngine {
   ingest(messages: RemoteMessage[], liveAfter: number): number {
     const { repo, events, timeZone } = this.deps;
     const changed: { messageId: number; conversationId: number }[] = [];
+    const incoming: { messageId: number; conversationId: number }[] = [];
     let quiet = 0;
     let newDid = false;
     let newMedia = false;
@@ -289,8 +292,13 @@ export class SyncEngine {
           newMedia = true;
         });
         repo.touchConversation(conversationId, live && remote.direction === 'in' ? 1 : 0);
-        if (live) changed.push({ messageId, conversationId });
-        else quiet++;
+        if (live) {
+          repo.unarchiveConversation(conversationId);
+          changed.push({ messageId, conversationId });
+          if (remote.direction === 'in') incoming.push({ messageId, conversationId });
+        } else {
+          quiet++;
+        }
       }
     });
 
@@ -302,6 +310,7 @@ export class SyncEngine {
       if (message && conversation) events.broadcast({ type: 'message', message, conversation });
     }
     if (changed.length) events.broadcast({ type: 'dids' });
+    if (incoming.length) this.deps.onIncoming?.(incoming);
     return quiet;
   }
 

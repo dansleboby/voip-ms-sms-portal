@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
 import { errorText, t } from './i18n';
 import { notifyIncoming } from './lib/notify';
+import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
 import type {
   ContactDto,
@@ -24,18 +25,27 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'error' | 'info';
+  action?: { label: string; run: () => void };
 }
 
 export interface State {
   session: SessionDto | null;
   dids: DidDto[];
   contacts: ContactDto[];
+  /** Main list: conversations that are not archived. */
   conversations: ConversationDto[];
   conversationsLoaded: boolean;
+  /** Loaded the first time the archive is opened. */
+  archived: ConversationDto[];
+  archivedLoaded: boolean;
+  /** Every conversation seen so far, archived or not, by id. */
+  known: Record<number, ConversationDto>;
   threads: Record<number, ThreadState>;
   sync: SyncStatusDto | null;
   /** Number selected in the side rail; null shows every number. */
   didFilter: string | null;
+  /** The sidebar lists archived conversations instead of the main list. */
+  archiveView: boolean;
   /** Conversation on screen, to skip notifications and mark it read. */
   activeConversationId: number | null;
   connected: boolean;
@@ -48,9 +58,13 @@ let state: State = {
   contacts: [],
   conversations: [],
   conversationsLoaded: false,
+  archived: [],
+  archivedLoaded: false,
+  known: {},
   threads: {},
   sync: null,
   didFilter: prefs.get('did'),
+  archiveView: false,
   activeConversationId: null,
   connected: true,
   toasts: [],
@@ -81,10 +95,10 @@ export function useStore<T>(selector: (s: State) => T): T {
 // ------------------------------------------------------------------- toasts
 
 let toastId = 0;
-export function toast(text: string, kind: Toast['kind'] = 'info'): void {
+export function toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action']): void {
   const id = ++toastId;
-  setState((s) => ({ toasts: [...s.toasts, { id, text, kind }] }));
-  setTimeout(() => dismissToast(id), kind === 'error' ? 7000 : 4000);
+  setState((s) => ({ toasts: [...s.toasts, { id, text, kind, action }] }));
+  setTimeout(() => dismissToast(id), kind === 'error' || action ? 7000 : 4000);
 }
 
 export function dismissToast(id: number): void {
@@ -115,9 +129,20 @@ export async function loadContacts(): Promise<void> {
   setState({ contacts: await api.contacts() });
 }
 
+function remember(known: Record<number, ConversationDto>, list: ConversationDto[]): Record<number, ConversationDto> {
+  const next = { ...known };
+  for (const c of list) next[c.id] = c;
+  return next;
+}
+
 export async function loadConversations(): Promise<void> {
   const conversations = await api.conversations();
-  setState({ conversations, conversationsLoaded: true });
+  setState((s) => ({ conversations, conversationsLoaded: true, known: remember(s.known, conversations) }));
+}
+
+export async function loadArchived(): Promise<void> {
+  const archived = await api.conversations({ archived: true });
+  setState((s) => ({ archived, archivedLoaded: true, known: remember(s.known, archived) }));
 }
 
 export async function loadAll(): Promise<void> {
@@ -135,7 +160,9 @@ function debounce(fn: () => Promise<void>, ms: number): () => void {
   };
 }
 
-const reloadConversations = debounce(loadConversations, 300);
+const reloadConversations = debounce(async () => {
+  await Promise.all([loadConversations(), state.archivedLoaded ? loadArchived() : undefined]);
+}, 300);
 /** After bulk changes (history import): refresh the open thread, forget the others. */
 const reloadThreads = debounce(async () => {
   const active = state.activeConversationId;
@@ -148,6 +175,11 @@ const reloadContacts = debounce(loadContacts, 300);
 export function setDidFilter(did: string | null): void {
   prefs.set('did', did);
   setState({ didFilter: did });
+}
+
+export function setArchiveView(on: boolean): void {
+  if (state.archiveView !== on) setState({ archiveView: on });
+  if (on && !state.archivedLoaded) loadArchived().catch(toastError);
 }
 
 export function setActiveConversation(id: number | null): void {
@@ -208,14 +240,21 @@ function mergeMessages(existing: MessageDto[], incoming: MessageDto[]): MessageD
   return [...byId.values()].sort((a, b) => a.sentAt - b.sentAt || a.id - b.id);
 }
 
+const byRecent = (a: ConversationDto, b: ConversationDto) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0) || b.id - a.id;
+
+/** Puts a conversation in the main list or the archive, wherever its state says it belongs. */
 function upsertConversation(conversation: ConversationDto): void {
-  const did = state.dids.find((d) => d.did === conversation.did);
-  if (did && !did.visible) return;
   setState((s) => {
-    const others = s.conversations.filter((c) => c.id !== conversation.id);
-    const list = conversation.lastMessage ? [conversation, ...others] : others;
-    list.sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0) || b.id - a.id);
-    return { conversations: list };
+    const known = { ...s.known, [conversation.id]: conversation };
+    const did = s.dids.find((d) => d.did === conversation.did);
+    const shown = !!conversation.lastMessage && !(did && !did.visible);
+    const conversations = s.conversations.filter((c) => c.id !== conversation.id);
+    if (shown && !conversation.archived) conversations.push(conversation);
+    conversations.sort(byRecent);
+    const archived = s.archived.filter((c) => c.id !== conversation.id);
+    if (shown && conversation.archived && s.archivedLoaded) archived.push(conversation);
+    archived.sort(byRecent);
+    return { conversations, archived, known };
   });
 }
 
@@ -227,10 +266,21 @@ function upsertMessage(message: MessageDto): boolean {
 }
 
 export async function markRead(conversationId: number): Promise<void> {
-  const conversation = state.conversations.find((c) => c.id === conversationId);
+  const conversation = state.known[conversationId];
   if (!conversation || conversation.unreadCount === 0) return;
   upsertConversation({ ...conversation, unreadCount: 0 });
   await api.markRead(conversationId).catch(() => undefined);
+}
+
+export async function setArchived(conversationId: number, archived: boolean): Promise<void> {
+  upsertConversation(await api.updateConversation(conversationId, { archived }));
+}
+
+/** Makes a conversation opened by link (not in any loaded list) available to the views. */
+export async function fetchConversation(id: number): Promise<ConversationDto> {
+  const conversation = await api.conversation(id);
+  setState((s) => ({ known: { ...s.known, [id]: conversation } }));
+  return conversation;
 }
 
 // ------------------------------------------------------------------ sending
@@ -293,12 +343,19 @@ function handleEvent(event: ServerEvent): void {
   }
 }
 
+const visible = () => document.visibilityState === 'visible';
+const reportVisibility = () => void api.presence(tabId, visible());
+
 export function connectEvents(): void {
   if (source) return;
-  source = new EventSource('/api/events');
+  const params = new URLSearchParams({ device: deviceId(), tab: tabId, visible: visible() ? '1' : '0' });
+  source = new EventSource(`/api/events?${params}`);
+  document.addEventListener('visibilitychange', reportVisibility);
   source.onopen = () => {
     const wasDisconnected = !state.connected;
     setState({ connected: true });
+    // The URL's visibility may be stale after an automatic reconnection.
+    reportVisibility();
     // Catch up on whatever happened while disconnected.
     if (wasDisconnected) {
       reloadConversations();
@@ -325,11 +382,22 @@ export function connectEvents(): void {
 }
 
 export function disconnectEvents(): void {
+  document.removeEventListener('visibilitychange', reportVisibility);
   source?.close();
   source = null;
 }
 
 export function resetData(): void {
   disconnectEvents();
-  setState({ conversations: [], conversationsLoaded: false, threads: {}, contacts: [], dids: [], sync: null });
+  setState({
+    conversations: [],
+    conversationsLoaded: false,
+    archived: [],
+    archivedLoaded: false,
+    known: {},
+    threads: {},
+    contacts: [],
+    dids: [],
+    sync: null,
+  });
 }

@@ -74,6 +74,7 @@ export class MessageSender {
       });
       saved.forEach((file, i) => repo.insertAttachment(messageId, i, { ...file, status: 'ready' }));
       repo.touchConversation(conversationId);
+      repo.unarchiveConversation(conversationId);
       return { messageId, conversationId };
     });
 
