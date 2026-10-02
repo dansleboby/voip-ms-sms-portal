@@ -10,7 +10,11 @@ import type { SyncStatusDto } from '../shared/types.js';
 const LAST_SUCCESS_KEY = 'sync.lastSuccessAt';
 /** VoIP.ms refuses ranges over 92 days; smaller windows also keep responses small. */
 const WINDOW_DAYS = 30;
-const PAGE_LIMIT = 5000;
+/**
+ * Messages asked per call. VoIP.ms documents no maximum; a full page is
+ * treated as possibly truncated and re-fetched one day at a time.
+ */
+const PAGE_LIMIT = 1000;
 /** Local outgoing message with no VoIP.ms id that a fetched message may correspond to. */
 const ADOPT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_BACKOFF_MS = 60_000;

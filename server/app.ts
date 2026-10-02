@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { LogController, type FastifyInstance, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -58,6 +58,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   const app = Fastify({
     logger: options.logger === false ? false : { level: config.logLevel },
+    // Per-request logs would record search terms and phone numbers from URLs.
+    logController: new LogController({ disableRequestLogging: true }),
     trustProxy: config.trustProxy,
     bodyLimit: 2 * 1024 * 1024,
   });
@@ -188,7 +190,15 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   registerContactRoutes(app, services);
 
   if (fs.existsSync(path.join(config.webDir, 'index.html'))) {
-    await app.register(fastifyStatic, { root: config.webDir, wildcard: false, index: false });
+    await app.register(fastifyStatic, {
+      root: config.webDir,
+      wildcard: false,
+      index: false,
+      setHeaders: (res, filePath) => {
+        // Vite fingerprints everything under assets/.
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) res.header('Cache-Control', 'public, max-age=31536000, immutable');
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/') || req.method !== 'GET') return reply.code(404).send({ error: 'not_found' });
       return reply.header('Cache-Control', 'no-cache').sendFile('index.html');
