@@ -182,6 +182,29 @@ describe('authentication', () => {
     expect(() => loadConfig({})).toThrow(/APP_PASSWORD/);
   });
 
+  it('removes quotes that --env-file keeps around values', () => {
+    const config = loadConfig({
+      APP_PASSWORD: '"s3cret"',
+      VOIPMS_API_USERNAME: '"me@example.com"',
+      VOIPMS_API_PASSWORD: "'api-pass'",
+      PUBLIC_URL: ' "https://sms.example.com" ',
+      POLL_INTERVAL_IDLE: '"20"',
+    });
+    expect(config).toMatchObject({
+      appPassword: 's3cret',
+      voipmsEnv: { username: 'me@example.com', password: 'api-pass' },
+      publicOrigin: 'https://sms.example.com',
+      pollIdleMs: 20_000,
+    });
+    expect(config.warnings).toHaveLength(5);
+    expect(config.warnings[0]).toMatch(/^APP_PASSWORD was wrapped in quotes/);
+    // Quotes inside a value, or unmatched, are part of it.
+    const kept = loadConfig({ APP_PASSWORD: 'pa"ss"', VOIPMS_API_USERNAME: '"me@example.com', VOIPMS_API_PASSWORD: 'x' });
+    expect(kept.appPassword).toBe('pa"ss"');
+    expect(kept.voipmsEnv?.username).toBe('"me@example.com');
+    expect(kept.warnings).toEqual([]);
+  });
+
   it('checks VAPID_SUBJECT', () => {
     expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: '' }).vapidSubject).toMatch(/^https:\/\//);
     expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: 'mailto:me@example.com' }).vapidSubject).toBe('mailto:me@example.com');
