@@ -114,6 +114,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | VoIP.ms account email and API password. Optional: otherwise they are entered in the wizard and stored encrypted with a key derived from `APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
+| `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` in Docker) | Database and media location. |
 | `PORT` | `8080` | HTTP port. |
@@ -191,6 +192,10 @@ npm run build && APP_PASSWORD=dev npm start   # production build
 ```
 
 If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) to use `HTTPS_PROXY`.
+
+### Versions
+
+The version lives in `package.json` and is shown at the bottom of *Settings*; changes are listed in [CHANGELOG.md](CHANGELOG.md). To release one: `npm version <major|minor|patch> --no-git-tag-version`, add its section to the changelog, merge, then tag the merge commit `vX.Y.Z`. After an update, tabs that were already open offer to reload.
 
 ## Roadmap ideas
 

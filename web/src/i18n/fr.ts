@@ -1,5 +1,7 @@
 export const fr = {
   'app.name': 'Portail SMS',
+  'app.updated': 'Une nouvelle version de l’application est installée.',
+  'app.reload': 'Recharger',
   'app.tagline': 'pour VoIP.ms',
 
   'common.cancel': 'Annuler',

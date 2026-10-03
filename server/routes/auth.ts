@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { SESSION_COOKIE } from '../auth.js';
 import type { Services } from '../app.js';
-import { VERSION } from '../app.js';
+import { VERSION } from '../version.js';
 import type { SessionDto } from '../../shared/types.js';
 
 const LoginBody = z.object({ password: z.string().max(1000) });
@@ -32,7 +32,7 @@ export function registerAuthRoutes(app: FastifyInstance, s: Services): void {
         path: '/',
         httpOnly: true,
         sameSite: 'lax',
-        secure: req.protocol === 'https',
+        secure: req.protocol === 'https' || s.config.publicOrigin?.startsWith('https:') === true,
         maxAge: s.auth.maxAgeSeconds,
       });
       return { ok: true };

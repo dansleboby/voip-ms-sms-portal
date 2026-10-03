@@ -25,7 +25,6 @@ import { registerPushRoutes } from './routes/push.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
-export const VERSION = process.env.npm_package_version ?? '0.1.0';
 const SETUP_COMPLETED_KEY = 'setup.completed';
 
 export interface Services {
@@ -187,7 +186,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     // absolute-form request line would otherwise reach /api handlers unauthenticated.
     const route = req.routeOptions.url;
     if (!route?.startsWith('/api/')) return;
-    if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req, config.publicOrigin)) {
       return reply.code(403).send({ error: 'bad_origin' });
     }
     if (publicRoutes.has(route)) return;
@@ -238,9 +237,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: 'not_found' }));
   }
 
-  app.addHook('onClose', async () => {
+  // Live update streams never end on their own, and Fastify waits for open
+  // requests before onClose: end them first, or shutting down hangs.
+  app.addHook('preClose', async () => {
     sync.stop();
     events.close();
+  });
+  app.addHook('onClose', async () => {
     await media.stop();
     db.close();
   });
@@ -249,11 +252,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 }
 
 /** Rejects cross-site state-changing requests (on top of SameSite=Lax cookies). */
-function sameOrigin(req: FastifyRequest): boolean {
+function sameOrigin(req: FastifyRequest, publicOrigin: string | null): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
   try {
-    return new URL(origin).host === req.headers.host;
+    const url = new URL(origin);
+    return url.origin === publicOrigin || url.host === req.headers.host;
   } catch {
     return false;
   }

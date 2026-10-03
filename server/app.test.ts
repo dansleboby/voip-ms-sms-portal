@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp, type Services } from './app.js';
 import { loadConfig } from './config.js';
 import { FakeVoipMs } from './test/fake-client.js';
+import { readVersion } from './version.js';
 import { browserKeys, decryptPayload } from './test/webpush-helpers.js';
 
 const PNG = Buffer.from(
@@ -92,6 +93,34 @@ describe('authentication', () => {
     expect((await app.inject({ url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200);
   });
 
+  it('reports the version of package.json, even when not started by npm', async () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
+    expect((await app.inject({ url: '/api/session' })).json().version).toBe(pkg.version);
+    expect(readVersion(os.tmpdir())).toBe('unknown');
+  });
+
+  it('shuts down promptly while a tab keeps the live updates stream open', async () => {
+    await login();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as import('node:net').AddressInfo;
+    const http = await import('node:http');
+    const streamClosed = new Promise<void>((resolve, reject) => {
+      http
+        .get({ port, host: '127.0.0.1', path: '/api/events', headers: { cookie } }, (res) => {
+          res.resume();
+          res.on('end', resolve);
+        })
+        .on('error', reject);
+    });
+    await waitFor(() => services.events.clientCount === 1);
+    const closed = app.close().then(() => 'closed');
+    const timeout = new Promise((r) => setTimeout(() => r('timeout'), 3000));
+    expect(await Promise.race([closed, timeout])).toBe('closed');
+    await streamClosed;
+    // afterEach closes it again: make that a no-op on a fresh instance.
+    await start();
+  });
+
   it('reports the session state', async () => {
     const res = await app.inject({ url: '/api/session' });
     expect(res.json()).toMatchObject({ authenticated: false, setupCompleted: false, credentialsSource: null, pollActiveSeconds: 10 });
@@ -105,6 +134,27 @@ describe('authentication', () => {
       headers: { cookie, origin: 'https://evil.example', host: 'portal.local' },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('trusts PUBLIC_URL behind a proxy that rewrites Host and drops the protocol', async () => {
+    await app.close();
+    await start({ PUBLIC_URL: 'https://sms.example.com/' });
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: 'https://sms.example.com', host: '127.0.0.1:3100' },
+      payload: { password: 'hunter2' },
+    });
+    expect(login.statusCode).toBe(200);
+    expect(String(login.headers['set-cookie'])).toMatch(/; Secure/);
+    const evil = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: 'https://evil.example', host: '127.0.0.1:3100' },
+      payload: { password: 'hunter2' },
+    });
+    expect(evil.statusCode).toBe(403);
+    expect(() => loadConfig({ APP_PASSWORD: 'x', PUBLIC_URL: 'sms.example.com' })).toThrow(/PUBLIC_URL/);
   });
 
   it('cannot be bypassed with an encoded or absolute-form path', async () => {

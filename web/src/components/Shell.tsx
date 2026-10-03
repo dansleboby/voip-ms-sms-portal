@@ -7,6 +7,7 @@ import {
   CloudOff,
   MessageSquareText,
   Pencil,
+  RefreshCw,
   Search,
   Settings as SettingsIcon,
   X,
@@ -315,8 +316,18 @@ function SearchBox({ query, onChange, placeholder }: { query: string; onChange: 
 function StatusBanners() {
   const sync = useStore((s) => s.sync);
   const connected = useStore((s) => s.connected);
+  const updateAvailable = useStore((s) => s.updateAvailable);
   return (
     <>
+      {updateAvailable && (
+        <div className="banner info">
+          <RefreshCw size={18} />
+          <span style={{ flex: 1 }}>{t('app.updated')}</span>
+          <button className="btn text small" onClick={() => location.reload()}>
+            {t('app.reload')}
+          </button>
+        </div>
+      )}
       {!connected && (
         <div className="banner warning">
           <CloudOff size={18} />
