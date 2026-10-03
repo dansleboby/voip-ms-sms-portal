@@ -85,7 +85,7 @@ Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, sy
 
 ### Sur téléphone, et dans le noir
 
-L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles de filtre) et s'installe sur l'écran d'accueil. Le thème sombre suit celui du système ou peut être imposé.
+L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles de filtre). Sur téléphone, un bandeau propose d'installer l'application sur l'écran d'accueil, puis d'activer les notifications. Le thème sombre suit celui du système ou peut être imposé.
 
 | Conversations | Une conversation |
 | --- | --- |
