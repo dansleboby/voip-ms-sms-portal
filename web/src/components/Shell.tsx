@@ -18,6 +18,7 @@ import { didName, displayName, formatListDate } from '../lib/format';
 import { navigate, type Route } from '../lib/router';
 import { setArchiveView, setDidFilter, toastError, useStore } from '../store';
 import { Contacts } from './Contacts';
+import { Hints } from './Hints';
 import { NewConversation } from './NewConversation';
 import { Settings } from './Settings';
 import { Thread } from './Thread';
@@ -216,6 +217,7 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
 
       {session?.demo && <div className="banner info">{t('settings.demo')}</div>}
       <StatusBanners />
+      <Hints />
 
       <div className="conv-list" role="list">
         {list.map((c) => (
