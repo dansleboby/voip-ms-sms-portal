@@ -238,9 +238,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: 'not_found' }));
   }
 
-  app.addHook('onClose', async () => {
+  // Live update streams never end on their own, and Fastify waits for open
+  // requests before onClose: end them first, or shutting down hangs.
+  app.addHook('preClose', async () => {
     sync.stop();
     events.close();
+  });
+  app.addHook('onClose', async () => {
     await media.stop();
     db.close();
   });

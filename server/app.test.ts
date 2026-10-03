@@ -92,6 +92,28 @@ describe('authentication', () => {
     expect((await app.inject({ url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200);
   });
 
+  it('shuts down promptly while a tab keeps the live updates stream open', async () => {
+    await login();
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as import('node:net').AddressInfo;
+    const http = await import('node:http');
+    const streamClosed = new Promise<void>((resolve, reject) => {
+      http
+        .get({ port, host: '127.0.0.1', path: '/api/events', headers: { cookie } }, (res) => {
+          res.resume();
+          res.on('end', resolve);
+        })
+        .on('error', reject);
+    });
+    await waitFor(() => services.events.clientCount === 1);
+    const closed = app.close().then(() => 'closed');
+    const timeout = new Promise((r) => setTimeout(() => r('timeout'), 3000));
+    expect(await Promise.race([closed, timeout])).toBe('closed');
+    await streamClosed;
+    // afterEach closes it again: make that a no-op on a fresh instance.
+    await start();
+  });
+
   it('reports the session state', async () => {
     const res = await app.inject({ url: '/api/session' });
     expect(res.json()).toMatchObject({ authenticated: false, setupCompleted: false, credentialsSource: null, pollActiveSeconds: 10 });
