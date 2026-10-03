@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   const { app, services } = built;
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`SMS Portal ${VERSION}`);
+  for (const warning of config.warnings) app.log.warn(warning);
   if (config.demo) app.log.warn('DEMO_MODE is on: using sample data, no real texts are sent.');
   services.sync.start();
 

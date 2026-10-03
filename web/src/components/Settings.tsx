@@ -284,7 +284,7 @@ export function Settings() {
                   <div className="row-title">{t('settings.lastSync')}</div>
                   <div className="row-sub">
                     {sync?.lastSyncAt
-                      ? new Intl.DateTimeFormat(getLang() === 'fr' ? 'fr-CA' : 'en-CA', { dateStyle: 'medium', timeStyle: 'medium' }).format(sync.lastSyncAt)
+                      ? new Intl.DateTimeFormat(getLang() === 'fr' ? 'fr-CA' : 'en-CA', { dateStyle: 'medium', timeStyle: 'short' }).format(sync.lastSyncAt)
                       : t('settings.never')}
                     {sync?.state === 'error' && sync.lastError && <span className="error-text"> · {errorText(sync.lastError)}</span>}
                   </div>
@@ -299,16 +299,18 @@ export function Settings() {
                   <div className="row-title">{t('settings.importHistory')}</div>
                   {sync?.importing && <div className="row-sub">{t('sync.importing', sync.importing)}</div>}
                 </div>
-                <select className="input" style={{ width: 'auto', height: 36 }} value={importDays} onChange={(e) => setImportDays(Number(e.target.value))}>
-                  {IMPORT_CHOICES.map((d) => (
-                    <option key={d} value={d}>
-                      {d === 365 ? t('setup.history.year') : t('setup.history.days', { n: d })}
-                    </option>
-                  ))}
-                </select>
-                <button className="btn tonal small" onClick={startImport} disabled={!!sync?.importing}>
-                  {t('settings.history')}
-                </button>
+                <div className="row-actions">
+                  <select className="input" style={{ width: 'auto', height: 36 }} value={importDays} onChange={(e) => setImportDays(Number(e.target.value))}>
+                    {IMPORT_CHOICES.map((d) => (
+                      <option key={d} value={d}>
+                        {d === 365 ? t('setup.history.year') : t('setup.history.days', { n: d })}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="btn tonal small" onClick={startImport} disabled={!!sync?.importing}>
+                    {t('settings.history')}
+                  </button>
+                </div>
               </div>
             </div>
           </section>

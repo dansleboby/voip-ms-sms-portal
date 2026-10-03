@@ -1,5 +1,6 @@
 import { api } from '../api';
 import { getLang } from '../i18n';
+import { isInstalled, isIos } from './install';
 import { prefs } from './prefs';
 import { navigate, parseRoute } from './router';
 
@@ -31,11 +32,9 @@ export type PushSupport = 'ok' | 'insecure' | 'ios-install' | 'unsupported';
 
 export function pushSupport(): PushSupport {
   if (!window.isSecureContext) return 'insecure';
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const standalone = window.matchMedia('(display-mode: standalone)').matches;
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
     // Safari on iPhone only offers push to apps added to the home screen.
-    return ios && !standalone ? 'ios-install' : 'unsupported';
+    return isIos() && !isInstalled() ? 'ios-install' : 'unsupported';
   }
   return 'ok';
 }

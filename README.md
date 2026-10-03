@@ -85,7 +85,7 @@ Rename or recolor numbers, turn off the ones you do not use, sync now or import 
 
 ### On a phone, and in the dark
 
-The layout adapts to small screens (numbers become filter chips) and can be installed on the home screen. The dark theme follows the system or can be forced.
+The layout adapts to small screens (numbers become filter chips). On a phone, a banner offers to install the app on the home screen, then to turn on notifications. The dark theme follows the system or can be forced.
 
 | Conversations | A conversation |
 | --- | --- |

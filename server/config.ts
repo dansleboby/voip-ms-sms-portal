@@ -29,6 +29,8 @@ export interface Config {
    * proxies that do not pass the original Host or protocol along.
    */
   publicOrigin: string | null;
+  /** Problems worth logging once the logger exists (e.g. settings that had to be cleaned up). */
+  warnings: string[];
 }
 
 export class ConfigError extends Error {}
@@ -56,7 +58,47 @@ function bool(value: string | undefined): boolean {
   return value !== undefined && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+/** Settings read by loadConfig; only these are cleaned up. */
+const SETTINGS = [
+  'APP_PASSWORD',
+  'VOIPMS_API_USERNAME',
+  'VOIPMS_API_PASSWORD',
+  'POLL_INTERVAL_ACTIVE',
+  'POLL_INTERVAL_IDLE',
+  'VOIPMS_TIMEZONE',
+  'TRUST_PROXY',
+  'SESSION_DAYS',
+  'DEMO_MODE',
+  'LOG_LEVEL',
+  'DATA_DIR',
+  'WEB_DIR',
+  'HOST',
+  'PORT',
+  'VAPID_SUBJECT',
+  'PUBLIC_URL',
+];
+
+/**
+ * Docker Compose strips quotes around values in .env files, but
+ * `--env-file` (Docker, Podman) keeps them: KEY="value" arrives with its
+ * quotes, which then end up in the password sent to VoIP.ms.
+ */
+function unquoteSettings(env: NodeJS.ProcessEnv, warnings: string[]): NodeJS.ProcessEnv {
+  const clean = { ...env };
+  for (const key of SETTINGS) {
+    const value = env[key]?.trim();
+    const quoted = value !== undefined && value.length >= 2 && /^(["']).*\1$/s.test(value);
+    if (quoted) {
+      clean[key] = value.slice(1, -1);
+      warnings.push(`${key} was wrapped in quotes, which were removed. Remove them from the settings file to silence this warning.`);
+    }
+  }
+  return clean;
+}
+
+export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
+  const warnings: string[] = [];
+  const env = unquoteSettings(rawEnv, warnings);
   const appPassword = env.APP_PASSWORD ?? '';
   if (appPassword.length === 0) {
     throw new ConfigError(
@@ -110,5 +152,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webDir: path.resolve(env.WEB_DIR ?? 'dist/web'),
     vapidSubject,
     publicOrigin,
+    warnings,
   };
 }

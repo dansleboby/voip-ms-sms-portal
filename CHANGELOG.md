@@ -2,6 +2,13 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.1.0 (2026-10-03)
+
+- On phones, the app suggests installing it on the home screen (the browser's own install dialog on Android, the Share steps on iPhone), then turning on push notifications; each suggestion can be put off for good.
+- Settings given with quotes (`KEY="value"` in a file passed with `--env-file`, where Docker and Podman keep them) are cleaned up, with a warning in the logs: the VoIP.ms credentials were refused before.
+- Phone layout: the number filter chips are spaced again, Settings rows put their buttons under the label when the screen is narrow instead of covering it, and the last conversation scrolls clear of the "Start chat" button.
+- The last sync time in Settings no longer shows seconds.
+
 ## 1.0.0 (2026-10-03)
 
 First numbered release, covering everything built so far.
