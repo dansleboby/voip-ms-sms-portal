@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-bookworm-slim AS build
+# Fully qualified, so Podman builds without asking which registry to use.
+FROM docker.io/library/node:24-bookworm-slim AS build
 WORKDIR /app
 # Toolchain only used if better-sqlite3 has no prebuilt binary for the platform.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
@@ -9,7 +10,7 @@ RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM node:24-bookworm-slim
+FROM docker.io/library/node:24-bookworm-slim
 ENV NODE_ENV=production \
     PORT=8080 \
     DATA_DIR=/data \
