@@ -193,6 +193,10 @@ npm run build && APP_PASSWORD=dev npm start   # production build
 
 If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) to use `HTTPS_PROXY`.
 
+### Versions
+
+The version lives in `package.json` and is shown at the bottom of *Settings*; changes are listed in [CHANGELOG.md](CHANGELOG.md). To release one: `npm version <major|minor|patch> --no-git-tag-version`, add its section to the changelog, merge, then tag the merge commit `vX.Y.Z`. After an update, tabs that were already open offer to reload.
+
 ## Roadmap ideas
 
 - Optional VoIP.ms webhook/URL callback for instant delivery (and instant notifications) when the instance is reachable from the Internet

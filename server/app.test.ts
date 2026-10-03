@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp, type Services } from './app.js';
 import { loadConfig } from './config.js';
 import { FakeVoipMs } from './test/fake-client.js';
+import { readVersion } from './version.js';
 import { browserKeys, decryptPayload } from './test/webpush-helpers.js';
 
 const PNG = Buffer.from(
@@ -90,6 +91,12 @@ describe('authentication', () => {
     expect(wrong.statusCode).toBe(401);
     await login();
     expect((await app.inject({ url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200);
+  });
+
+  it('reports the version of package.json, even when not started by npm', async () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { version: string };
+    expect((await app.inject({ url: '/api/session' })).json().version).toBe(pkg.version);
+    expect(readVersion(os.tmpdir())).toBe('unknown');
   });
 
   it('shuts down promptly while a tab keeps the live updates stream open', async () => {

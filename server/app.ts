@@ -25,7 +25,6 @@ import { registerPushRoutes } from './routes/push.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
-export const VERSION = process.env.npm_package_version ?? '0.1.0';
 const SETUP_COMPLETED_KEY = 'setup.completed';
 
 export interface Services {

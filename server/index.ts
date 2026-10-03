@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
+import { VERSION } from './version.js';
 
 async function main(): Promise<void> {
   let config;
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   }
   const { app, services } = built;
   await app.listen({ port: config.port, host: config.host });
+  app.log.info(`SMS Portal ${VERSION}`);
   if (config.demo) app.log.warn('DEMO_MODE is on: using sample data, no real texts are sent.');
   services.sync.start();
 

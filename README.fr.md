@@ -167,6 +167,10 @@ npm test
 npm run typecheck
 ```
 
+### Versions
+
+La version est dans `package.json` et s'affiche au bas des *Réglages* ; les changements sont listés dans [CHANGELOG.md](CHANGELOG.md). Pour en publier une : `npm version <major|minor|patch> --no-git-tag-version`, ajoutez sa section au journal des changements, fusionnez, puis étiquetez le commit de fusion `vX.Y.Z`. Après une mise à jour, les onglets déjà ouverts proposent de recharger la page.
+
 ## Licence
 
 [Apache 2.0](LICENSE). Projet non affilié à VoIP.ms.

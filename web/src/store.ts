@@ -49,6 +49,8 @@ export interface State {
   /** Conversation on screen, to skip notifications and mark it read. */
   activeConversationId: number | null;
   connected: boolean;
+  /** The server now runs another version than the one this page was loaded with. */
+  updateAvailable: boolean;
   toasts: Toast[];
 }
 
@@ -67,6 +69,7 @@ let state: State = {
   archiveView: false,
   activeConversationId: null,
   connected: true,
+  updateAvailable: false,
   toasts: [],
 };
 
@@ -111,9 +114,13 @@ export function toastError(err: unknown): void {
 
 // ------------------------------------------------------------------ loading
 
+/** Version of the server this page was loaded from. */
+let pageVersion: string | null = null;
+
 export async function loadSession(): Promise<SessionDto> {
   const session = await api.session();
-  setState({ session });
+  pageVersion ??= session.version;
+  setState({ session, updateAvailable: session.version !== pageVersion });
   return session;
 }
 
@@ -356,8 +363,9 @@ export function connectEvents(): void {
     setState({ connected: true });
     // The URL's visibility may be stale after an automatic reconnection.
     reportVisibility();
-    // Catch up on whatever happened while disconnected.
+    // Catch up on whatever happened while disconnected (the server may also have been updated).
     if (wasDisconnected) {
+      void loadSession().catch(() => undefined);
       reloadConversations();
       reloadDids();
       for (const id of Object.keys(state.threads)) void loadThread(Number(id));

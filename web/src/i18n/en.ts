@@ -2,6 +2,8 @@ import type { MessageKey } from './fr';
 
 export const en: Record<MessageKey, string> = {
   'app.name': 'SMS Portal',
+  'app.updated': 'A new version of the app is installed.',
+  'app.reload': 'Reload',
   'app.tagline': 'for VoIP.ms',
 
   'common.cancel': 'Cancel',
