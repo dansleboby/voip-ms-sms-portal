@@ -35,6 +35,8 @@ export interface PushPayload {
   tag: string;
   url: string;
   timestamp?: number;
+  /** Unread texts in the shown conversations, for the badge on the installed app's icon. */
+  unread?: number;
 }
 
 export interface PushDeps {
@@ -102,6 +104,8 @@ export class PushService {
     }
     const dids = this.deps.repo.listDids();
     const multi = dids.filter((d) => d.visible).length > 1;
+    // Archived conversations are already left out of these counts.
+    const unread = dids.filter((d) => d.visible).reduce((n, d) => n + d.unreadCount, 0);
     for (const [conversationId, { messageId, count }] of latest) {
       const message = this.deps.repo.getMessage(messageId);
       const conversation = this.deps.repo.getConversation(conversationId);
@@ -111,7 +115,7 @@ export class PushService {
       const didLabel = multi ? did?.label || formatPhone(conversation.did) : null;
       for (const sub of subscriptions) {
         if (sub.device && this.deps.events.isOnScreen(sub.device)) continue;
-        const payload = messagePayload(message, conversation, count, didLabel, langOf(sub.lang));
+        const payload = { ...messagePayload(message, conversation, count, didLabel, langOf(sub.lang)), unread };
         void this.deliver(sub, payload, `c${conversationId}`).catch((err: unknown) => {
           this.deps.log.warn({ err }, 'Push notification failed');
         });

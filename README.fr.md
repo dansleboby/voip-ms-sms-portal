@@ -73,7 +73,7 @@ Le bouton d'archivage, dans l'en-tête d'une conversation, la range (avec *Annul
 
 ### Notifications push
 
-Activez-les dans les Réglages, sur chaque appareil : téléphone, ordinateur, tablette. Elles arrivent même quand aucun onglet n'est ouvert et évitent l'appareil où l'application est déjà à l'écran. Voir [Mettre en place les notifications push](#mettre-en-place-les-notifications-push) pour les prérequis.
+Activez-les dans les Réglages, sur chaque appareil : téléphone, ordinateur, tablette. Elles arrivent même quand aucun onglet n'est ouvert et évitent l'appareil où l'application est déjà à l'écran. Une fois l'application installée, son icône affiche aussi le nombre de textos non lus (iPhone, iPad, Windows, macOS ; Android affiche une pastille). Voir [Mettre en place les notifications push](#mettre-en-place-les-notifications-push) pour les prérequis.
 
 ![Réglages des notifications push](docs/screenshots/fr/push.png)
 

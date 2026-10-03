@@ -58,6 +58,16 @@ export function isIos(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+/**
+ * Unread count on the installed app's icon, where the platform has the
+ * Badging API (iPhone and iPad 16.4+, Chrome and Edge on Windows and macOS).
+ * Android shows its own dot for unread notifications instead.
+ */
+export function setIconBadge(count: number): void {
+  if (!('setAppBadge' in navigator)) return;
+  (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => undefined);
+}
+
 /** Phones and tablets: where installing the app and push notifications matter most. */
 export function isTouchDevice(): boolean {
   return window.matchMedia('(pointer: coarse)').matches;

@@ -557,10 +557,11 @@ describe('push notifications', () => {
     expect(pushed[0]!.headers.Authorization).toMatch(/^vapid t=.+, k=/);
     const [marie, other] = received();
     const conversation = services.repo.findConversation('4506575294', '4383980707');
-    expect(marie).toMatchObject({ title: 'Marie Tremblay (2)', tag: `conversation-${conversation}`, url: `/c/${conversation}` });
+    // Each carries the unread count when it left (SMS are fetched before MMS): the icon ends at 3.
+    expect(marie).toMatchObject({ title: 'Marie Tremblay (2)', tag: `conversation-${conversation}`, url: `/c/${conversation}`, unread: 2 });
     // Two numbers are shown, so the notification says which one received the text.
     expect(marie.body).toBe('Tu viens au chalet?\n— (450) 657-5294');
-    expect(other).toMatchObject({ title: '(514) 555-1234', body: '📎 Pièce jointe\n— (450) 657-5294' });
+    expect(other).toMatchObject({ title: '(514) 555-1234', body: '📎 Pièce jointe\n— (450) 657-5294', unread: 3 });
 
     // History imports and outgoing texts never notify.
     pushed = [];

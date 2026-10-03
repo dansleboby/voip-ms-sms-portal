@@ -14,7 +14,7 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : '' };
   }
-  event.waitUntil(
+  const work = [
     self.registration.showNotification(data.title || 'SMS', {
       body: data.body || '',
       tag: data.tag,
@@ -25,7 +25,13 @@ self.addEventListener('push', (event) => {
       timestamp: data.timestamp,
       data: { url: data.url || '/' },
     }),
-  );
+  ];
+  // Unread count on the app icon (iPhone, Windows, macOS; Android counts notifications itself).
+  if (typeof data.unread === 'number' && 'setAppBadge' in self.navigator) {
+    const badge = data.unread > 0 ? self.navigator.setAppBadge(data.unread) : self.navigator.clearAppBadge();
+    work.push(badge.catch(() => undefined));
+  }
+  event.waitUntil(Promise.all(work));
 });
 
 self.addEventListener('notificationclick', (event) => {

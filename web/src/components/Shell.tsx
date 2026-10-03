@@ -15,6 +15,7 @@ import {
 import { api } from '../api';
 import { errorText, t } from '../i18n';
 import { didName, displayName, formatListDate } from '../lib/format';
+import { setIconBadge } from '../lib/install';
 import { navigate, type Route } from '../lib/router';
 import { setArchiveView, setDidFilter, toastError, useStore } from '../store';
 import { Contacts } from './Contacts';
@@ -37,9 +38,12 @@ export function Shell({ route }: { route: Route }) {
   const visibleDids = useMemo(() => dids.filter((d) => d.visible), [dids]);
   const totalUnread = useMemo(() => conversations.reduce((n, c) => n + c.unreadCount, 0), [conversations]);
 
+  const loaded = useStore((s) => s.conversationsLoaded);
   useEffect(() => {
     document.title = totalUnread > 0 ? `(${totalUnread}) ${t('app.name')}` : t('app.name');
-  }, [totalUnread]);
+    // Before the list loads, 0 would wrongly clear the badge a push notification set.
+    if (loaded) setIconBadge(totalUnread);
+  }, [totalUnread, loaded]);
 
   // The archive stays in the sidebar while one of its conversations is open.
   const archiveView = useStore((s) => s.archiveView);
