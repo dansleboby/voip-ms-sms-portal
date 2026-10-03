@@ -7,6 +7,7 @@ import { loadContacts, loadConversations, toast, toastError, useStore } from '..
 import { ContactDialog } from './ContactDialog';
 import { Avatar } from './ui';
 import { formatPhone, searchDigits } from '../../../shared/phone';
+import { foldText } from '../../../shared/text';
 import type { ContactDto } from '../../../shared/types';
 
 export function Contacts() {
@@ -16,10 +17,10 @@ export function Contacts() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = foldText(query.trim());
     const digits = searchDigits(q);
     if (!q) return contacts;
-    return contacts.filter((c) => c.name.toLowerCase().includes(q) || (digits.length >= 3 && c.phones.some((p) => p.includes(digits))));
+    return contacts.filter((c) => foldText(c.name).includes(q) || (digits.length >= 3 && c.phones.some((p) => p.includes(digits))));
   }, [contacts, query]);
 
   const importFile = async (file: File) => {

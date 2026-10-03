@@ -15,6 +15,7 @@ export const fr = {
   'common.search': 'Rechercher',
   'common.yes': 'Oui',
   'common.no': 'Non',
+  'common.undo': 'Annuler',
 
   'login.title': 'Connexion',
   'login.password': 'Mot de passe',
@@ -29,6 +30,7 @@ export const fr = {
   'nav.contacts': 'Contacts',
   'nav.settings': 'Réglages',
   'nav.newChat': 'Démarrer une discussion',
+  'nav.archived': 'Conversations archivées',
 
   'list.searchPlaceholder': 'Rechercher des conversations',
   'list.empty': 'Aucune conversation pour l’instant.',
@@ -37,6 +39,11 @@ export const fr = {
   'list.photo': 'Pièce jointe',
   'list.photos': '{n} pièces jointes',
   'list.failed': 'Échec de l’envoi',
+  'list.archivedTitle': 'Archivées',
+  'list.archivedEmpty': 'Aucune conversation archivée.',
+  'list.archivedHint': 'Une conversation archivée revient dans la liste dès qu’un nouveau message arrive.',
+  'list.archivedChip': 'Archivée',
+  'list.searchArchived': 'Rechercher dans les archives',
 
   'thread.via': 'via',
   'thread.addContact': 'Ajouter aux contacts',
@@ -48,6 +55,10 @@ export const fr = {
   'thread.today': 'Aujourd’hui',
   'thread.yesterday': 'Hier',
   'thread.shortCode': 'Code court',
+  'thread.archive': 'Archiver',
+  'thread.unarchive': 'Désarchiver',
+  'thread.archived': 'Conversation archivée',
+  'thread.unarchived': 'Conversation désarchivée',
   'thread.noReply': 'Ce numéro est un code court : la plupart n’acceptent pas de réponse.',
 
   'status.sending': 'Envoi…',
@@ -126,6 +137,13 @@ export const fr = {
   'settings.desktopNotifHint': 'Affiche une alerte pour chaque message reçu, quand cet onglet est ouvert.',
   'settings.notifBlocked': 'Bloquées dans le navigateur. Autorisez-les dans les réglages du site.',
   'settings.sound': 'Son',
+  'settings.push': 'Notifications push sur cet appareil',
+  'settings.pushHint': 'Même quand l’application est fermée ou le téléphone verrouillé. À activer sur chaque appareil.',
+  'settings.pushInsecure': 'Nécessitent une connexion HTTPS (voir « Derrière un proxy inverse » dans le README).',
+  'settings.pushIos': 'Sur iPhone et iPad : Partager → « Sur l’écran d’accueil », puis activez-les depuis l’application installée.',
+  'settings.pushUnsupported': 'Ce navigateur ne prend pas en charge les notifications push.',
+  'settings.pushTest': 'Envoyer une notification test',
+  'settings.pushTestSent': 'Notification test envoyée.',
   'settings.appearance': 'Apparence',
   'settings.theme': 'Thème',
   'settings.themeSystem': 'Système',
@@ -227,6 +245,8 @@ export const fr = {
   'error.payload_too_large': 'Fichier trop volumineux.',
   'error.too_many_attachments': '3 pièces jointes au maximum.',
   'error.offline': 'Connexion au serveur perdue.',
+  'error.push_failed': 'Le service de notifications du navigateur a refusé l’envoi.',
+  'error.not_subscribed': 'Cet appareil n’est plus abonné : désactivez puis réactivez les notifications push.',
   'error.unknown': 'Erreur : {code}',
 } as const;
 

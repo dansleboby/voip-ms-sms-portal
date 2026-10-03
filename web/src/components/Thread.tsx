@@ -1,17 +1,21 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, Download, FileText, UserPen, UserPlus } from 'lucide-react';
-import { api } from '../api';
+import { AlertCircle, Archive, ArchiveRestore, ArrowLeft, Download, FileText, UserPen, UserPlus } from 'lucide-react';
 import { errorText, t } from '../i18n';
 import { didName, displayName, formatDayHeader, formatTime, isEmojiOnly, isSameDay, linkify } from '../lib/format';
+import { clearNotifications } from '../lib/push';
 import { navigate } from '../lib/router';
 import {
+  fetchConversation,
+  getState,
   loadOlder,
   loadThread,
   markRead,
   retryMedia,
   retryMessage,
   setActiveConversation,
+  setArchived,
   threadOf,
+  toast,
   toastError,
   useStore,
 } from '../store';
@@ -19,14 +23,12 @@ import { Composer } from './Composer';
 import { ContactDialog } from './ContactDialog';
 import { Avatar, Lightbox } from './ui';
 import { formatPhone, isValidNanp } from '../../../shared/phone';
-import type { AttachmentDto, ConversationDto, MessageDto } from '../../../shared/types';
+import type { AttachmentDto, MessageDto } from '../../../shared/types';
 
 const GROUP_GAP_MS = 5 * 60 * 1000;
 
 export function Thread({ id }: { id: number }) {
-  const fromList = useStore((s) => s.conversations.find((c) => c.id === id));
-  const [fetched, setFetched] = useState<ConversationDto | null>(null);
-  const conversation = fromList ?? fetched;
+  const conversation = useStore((s) => s.known[id]);
   const thread = useStore((s) => threadOf(s, id));
   const dids = useStore((s) => s.dids);
   const contacts = useStore((s) => s.contacts);
@@ -35,7 +37,7 @@ export function Thread({ id }: { id: number }) {
   useEffect(() => {
     setActiveConversation(id);
     void loadThread(id).catch(toastError);
-    if (!fromList) api.conversation(id).then(setFetched).catch(() => navigate({ name: 'home' }, { replace: true }));
+    if (!getState().known[id]) fetchConversation(id).catch(() => navigate({ name: 'home' }, { replace: true }));
     return () => setActiveConversation(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -44,7 +46,9 @@ export function Thread({ id }: { id: number }) {
   const unread = conversation?.unreadCount ?? 0;
   useEffect(() => {
     const check = () => {
-      if (unread > 0 && document.visibilityState === 'visible') void markRead(id);
+      if (document.visibilityState !== 'visible') return;
+      if (unread > 0) void markRead(id);
+      void clearNotifications(id).catch(() => undefined);
     };
     check();
     document.addEventListener('visibilitychange', check);
@@ -57,11 +61,28 @@ export function Thread({ id }: { id: number }) {
   const name = displayName(conversation.phone, conversation.contact);
   const contact = conversation.contact ? contacts.find((c) => c.id === conversation.contact!.id) ?? null : null;
   const shortCode = !isValidNanp(conversation.phone);
+  const back = () => navigate(getState().archiveView ? { name: 'archived' } : { name: 'home' });
+
+  const toggleArchive = async () => {
+    const archive = !conversation.archived;
+    try {
+      await setArchived(id, archive);
+    } catch (err) {
+      toastError(err);
+      return;
+    }
+    if (archive) {
+      back();
+      toast(t('thread.archived'), 'info', { label: t('common.undo'), run: () => void setArchived(id, false).catch(toastError) });
+    } else {
+      toast(t('thread.unarchived'));
+    }
+  };
 
   return (
     <>
       <header className="thread-header">
-        <button className="icon-btn mobile-only" aria-label={t('common.back')} onClick={() => navigate({ name: 'home' })}>
+        <button className="icon-btn mobile-only" aria-label={t('common.back')} onClick={back}>
           <ArrowLeft size={22} />
         </button>
         <Avatar name={name} seed={conversation.phone} />
@@ -93,6 +114,14 @@ export function Thread({ id }: { id: number }) {
             {conversation.contact ? <UserPen size={22} /> : <UserPlus size={22} />}
           </button>
         )}
+        <button
+          className="icon-btn"
+          aria-label={conversation.archived ? t('thread.unarchive') : t('thread.archive')}
+          title={conversation.archived ? t('thread.unarchive') : t('thread.archive')}
+          onClick={() => void toggleArchive()}
+        >
+          {conversation.archived ? <ArchiveRestore size={22} /> : <Archive size={22} />}
+        </button>
       </header>
 
       <MessageList conversationId={id} messages={thread.items} hasMore={thread.hasMore} loading={thread.loading} loaded={thread.loaded} />

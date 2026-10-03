@@ -22,6 +22,8 @@ export interface Config {
   logLevel: string;
   /** Built web client to serve; absent in development (Vite serves it). */
   webDir: string;
+  /** Contact sent to push services with each notification (VAPID "sub" claim). */
+  vapidSubject: string;
 }
 
 export class ConfigError extends Error {}
@@ -70,6 +72,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(`VOIPMS_TIMEZONE "${voipmsTimezone}" is not a valid IANA time zone.`);
   }
 
+  const vapidSubject = env.VAPID_SUBJECT?.trim() || 'https://github.com/dansleboby/voip-ms-sms-portal';
+  if (!/^(mailto:\S+@\S+|https:\/\/\S+)$/.test(vapidSubject)) {
+    throw new ConfigError(`VAPID_SUBJECT must be a mailto: address or an https:// URL, got "${vapidSubject}".`);
+  }
+
   return {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? '0.0.0.0',
@@ -84,5 +91,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     demo: bool(env.DEMO_MODE),
     logLevel: env.LOG_LEVEL ?? 'info',
     webDir: path.resolve(env.WEB_DIR ?? 'dist/web'),
+    vapidSubject,
   };
 }

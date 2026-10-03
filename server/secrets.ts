@@ -59,6 +59,14 @@ export class CredentialStore {
     this.repo.deleteSetting(CREDENTIALS_KEY);
   }
 
+  /**
+   * Value that changes with APP_PASSWORD, safe to store: it goes through the
+   * same slow key derivation, so it does not help guess the password.
+   */
+  fingerprint(label: string): string {
+    return crypto.createHmac('sha256', this.derivedKey()).update(label).digest('base64url');
+  }
+
   private readStored(): VoipMsCredentials | null {
     const raw = this.repo.getSetting(CREDENTIALS_KEY);
     if (!raw) return null;

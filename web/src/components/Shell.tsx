@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, BookUser, CloudOff, MessageSquareText, Pencil, Search, Settings as SettingsIcon, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Archive,
+  ArrowLeft,
+  BookUser,
+  CloudOff,
+  MessageSquareText,
+  Pencil,
+  Search,
+  Settings as SettingsIcon,
+  X,
+} from 'lucide-react';
 import { api } from '../api';
 import { errorText, t } from '../i18n';
 import { didName, displayName, formatListDate } from '../lib/format';
 import { navigate, type Route } from '../lib/router';
-import { setDidFilter, toastError, useStore } from '../store';
+import { setArchiveView, setDidFilter, toastError, useStore } from '../store';
 import { Contacts } from './Contacts';
 import { NewConversation } from './NewConversation';
 import { Settings } from './Settings';
@@ -28,7 +39,14 @@ export function Shell({ route }: { route: Route }) {
     document.title = totalUnread > 0 ? `(${totalUnread}) ${t('app.name')}` : t('app.name');
   }, [totalUnread]);
 
-  const showMain = route.name !== 'home';
+  // The archive stays in the sidebar while one of its conversations is open.
+  const archiveView = useStore((s) => s.archiveView);
+  useEffect(() => {
+    if (route.name === 'archived') setArchiveView(true);
+    else if (route.name !== 'conversation') setArchiveView(false);
+  }, [route.name]);
+
+  const showMain = route.name !== 'home' && route.name !== 'archived';
   let main;
   switch (route.name) {
     case 'conversation':
@@ -43,6 +61,15 @@ export function Shell({ route }: { route: Route }) {
     case 'settings':
       main = <Settings />;
       break;
+    case 'archived':
+      main = (
+        <div className="placeholder-pane">
+          <Archive size={56} strokeWidth={1.2} />
+          <h2>{t('nav.archived')}</h2>
+          <p>{t('list.archivedHint')}</p>
+        </div>
+      );
+      break;
     default:
       main = (
         <div className="placeholder-pane">
@@ -56,7 +83,11 @@ export function Shell({ route }: { route: Route }) {
   return (
     <div className={`app${showMain ? ' show-main' : ''}`}>
       <Rail route={route} dids={visibleDids} />
-      <Sidebar route={route} dids={visibleDids} />
+      {archiveView ? (
+        <ArchiveSidebar key="archive" route={route} dids={visibleDids} />
+      ) : (
+        <Sidebar key="inbox" route={route} dids={visibleDids} />
+      )}
       <section className="main">{main}</section>
       <Toasts />
     </div>
@@ -65,8 +96,9 @@ export function Shell({ route }: { route: Route }) {
 
 function Rail({ route, dids }: { route: Route; dids: DidDto[] }) {
   const didFilter = useStore((s) => s.didFilter);
+  const archiveView = useStore((s) => s.archiveView);
   const allUnread = dids.reduce((n, d) => n + d.unreadCount, 0);
-  const onMessages = route.name === 'home' || route.name === 'conversation' || route.name === 'new';
+  const onMessages = !archiveView && (route.name === 'home' || route.name === 'conversation' || route.name === 'new');
 
   const select = (did: string | null) => {
     setDidFilter(did);
@@ -124,23 +156,10 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
   const all = useStore((s) => s.conversations);
   const loaded = useStore((s) => s.conversationsLoaded);
   const didFilter = useStore((s) => s.didFilter);
-  const sync = useStore((s) => s.sync);
-  const connected = useStore((s) => s.connected);
   const session = useStore((s) => s.session);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<ConversationDto[] | null>(null);
 
-  useEffect(() => {
-    const q = query.trim();
-    if (!q) {
-      setResults(null);
-      return;
-    }
-    const timer = setTimeout(() => {
-      api.conversations(q).then(setResults).catch(toastError);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [query]);
+  const results = useSearch(query);
 
   const list = useMemo(() => {
     const source = results ?? all;
@@ -163,6 +182,9 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
             <h1>{filtered ? didName(filtered, filtered.did) : t('app.name')}</h1>
             {filtered && <div className="tagline">{formatPhone(filtered.did)}</div>}
           </div>
+          <button className="icon-btn" aria-label={t('nav.archived')} title={t('nav.archived')} onClick={() => navigate({ name: 'archived' })}>
+            <Archive size={22} />
+          </button>
           <button className="icon-btn mobile-only" aria-label={t('nav.contacts')} onClick={() => navigate({ name: 'contacts' })}>
             <BookUser size={22} />
           </button>
@@ -174,21 +196,7 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
           <Pencil size={20} />
           {t('nav.newChat')}
         </button>
-        <label className="search">
-          <Search size={20} />
-          <input
-            type="search"
-            placeholder={t('list.searchPlaceholder')}
-            aria-label={t('common.search')}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-            <button className="icon-btn" aria-label={t('common.close')} onClick={() => setQuery('')}>
-              <X size={18} />
-            </button>
-          )}
-        </label>
+        <SearchBox query={query} onChange={setQuery} placeholder={t('list.searchPlaceholder')} />
         {multi && (
           <div className="filter-chips mobile-only" role="group">
             <button className="filter-chip" aria-pressed={didFilter === null} onClick={() => setDidFilter(null)}>
@@ -206,6 +214,109 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
       </div>
 
       {session?.demo && <div className="banner info">{t('settings.demo')}</div>}
+      <StatusBanners />
+
+      <div className="conv-list" role="list">
+        {list.map((c) => (
+          <ConversationItem
+            key={c.id}
+            conversation={c}
+            did={multi && !didFilter ? didByNumber.get(c.did) : undefined}
+            active={c.id === activeId}
+            archived={c.archived}
+          />
+        ))}
+        {loaded && list.length === 0 && (
+          <div className="list-empty">{results ? t('list.emptySearch', { q: query.trim() }) : t('list.empty')}</div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/** Same sidebar, listing archived conversations (all numbers). */
+function ArchiveSidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
+  const all = useStore((s) => s.archived);
+  const loaded = useStore((s) => s.archivedLoaded);
+  const [query, setQuery] = useState('');
+  const results = useSearch(query, true);
+  const list = results ?? all;
+  const didByNumber = useMemo(() => new Map(dids.map((d) => [d.did, d])), [dids]);
+  const activeId = route.name === 'conversation' ? route.id : null;
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <div className="sidebar-title">
+          <button className="icon-btn" aria-label={t('common.back')} onClick={() => navigate({ name: 'home' })}>
+            <ArrowLeft size={22} />
+          </button>
+          <h1 style={{ flex: 1, minWidth: 0 }}>{t('list.archivedTitle')}</h1>
+        </div>
+        <SearchBox query={query} onChange={setQuery} placeholder={t('list.searchArchived')} />
+      </div>
+      <StatusBanners />
+      <div className="conv-list" role="list">
+        {list.map((c) => (
+          <ConversationItem
+            key={c.id}
+            conversation={c}
+            did={dids.length > 1 ? didByNumber.get(c.did) : undefined}
+            active={c.id === activeId}
+          />
+        ))}
+        {loaded && list.length === 0 && (
+          <div className="list-empty">
+            {results ? t('list.emptySearch', { q: query.trim() }) : t('list.archivedEmpty')}
+            {!results && (
+              <>
+                <br />
+                <small>{t('list.archivedHint')}</small>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/** Server-side search, debounced; null while the box is empty. */
+function useSearch(query: string, archived?: boolean): ConversationDto[] | null {
+  const [results, setResults] = useState<ConversationDto[] | null>(null);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api.conversations({ q, archived }).then(setResults).catch(toastError);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, archived]);
+  return results;
+}
+
+function SearchBox({ query, onChange, placeholder }: { query: string; onChange: (q: string) => void; placeholder: string }) {
+  return (
+    <label className="search">
+      <Search size={20} />
+      <input type="search" placeholder={placeholder} aria-label={t('common.search')} value={query} onChange={(e) => onChange(e.target.value)} />
+      {query && (
+        <button className="icon-btn" aria-label={t('common.close')} onClick={() => onChange('')}>
+          <X size={18} />
+        </button>
+      )}
+    </label>
+  );
+}
+
+function StatusBanners() {
+  const sync = useStore((s) => s.sync);
+  const connected = useStore((s) => s.connected);
+  return (
+    <>
       {!connected && (
         <div className="banner warning">
           <CloudOff size={18} />
@@ -226,25 +337,22 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
           </div>
         </div>
       )}
-
-      <div className="conv-list" role="list">
-        {list.map((c) => (
-          <ConversationItem
-            key={c.id}
-            conversation={c}
-            did={multi && !didFilter ? didByNumber.get(c.did) : undefined}
-            active={c.id === activeId}
-          />
-        ))}
-        {loaded && list.length === 0 && (
-          <div className="list-empty">{results ? t('list.emptySearch', { q: query.trim() }) : t('list.empty')}</div>
-        )}
-      </div>
-    </aside>
+    </>
   );
 }
 
-function ConversationItem({ conversation: c, did, active }: { conversation: ConversationDto; did?: DidDto; active: boolean }) {
+function ConversationItem({
+  conversation: c,
+  did,
+  active,
+  archived,
+}: {
+  conversation: ConversationDto;
+  did?: DidDto;
+  active: boolean;
+  /** Flags an archived conversation among search results. */
+  archived?: boolean;
+}) {
   const name = displayName(c.phone, c.contact);
   const last = c.lastMessage;
   let snippet = last?.body ?? '';
@@ -276,12 +384,20 @@ function ConversationItem({ conversation: c, did, active }: { conversation: Conv
           </span>
           {unread && <span className="unread-dot" aria-label={String(c.unreadCount)} />}
         </div>
-        {did && (
-          <div style={{ marginTop: 4 }}>
-            <span className="did-chip" style={{ ['--chip-color' as string]: did.color }}>
-              <span className="did-dot" style={{ background: did.color }} />
-              {didName(did, did.did)}
-            </span>
+        {(did || archived) && (
+          <div className="conv-chips">
+            {did && (
+              <span className="did-chip" style={{ ['--chip-color' as string]: did.color }}>
+                <span className="did-dot" style={{ background: did.color }} />
+                {didName(did, did.did)}
+              </span>
+            )}
+            {archived && (
+              <span className="did-chip" style={{ ['--chip-color' as string]: 'var(--outline)' }}>
+                <Archive size={12} />
+                {t('list.archivedChip')}
+              </span>
+            )}
           </div>
         )}
       </div>

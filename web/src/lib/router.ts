@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Route =
   | { name: 'home' }
+  | { name: 'archived' }
   | { name: 'conversation'; id: number }
   | { name: 'new'; phone?: string }
   | { name: 'contacts' }
@@ -17,6 +18,7 @@ export function parseRoute(path: string, search = ''): Route {
     const phone = new URLSearchParams(search).get('to') ?? undefined;
     return { name: 'new', phone };
   }
+  if (path.startsWith('/archived')) return { name: 'archived' };
   if (path.startsWith('/contacts')) return { name: 'contacts' };
   if (path.startsWith('/settings')) return { name: 'settings' };
   if (path.startsWith('/setup')) return { name: 'setup' };
@@ -29,6 +31,8 @@ export function routePath(route: Route): string {
       return `/c/${route.id}`;
     case 'new':
       return route.phone ? `/new?to=${encodeURIComponent(route.phone)}` : '/new';
+    case 'archived':
+      return '/archived';
     case 'contacts':
       return '/contacts';
     case 'settings':

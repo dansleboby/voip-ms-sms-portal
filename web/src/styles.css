@@ -25,6 +25,7 @@
   --success: #146c2e;
   --inverse-surface: #303030;
   --inverse-on-surface: #f2f2f2;
+  --inverse-primary: #a8c7fa;
   --bubble-in: #e9eef6;
   --bubble-out: #d3e3fd;
   --on-bubble-out: #041e49;
@@ -63,6 +64,7 @@
     --success: #6dd58c;
     --inverse-surface: #e3e3e3;
     --inverse-on-surface: #1f1f1f;
+    --inverse-primary: #0b57d0;
     --bubble-in: #282a2c;
     --bubble-out: #0842a0;
     --on-bubble-out: #d3e3fd;
@@ -98,6 +100,7 @@
   --success: #6dd58c;
   --inverse-surface: #e3e3e3;
   --inverse-on-surface: #1f1f1f;
+  --inverse-primary: #0b57d0;
   --bubble-in: #282a2c;
   --bubble-out: #0842a0;
   --on-bubble-out: #d3e3fd;
@@ -696,6 +699,19 @@ textarea.input {
   padding: 48px 24px;
   color: var(--on-surface-variant);
   text-align: center;
+}
+
+.list-empty small {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.conv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .main {
@@ -1667,6 +1683,22 @@ textarea.input {
   width: 32px;
   height: 32px;
   color: inherit;
+}
+
+.toast-action {
+  padding: 0 8px;
+  height: 32px;
+  border: 0;
+  border-radius: 16px;
+  background: none;
+  color: var(--inverse-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 @keyframes fade {

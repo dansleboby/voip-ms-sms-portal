@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkOutgoing, pickMessageKind, utf8Length } from './message.js';
 import { formatPhone, isValidNanp, normalizePhone, searchDigits } from './phone.js';
+import { foldText } from './text.js';
 
 describe('phone', () => {
   it('normalizes to the 10 digits VoIP.ms uses', () => {
@@ -62,5 +63,14 @@ describe('SMS or MMS', () => {
     expect(checkOutgoing('x', 4).problem).toBe('too_many_attachments');
     expect(checkOutgoing('x'.repeat(2049), 0).problem).toBe('too_long');
     expect(checkOutgoing('x'.repeat(2048), 0)).toEqual({ kind: 'mms', bytes: 2048, problem: null });
+  });
+});
+
+describe('foldText', () => {
+  it('ignores case, accents and ligatures', () => {
+    expect(foldText('Garage BÉLANGER')).toBe('garage belanger');
+    expect(foldText('Ça va? À tantôt, Noël!')).toBe('ca va? a tantot, noel!');
+    expect(foldText('Œuvre, cœur, Ærø')).toBe('oeuvre, coeur, aerø');
+    expect(foldText('😊 ok')).toBe('😊 ok');
   });
 });

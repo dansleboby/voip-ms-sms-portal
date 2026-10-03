@@ -4,6 +4,7 @@ import { api, ApiError } from '../api';
 import { errorText, getLang, setLang, t, useLang } from '../i18n';
 import { disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported, soundEnabled } from '../lib/notify';
 import { prefs } from '../lib/prefs';
+import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sendTestPush } from '../lib/push';
 import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
@@ -21,6 +22,9 @@ export function Settings() {
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [notify, setNotify] = useState(notificationsEnabled());
   const [sound, setSound] = useState(soundEnabled());
+  const [push, setPush] = useState(pushEnabledHere());
+  const [pushBusy, setPushBusy] = useState(false);
+  const support = pushSupport();
   const [refreshing, setRefreshing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [connection, setConnection] = useState<ConnectionTestDto | null>(null);
@@ -61,7 +65,47 @@ export function Settings() {
     }
   };
 
+  const togglePush = async (on: boolean) => {
+    setPushBusy(true);
+    try {
+      if (on) {
+        const result = await enablePush();
+        if (result === 'denied') toast(t('settings.notifBlocked'), 'error');
+        setPush(result === 'ok');
+      } else {
+        await disablePush();
+        setPush(false);
+      }
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    try {
+      await sendTestPush();
+      toast(t('settings.pushTestSent'));
+    } catch (err) {
+      toastError(err instanceof ApiError ? err : new ApiError(0, 'not_subscribed'));
+    }
+  };
+
+  const pushHint =
+    support === 'insecure'
+      ? t('settings.pushInsecure')
+      : support === 'ios-install'
+        ? t('settings.pushIos')
+        : support === 'unsupported'
+          ? t('settings.pushUnsupported')
+          : Notification.permission === 'denied'
+            ? t('settings.notifBlocked')
+            : t('settings.pushHint');
+
   const logout = async () => {
+    // Notifications show message previews: a signed-out device stops receiving them.
+    await disablePush().catch(() => undefined);
     await api.logout().catch(() => undefined);
     resetData();
     await loadSession();
@@ -105,6 +149,26 @@ export function Settings() {
           <section className="section">
             <h3>{t('settings.notifications')}</h3>
             <div className="card">
+              <div className="row">
+                <div className="row-main">
+                  <div className="row-title">{t('settings.push')}</div>
+                  <div className="row-sub">{pushHint}</div>
+                  {push && (
+                    <button className="btn text small" style={{ marginTop: 4, marginLeft: -12 }} onClick={() => void testPush()}>
+                      {t('settings.pushTest')}
+                    </button>
+                  )}
+                </div>
+                {support === 'ok' && (
+                  <Switch
+                    checked={push}
+                    label={t('settings.push')}
+                    onChange={(v) => {
+                      if (!pushBusy) void togglePush(v);
+                    }}
+                  />
+                )}
+              </div>
               {notificationsSupported() && (
                 <div className="row">
                   <div className="row-main">
@@ -156,7 +220,11 @@ export function Settings() {
                 <div className="row-main row-title">{t('settings.language')}</div>
                 <div className="segmented">
                   {(['auto', 'fr', 'en'] as const).map((value) => (
-                    <button key={value} aria-pressed={langChoice === value} onClick={() => setLang(value)}>
+                    <button key={value} aria-pressed={langChoice === value} onClick={() => {
+                      setLang(value);
+                      // Notifications are written on the server, in the language of each device.
+                      void refreshPush().catch(() => undefined);
+                    }}>
                       {value === 'auto' ? t('settings.languageAuto') : value === 'fr' ? 'Français' : 'English'}
                     </button>
                   ))}

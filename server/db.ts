@@ -11,6 +11,7 @@ import type {
 } from '../shared/types.js';
 import type { MessageKind } from '../shared/message.js';
 import { searchDigits } from '../shared/phone.js';
+import { foldText } from '../shared/text.js';
 import { unescapeQuotes } from './voipms/text.js';
 
 export type DB = Database.Database;
@@ -103,20 +104,43 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
       if (body !== row.body) update.run(body, row.id);
     }
   },
+  // Archived conversations leave the main list until a new message arrives.
+  `ALTER TABLE conversations ADD COLUMN archived_at INTEGER;`,
+  // Lowercase, accent-free copy of each body for search ("belanger" finds "Bélanger").
+  (db) => {
+    db.exec(`ALTER TABLE messages ADD COLUMN search_text TEXT NOT NULL DEFAULT ''`);
+    const rows = db.prepare('SELECT id, body FROM messages').all() as { id: number; body: string }[];
+    const update = db.prepare('UPDATE messages SET search_text = ? WHERE id = ?');
+    for (const row of rows) update.run(foldText(row.body), row.id);
+  },
+  `
+  CREATE TABLE push_subscriptions (
+    endpoint   TEXT PRIMARY KEY,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    -- Random id of the browser, to skip devices where the app is on screen.
+    device     TEXT,
+    lang       TEXT NOT NULL DEFAULT 'fr',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
 
-export function openDatabase(file: string): DB {
+/** `version` stops migrations early, to test upgrades from an older schema. */
+export function openDatabase(file: string, version = MIGRATIONS.length): DB {
   const db = new Database(file);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
-  migrate(db);
+  db.function('fold', { deterministic: true }, (value: unknown) => (typeof value === 'string' ? foldText(value) : value));
+  migrate(db, version);
   return db;
 }
 
-function migrate(db: DB): void {
+function migrate(db: DB, version: number): void {
   const current = db.pragma('user_version', { simple: true }) as number;
-  for (let i = current; i < MIGRATIONS.length; i++) {
+  for (let i = current; i < version; i++) {
     const migration = MIGRATIONS[i]!;
     db.transaction(() => {
       if (typeof migration === 'string') db.exec(migration);
@@ -148,6 +172,7 @@ interface ConversationRow {
   last_message_id: number | null;
   last_message_at: number | null;
   unread_count: number;
+  archived_at: number | null;
   last_body: string | null;
   last_direction: Direction | null;
   last_status: MessageStatus | null;
@@ -183,6 +208,14 @@ export interface AttachmentRow {
   next_attempt_at: number;
 }
 
+export interface PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  device: string | null;
+  lang: string;
+}
+
 export interface NewMessage {
   conversationId: number;
   kind: MessageKind;
@@ -206,8 +239,11 @@ function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+const MESSAGE_COLUMNS =
+  'id, conversation_id, kind, remote_id, direction, body, sent_at, status, error, carrier_status, created_at';
+
 const CONVERSATION_SELECT = `
-  SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count,
+  SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
          m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
          (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
          ct.id AS contact_id, ct.name AS contact_name
@@ -246,7 +282,7 @@ export class Repo {
   listDids(): DidDto[] {
     const rows = this.db
       .prepare(
-        `SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did) AS unread
+        `SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
          FROM dids d ORDER BY d.position, d.did`,
       )
       .all() as DidRow[];
@@ -350,23 +386,29 @@ export class Repo {
     return row ? toConversationDto(row) : null;
   }
 
-  listConversations(opts: { did?: string; query?: string; limit?: number } = {}): ConversationDto[] {
+  /**
+   * Conversations with at least one message, newest first. Archived ones are
+   * left out unless asked for; a search looks through both unless told otherwise.
+   */
+  listConversations(opts: { did?: string; query?: string; archived?: boolean; limit?: number } = {}): ConversationDto[] {
     const where = ['c.last_message_id IS NOT NULL'];
     const params: unknown[] = [];
+    const q = opts.query?.trim();
+    const archived = opts.archived ?? (q ? undefined : false);
+    if (archived !== undefined) where.push(archived ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL');
     if (opts.did) {
       where.push('c.did = ?');
       params.push(opts.did);
     } else {
       where.push('c.did IN (SELECT did FROM dids WHERE visible = 1)');
     }
-    const q = opts.query?.trim();
     if (q) {
-      const like = `%${escapeLike(q)}%`;
+      const like = `%${escapeLike(foldText(q))}%`;
       // "+1 514..." must match the stored 10 digits.
       const digits = searchDigits(q);
       const clauses = [
-        "ct.name LIKE ? ESCAPE '\\'",
-        "EXISTS (SELECT 1 FROM messages mm WHERE mm.conversation_id = c.id AND mm.body LIKE ? ESCAPE '\\')",
+        "fold(ct.name) LIKE ? ESCAPE '\\'",
+        "EXISTS (SELECT 1 FROM messages mm WHERE mm.conversation_id = c.id AND mm.search_text LIKE ? ESCAPE '\\')",
       ];
       params.push(like, like);
       if (digits.length >= 3) {
@@ -394,6 +436,20 @@ export class Repo {
       .run(last?.id ?? null, last?.sent_at ?? null, unreadDelta, conversationId);
   }
 
+  /** Returns false when the conversation does not exist. */
+  setArchived(id: number, archived: boolean): boolean {
+    return (
+      this.db
+        .prepare('UPDATE conversations SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END WHERE id = ?')
+        .run(archived ? 1 : 0, Date.now(), id).changes > 0
+    );
+  }
+
+  /** A new message brings an archived conversation back to the list. Returns true if it was archived. */
+  unarchiveConversation(id: number): boolean {
+    return this.db.prepare('UPDATE conversations SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL').run(id).changes > 0;
+  }
+
   markConversationRead(id: number): boolean {
     return this.db.prepare('UPDATE conversations SET unread_count = 0 WHERE id = ? AND unread_count > 0').run(id).changes > 0;
   }
@@ -404,10 +460,21 @@ export class Repo {
     return Number(
       this.db
         .prepare(
-          `INSERT INTO messages (conversation_id, kind, remote_id, direction, body, sent_at, status, carrier_status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, carrier_status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(m.conversationId, m.kind, m.remoteId, m.direction, m.body, m.sentAt, m.status, m.carrierStatus ?? null, Date.now())
+        .run(
+          m.conversationId,
+          m.kind,
+          m.remoteId,
+          m.direction,
+          m.body,
+          foldText(m.body),
+          m.sentAt,
+          m.status,
+          m.carrierStatus ?? null,
+          Date.now(),
+        )
         .lastInsertRowid,
     );
   }
@@ -444,7 +511,7 @@ export class Repo {
   }
 
   getMessageRow(id: number): MessageRow | null {
-    return (this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow | undefined) ?? null;
+    return (this.db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(id) as MessageRow | undefined) ?? null;
   }
 
   getMessage(id: number): MessageDto | null {
@@ -460,13 +527,13 @@ export class Repo {
     if (before) {
       rows = this.db
         .prepare(
-          `SELECT * FROM messages WHERE conversation_id = ? AND (sent_at < ? OR (sent_at = ? AND id < ?))
+          `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? AND (sent_at < ? OR (sent_at = ? AND id < ?))
            ORDER BY sent_at DESC, id DESC LIMIT ?`,
         )
         .all(conversationId, before.sent_at, before.sent_at, before.id, limit) as MessageRow[];
     } else {
       rows = this.db
-        .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT ?')
+        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT ?`)
         .all(conversationId, limit) as MessageRow[];
     }
     rows.reverse();
@@ -649,6 +716,40 @@ export class Repo {
   deleteContact(id: number): boolean {
     return this.db.prepare('DELETE FROM contacts WHERE id = ?').run(id).changes > 0;
   }
+
+  // ------------------------------------------------------- push subscriptions
+
+  listPushSubscriptions(): PushSubscriptionRow[] {
+    return this.db.prepare('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions').all() as PushSubscriptionRow[];
+  }
+
+  getPushSubscription(endpoint: string): PushSubscriptionRow | null {
+    return (
+      (this.db.prepare('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions WHERE endpoint = ?').get(endpoint) as
+        | PushSubscriptionRow
+        | undefined) ?? null
+    );
+  }
+
+  savePushSubscription(sub: PushSubscriptionRow): void {
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO push_subscriptions (endpoint, p256dh, auth, device, lang, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
+           device = excluded.device, lang = excluded.lang, updated_at = excluded.updated_at`,
+      )
+      .run(sub.endpoint, sub.p256dh, sub.auth, sub.device, sub.lang, now, now);
+  }
+
+  deletePushSubscription(endpoint: string): boolean {
+    return this.db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint).changes > 0;
+  }
+
+  deleteAllPushSubscriptions(): number {
+    return this.db.prepare('DELETE FROM push_subscriptions').run().changes;
+  }
 }
 
 function toConversationDto(row: ConversationRow): ConversationDto {
@@ -658,6 +759,7 @@ function toConversationDto(row: ConversationRow): ConversationDto {
     phone: row.phone,
     contact: row.contact_id !== null ? { id: row.contact_id, name: row.contact_name ?? '' } : null,
     unreadCount: row.unread_count,
+    archived: row.archived_at !== null,
     lastMessageAt: row.last_message_at,
     lastMessage:
       row.last_message_id !== null && row.last_direction !== null

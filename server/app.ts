@@ -12,6 +12,7 @@ import { openDatabase, Repo } from './db.js';
 import { EventHub } from './events.js';
 import type { Logger } from './logger.js';
 import { MediaStore } from './media.js';
+import { PushService } from './push.js';
 import { CredentialStore } from './secrets.js';
 import { MessageSender, SendError } from './send.js';
 import { SyncEngine } from './sync.js';
@@ -20,6 +21,7 @@ import { DEMO_CONTACTS, DemoVoipMs } from './voipms/demo.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerContactRoutes } from './routes/contacts.js';
 import { registerMessagingRoutes } from './routes/messaging.js';
+import { registerPushRoutes } from './routes/push.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
@@ -35,6 +37,7 @@ export interface Services {
   auth: Auth;
   sync: SyncEngine;
   sender: MessageSender;
+  push: PushService;
   /** Client for the configured credentials, or null. */
   client(): VoipMsApi | null;
   /** Client for arbitrary credentials (used to validate them in the wizard). */
@@ -50,6 +53,8 @@ export interface BuildOptions {
   clientFactory?: (credentials: VoipMsCredentials) => VoipMsApi;
   /** fetch used to download media (tests). */
   mediaFetch?: typeof fetch;
+  /** fetch used to reach push services (tests). */
+  pushFetch?: typeof fetch;
   logger?: boolean;
 }
 
@@ -109,6 +114,15 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   await media.init();
 
+  const push = new PushService({
+    repo,
+    events,
+    log,
+    subject: config.vapidSubject,
+    ownerFingerprint: credentials.fingerprint('push-subscriptions'),
+    fetch: options.pushFetch,
+  });
+
   const sync = new SyncEngine({
     repo,
     events,
@@ -119,6 +133,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     pollActiveMs: config.pollActiveMs,
     pollIdleMs: config.pollIdleMs,
     log,
+    onIncoming: (items) => push.notifyIncoming(items),
   });
   const sender = new MessageSender({ repo, events, media, sync, getClient: client, log });
   events.onClientCountChange((count) => sync.setActive(count > 0));
@@ -136,6 +151,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     auth,
     sync,
     sender,
+    push,
     client,
     clientFor,
     resetClient: () => {
@@ -202,6 +218,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   registerSetupRoutes(app, services);
   registerMessagingRoutes(app, services);
   registerContactRoutes(app, services);
+  registerPushRoutes(app, services);
 
   if (fs.existsSync(path.join(config.webDir, 'index.html'))) {
     await app.register(fastifyStatic, {
@@ -224,6 +241,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook('onClose', async () => {
     sync.stop();
     events.close();
+    await media.stop();
     db.close();
   });
 

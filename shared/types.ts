@@ -66,6 +66,8 @@ export interface ConversationDto {
   phone: string;
   contact: ContactRef | null;
   unreadCount: number;
+  /** Hidden from the main list until a new message arrives. */
+  archived: boolean;
   lastMessageAt: number | null;
   lastMessage: {
     body: string;

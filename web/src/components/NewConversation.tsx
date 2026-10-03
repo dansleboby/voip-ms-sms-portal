@@ -8,6 +8,7 @@ import { useStore } from '../store';
 import { Composer } from './Composer';
 import { Avatar } from './ui';
 import { formatPhone, isValidNanp, normalizePhone, searchDigits } from '../../../shared/phone';
+import { foldText } from '../../../shared/text';
 
 interface Suggestion {
   name: string;
@@ -55,14 +56,14 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
   }, [recipient, from]);
 
   const suggestions = useMemo((): Suggestion[] => {
-    const q = query.trim().toLowerCase();
+    const q = foldText(query.trim());
     const digits = searchDigits(q);
     const list: Suggestion[] = [];
     if (isValidNanp(digits)) list.push({ name: formatPhone(digits), phone: digits });
     if (q) {
       for (const c of contacts) {
         for (const phone of c.phones) {
-          if (c.name.toLowerCase().includes(q) || (digits.length >= 3 && phone.includes(digits))) {
+          if (foldText(c.name).includes(q) || (digits.length >= 3 && phone.includes(digits))) {
             if (!list.some((s) => s.phone === phone)) list.push({ name: c.name, phone });
           }
         }

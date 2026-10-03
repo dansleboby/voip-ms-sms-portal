@@ -67,4 +67,48 @@ describe('media downloads', () => {
     expect(repo.resetAttachment(id)).toBe(true);
     expect(repo.getAttachment(id)).toMatchObject({ status: 'pending', attempts: 0, next_attempt_at: 0 });
   });
+
+  it('stops cleanly when the server shuts down mid-download', async () => {
+    const { openDatabase, Repo } = await import('./db.js');
+    const { MediaStore } = await import('./media.js');
+    const { silentLogger } = await import('./logger.js');
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const db = openDatabase(':memory:');
+    const repo = new Repo(db);
+    let started!: () => void;
+    const downloading = new Promise<void>((r) => (started = r));
+    // A slow server: answers only when the request is aborted, or after 2 s.
+    const fetchImpl = ((_url: string, init: RequestInit) =>
+      new Promise((resolve, reject) => {
+        started();
+        const timer = setTimeout(() => resolve(new Response('png', { headers: { 'content-type': 'image/png' } })), 2000);
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(init.signal!.reason);
+        });
+      })) as unknown as typeof fetch;
+    const store = new MediaStore(fs.mkdtempSync(path.join(os.tmpdir(), 'media-')), repo, { log: silentLogger, fetch: fetchImpl });
+    await store.init();
+    const conversationId = repo.getOrCreateConversation('4506575294', '4383980707');
+    const messageId = repo.insertMessage({ conversationId, kind: 'mms', remoteId: '1', direction: 'in', body: '', sentAt: 0, status: 'received' });
+    const id = repo.insertAttachment(messageId, 0, { remoteUrl: 'https://voip.ms/media/x/media.png', status: 'pending' });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (err: unknown) => unhandled.push(err);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      store.kick();
+      await downloading;
+      await store.stop();
+      // The interrupted download is left for the next start, untouched.
+      expect(repo.getAttachment(id)).toMatchObject({ status: 'pending', attempts: 0 });
+      db.close();
+      store.kick();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
 });

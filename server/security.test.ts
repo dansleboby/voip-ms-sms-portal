@@ -53,13 +53,19 @@ describe('database migrations', () => {
     const os = await import('node:os');
     const path = await import('node:path');
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mig-')), 'portal.db');
-    const first = openDatabase(file);
-    const repo = new Repo(first);
-    const conversationId = repo.getOrCreateConversation('4506575294', '4383980707');
-    const id = repo.insertMessage({ conversationId, kind: 'sms', remoteId: '9', direction: 'in', body: "l\\\\\\'accès", sentAt: 0, status: 'received' });
-    first.pragma('user_version = 2');
+    const first = openDatabase(file, 2);
+    first.prepare("INSERT INTO dids (did, color) VALUES ('4506575294', '#1a73e8')").run();
+    const conversationId = Number(first.prepare("INSERT INTO conversations (did, phone) VALUES ('4506575294', '4383980707')").run().lastInsertRowid);
+    const id = Number(
+      first
+        .prepare("INSERT INTO messages (conversation_id, kind, remote_id, direction, body, sent_at, status, created_at) VALUES (?, 'sms', '9', 'in', ?, 0, 'received', 0)")
+        .run(conversationId, "l\\\\\\'accès").lastInsertRowid,
+    );
+    first.prepare('UPDATE conversations SET last_message_id = ?, last_message_at = 0 WHERE id = ?').run(id, conversationId);
     first.close();
     const reopened = new Repo(openDatabase(file));
     expect(reopened.getMessage(id)!.body).toBe("l'accès");
+    // Later migrations index the cleaned body for accent-insensitive search.
+    expect(reopened.listConversations({ query: "L'ACCES" }).map((c) => c.id)).toEqual([conversationId]);
   });
 });
