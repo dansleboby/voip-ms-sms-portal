@@ -107,6 +107,27 @@ describe('authentication', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('trusts PUBLIC_URL behind a proxy that rewrites Host and drops the protocol', async () => {
+    await app.close();
+    await start({ PUBLIC_URL: 'https://sms.example.com/' });
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: 'https://sms.example.com', host: '127.0.0.1:3100' },
+      payload: { password: 'hunter2' },
+    });
+    expect(login.statusCode).toBe(200);
+    expect(String(login.headers['set-cookie'])).toMatch(/; Secure/);
+    const evil = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      headers: { origin: 'https://evil.example', host: '127.0.0.1:3100' },
+      payload: { password: 'hunter2' },
+    });
+    expect(evil.statusCode).toBe(403);
+    expect(() => loadConfig({ APP_PASSWORD: 'x', PUBLIC_URL: 'sms.example.com' })).toThrow(/PUBLIC_URL/);
+  });
+
   it('cannot be bypassed with an encoded or absolute-form path', async () => {
     expect((await app.inject({ url: '/%61pi/setup/status' })).statusCode).toBe(401);
     expect((await app.inject({ url: '/api/%63onversations' })).statusCode).toBe(401);

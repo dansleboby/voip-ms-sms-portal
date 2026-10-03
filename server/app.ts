@@ -187,7 +187,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     // absolute-form request line would otherwise reach /api handlers unauthenticated.
     const route = req.routeOptions.url;
     if (!route?.startsWith('/api/')) return;
-    if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req, config.publicOrigin)) {
       return reply.code(403).send({ error: 'bad_origin' });
     }
     if (publicRoutes.has(route)) return;
@@ -249,11 +249,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 }
 
 /** Rejects cross-site state-changing requests (on top of SameSite=Lax cookies). */
-function sameOrigin(req: FastifyRequest): boolean {
+function sameOrigin(req: FastifyRequest, publicOrigin: string | null): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
   try {
-    return new URL(origin).host === req.headers.host;
+    const url = new URL(origin);
+    return url.origin === publicOrigin || url.host === req.headers.host;
   } catch {
     return false;
   }

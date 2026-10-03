@@ -32,7 +32,7 @@ export function registerAuthRoutes(app: FastifyInstance, s: Services): void {
         path: '/',
         httpOnly: true,
         sameSite: 'lax',
-        secure: req.protocol === 'https',
+        secure: req.protocol === 'https' || s.config.publicOrigin?.startsWith('https:') === true,
         maxAge: s.auth.maxAgeSeconds,
       });
       return { ok: true };

@@ -24,6 +24,11 @@ export interface Config {
   webDir: string;
   /** Contact sent to push services with each notification (VAPID "sub" claim). */
   vapidSubject: string;
+  /**
+   * Origin the app is reached at ("https://sms.example.com"), for reverse
+   * proxies that do not pass the original Host or protocol along.
+   */
+  publicOrigin: string | null;
 }
 
 export class ConfigError extends Error {}
@@ -77,6 +82,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(`VAPID_SUBJECT must be a mailto: address or an https:// URL, got "${vapidSubject}".`);
   }
 
+  let publicOrigin: string | null = null;
+  const publicUrl = env.PUBLIC_URL?.trim();
+  if (publicUrl) {
+    try {
+      const url = new URL(publicUrl);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error();
+      publicOrigin = url.origin;
+    } catch {
+      throw new ConfigError(`PUBLIC_URL must be the address of the app, like https://sms.example.com, got "${publicUrl}".`);
+    }
+  }
+
   return {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? '0.0.0.0',
@@ -92,5 +109,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL ?? 'info',
     webDir: path.resolve(env.WEB_DIR ?? 'dist/web'),
     vapidSubject,
+    publicOrigin,
   };
 }
