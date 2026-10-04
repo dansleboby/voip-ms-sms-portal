@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.2.0 (2026-10-03)
+
+- The installed app's icon shows the number of unread texts (iPhone and iPad 16.4+ from the home screen, Chrome and Edge on Windows and macOS), updated by each push notification even when the app is closed, and cleared as conversations are read. Android keeps its own dot for unread notifications.
+
 ## 1.1.0 (2026-10-03)
 
 - On phones, the app suggests installing it on the home screen (the browser's own install dialog on Android, the Share steps on iPhone), then turning on push notifications; each suggestion can be put off for good.

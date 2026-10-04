@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, getLang, setLang, t, useLang } from '../i18n';
 import { disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported, soundEnabled } from '../lib/notify';
+import { setIconBadge } from '../lib/install';
 import { prefs } from '../lib/prefs';
 import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sendTestPush } from '../lib/push';
 import { navigate } from '../lib/router';
@@ -106,6 +107,7 @@ export function Settings() {
   const logout = async () => {
     // Notifications show message previews: a signed-out device stops receiving them.
     await disablePush().catch(() => undefined);
+    setIconBadge(0);
     await api.logout().catch(() => undefined);
     resetData();
     await loadSession();

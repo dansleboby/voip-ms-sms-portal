@@ -73,7 +73,7 @@ The archive button in a conversation's header puts it away (with an *Undo*); the
 
 ### Push notifications
 
-Turn them on in Settings, on each device: phone, computer, tablet. They arrive even when no tab is open, and skip the device where the app is already on screen. See [Setting up push notifications](#setting-up-push-notifications) for what they need.
+Turn them on in Settings, on each device: phone, computer, tablet. They arrive even when no tab is open, and skip the device where the app is already on screen. Once the app is installed, its icon also shows the number of unread texts (iPhone, iPad, Windows, macOS; Android shows a dot). See [Setting up push notifications](#setting-up-push-notifications) for what they need.
 
 ![Push notification settings](docs/screenshots/en/push.png)
 
