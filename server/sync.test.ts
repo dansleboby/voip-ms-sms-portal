@@ -122,9 +122,10 @@ describe('SyncEngine', () => {
   it('reports errors and recovers', async () => {
     ctx.client.failNext.getMessages = 'ip_not_enabled';
     await ctx.sync.syncRecent();
-    expect(ctx.sync.status()).toMatchObject({ state: 'error', lastError: 'ip_not_enabled' });
+    // The check ran even though VoIP.ms refused it.
+    expect(ctx.sync.status()).toMatchObject({ state: 'error', lastError: 'ip_not_enabled', lastSyncAt: null, lastCheckAt: NOW });
     await ctx.sync.syncRecent();
-    expect(ctx.sync.status()).toMatchObject({ state: 'idle', lastError: null });
+    expect(ctx.sync.status()).toMatchObject({ state: 'idle', lastError: null, lastSyncAt: NOW, lastCheckAt: NOW });
   });
 
   it('does not let a history import swallow texts newer than the last poll', async () => {

@@ -14,6 +14,21 @@ export function formatTime(ms: number): string {
   return new Intl.DateTimeFormat(locale(), { hour: 'numeric', minute: '2-digit' }).format(ms);
 }
 
+export function formatDateTime(ms: number): string {
+  return new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(ms);
+}
+
+/** "2 minutes ago", "3 hours ago"…; anything under a minute reads the same. */
+export function formatAgo(ms: number, now = Date.now()): string {
+  const minutes = Math.floor((now - ms) / 60_000);
+  if (minutes < 1) return t('time.justNow');
+  const relative = new Intl.RelativeTimeFormat(locale());
+  if (minutes < 60) return relative.format(-minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return relative.format(-hours, 'hour');
+  return relative.format(-Math.floor(hours / 24), 'day');
+}
+
 /** Compact stamp for the conversation list: time today, "Yesterday", weekday this week, then a date. */
 export function formatListDate(ms: number, now = Date.now()): string {
   const today = startOfDay(now);

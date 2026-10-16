@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
 import { errorText, t } from './i18n';
+import { openLiveUpdates } from './lib/live';
 import { notifyIncoming } from './lib/notify';
 import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
@@ -315,7 +316,7 @@ export async function retryMessage(id: number): Promise<void> {
 
 // ------------------------------------------------------------------- events
 
-let source: EventSource | null = null;
+let closeLive: (() => void) | null = null;
 const notified = new Set<number>();
 
 function handleEvent(event: ServerEvent): void {
@@ -353,46 +354,43 @@ function handleEvent(event: ServerEvent): void {
 const visible = () => document.visibilityState === 'visible';
 const reportVisibility = () => void api.presence(tabId, visible());
 
+/** Catches up on whatever happened while disconnected (the server may also have been updated). */
+function catchUp(): void {
+  void loadSession().catch(() => undefined);
+  reloadConversations();
+  reloadDids();
+  for (const id of Object.keys(state.threads)) void loadThread(Number(id));
+}
+
 export function connectEvents(): void {
-  if (source) return;
-  const params = new URLSearchParams({ device: deviceId(), tab: tabId, visible: visible() ? '1' : '0' });
-  source = new EventSource(`/api/events?${params}`);
+  if (closeLive) return;
   document.addEventListener('visibilitychange', reportVisibility);
-  source.onopen = () => {
-    const wasDisconnected = !state.connected;
-    setState({ connected: true });
-    // The URL's visibility may be stale after an automatic reconnection.
-    reportVisibility();
-    // Catch up on whatever happened while disconnected (the server may also have been updated).
-    if (wasDisconnected) {
-      void loadSession().catch(() => undefined);
-      reloadConversations();
-      reloadDids();
-      for (const id of Object.keys(state.threads)) void loadThread(Number(id));
-    }
-  };
-  source.onmessage = (e) => {
-    try {
-      handleEvent(JSON.parse(e.data as string) as ServerEvent);
-    } catch {
-      // Ignore malformed frames.
-    }
-  };
-  source.onerror = () => {
-    setState({ connected: false });
-    // EventSource hides the status code: check whether the session expired.
-    loadSession()
-      .then((session) => {
-        if (!session.authenticated) disconnectEvents();
-      })
-      .catch(() => undefined);
-  };
+  closeLive = openLiveUpdates(state.session?.liveUpdates ?? 'stream', { device: deviceId(), tab: tabId, visible }, {
+    onOpen: () => {
+      const wasDisconnected = !state.connected;
+      setState({ connected: true });
+      // The visibility given when connecting may be stale after an automatic reconnection.
+      reportVisibility();
+      if (wasDisconnected) catchUp();
+    },
+    onEvent: handleEvent,
+    onError: () => {
+      setState({ connected: false });
+      // EventSource hides the status code: check whether the session expired.
+      loadSession()
+        .then((session) => {
+          if (!session.authenticated) disconnectEvents();
+        })
+        .catch(() => undefined);
+    },
+    onReset: catchUp,
+  });
 }
 
 export function disconnectEvents(): void {
   document.removeEventListener('visibilitychange', reportVisibility);
-  source?.close();
-  source = null;
+  closeLive?.();
+  closeLive = null;
 }
 
 export function resetData(): void {

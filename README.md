@@ -115,6 +115,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
 | `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. |
+| `LIVE_UPDATES` | `stream` | How open tabs receive new texts and changes. `stream` keeps one connection open per tab (Server-Sent Events); `poll` has each tab ask every 3 s instead, for proxies or hosts that cannot pass a stream through. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` in Docker) | Database and media location. |
 | `PORT` | `8080` | HTTP port. |
@@ -138,7 +139,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 
 ### Behind a reverse proxy
 
-Live updates use Server-Sent Events (`/api/events`): disable response buffering for that path.
+Live updates use Server-Sent Events (`/api/events`): disable response buffering for that path. If your proxy cannot do that, set `LIVE_UPDATES=poll`.
 
 **Caddy**
 

@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { ArrowLeft, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../api';
-import { errorText, getLang, setLang, t, useLang } from '../i18n';
+import { errorText, setLang, t, useLang } from '../i18n';
 import { disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported, soundEnabled } from '../lib/notify';
 import { setIconBadge } from '../lib/install';
 import { prefs } from '../lib/prefs';
+import { formatDateTime } from '../lib/format';
 import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sendTestPush } from '../lib/push';
 import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
 import { DidEditor } from './DidEditor';
-import { Switch } from './ui';
+import { Ago, Switch } from './ui';
 import type { ConnectionTestDto } from '../../../shared/types';
 
 const IMPORT_CHOICES = [30, 90, 365, 730];
@@ -285,10 +286,19 @@ export function Settings() {
                 <div className="row-main">
                   <div className="row-title">{t('settings.lastSync')}</div>
                   <div className="row-sub">
-                    {sync?.lastSyncAt
-                      ? new Intl.DateTimeFormat(getLang() === 'fr' ? 'fr-CA' : 'en-CA', { dateStyle: 'medium', timeStyle: 'short' }).format(sync.lastSyncAt)
-                      : t('settings.never')}
-                    {sync?.state === 'error' && sync.lastError && <span className="error-text"> · {errorText(sync.lastError)}</span>}
+                    {sync?.lastCheckAt ? <Ago at={sync.lastCheckAt} /> : t('settings.never')}
+                    {sync?.state === 'error' && sync.lastError && (
+                      <span className="error-text">
+                        {' · '}
+                        {errorText(sync.lastError)}
+                        {sync.lastSyncAt !== null && sync.lastSyncAt < (sync.lastCheckAt ?? 0) && (
+                          <>
+                            {' · '}
+                            {t('settings.lastSuccess', { when: formatDateTime(sync.lastSyncAt) })}
+                          </>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button className="btn tonal small" onClick={() => void api.syncNow().catch(toastError)}>

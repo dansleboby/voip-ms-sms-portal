@@ -16,6 +16,8 @@ services:
       POLL_INTERVAL_IDLE: ${POLL_INTERVAL_IDLE:-60}
       # Set to true when served over HTTPS behind a reverse proxy.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # "poll" if a proxy in front cannot pass Server-Sent Events through.
+      LIVE_UPDATES: ${LIVE_UPDATES:-stream}
       # Address of the app (https://sms.example.com), for proxies that rewrite Host.
       PUBLIC_URL: ${PUBLIC_URL:-}
       # Optional: contact given to browser push services (mailto: or https: URL).
