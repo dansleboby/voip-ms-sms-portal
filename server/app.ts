@@ -204,6 +204,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     if (code === 'FST_REQ_FILE_TOO_LARGE') return reply.code(413).send({ error: 'attachment_too_large' });
     if (code === 'FST_FILES_LIMIT') return reply.code(413).send({ error: 'too_many_attachments' });
     if (status === 413) return reply.code(413).send({ error: 'payload_too_large' });
+    // The sign-in page tells this one apart.
+    if (status === 429) return reply.code(429).send({ error: 'rate_limited' });
     if (status && status >= 400 && status < 500) {
       return reply.code(status).send({ error: (err as { code?: string }).code ?? 'bad_request', message: (err as Error).message });
     }
