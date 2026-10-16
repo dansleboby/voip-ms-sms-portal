@@ -293,12 +293,23 @@ export async function fetchConversation(id: number): Promise<ConversationDto> {
 
 // ------------------------------------------------------------------ sending
 
+/**
+ * Live updates can overtake the response to a send or a retry: the response
+ * then holds an older state ("sending") than what they brought (sent,
+ * failed), and must not overwrite it.
+ */
+let messageEvents = 0;
+const lastMessageEvent = new Map<number, number>();
+const reportedSince = (messageId: number, mark: number) => (lastMessageEvent.get(messageId) ?? 0) > mark;
+
 export async function sendMessage(input: { did: string; to: string; body: string; files: File[] }): Promise<ConversationDto> {
+  const mark = messageEvents;
   const { message, conversation } = await api.send(input);
   // The message is on its way: a failure to refresh the thread must not look like a failed send.
   if (!state.threads[conversation.id]?.loaded) await loadThread(conversation.id).catch(() => undefined);
-  upsertMessage(message);
-  upsertConversation(conversation);
+  // The thread loaded since already holds the message as it is now.
+  if (!threadOf(state, conversation.id).items.some((m) => m.id === message.id)) upsertMessage(message);
+  if (!reportedSince(message.id, mark)) upsertConversation(conversation);
   return conversation;
 }
 
@@ -307,8 +318,10 @@ export async function retryMedia(id: number): Promise<void> {
 }
 
 export async function retryMessage(id: number): Promise<void> {
+  const mark = messageEvents;
   try {
-    upsertMessage(await api.retry(id));
+    const message = await api.retry(id);
+    if (!reportedSince(id, mark)) upsertMessage(message);
   } catch (err) {
     toastError(err);
   }
@@ -322,6 +335,7 @@ const notified = new Set<number>();
 function handleEvent(event: ServerEvent): void {
   switch (event.type) {
     case 'message': {
+      lastMessageEvent.set(event.message.id, ++messageEvents);
       const isNew = upsertMessage(event.message);
       upsertConversation(event.conversation);
       const m = event.message;

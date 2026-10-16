@@ -5,6 +5,7 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## Unreleased
 
 - `LIVE_UPDATES=poll` has open tabs ask for updates every 3 s instead of keeping a Server-Sent Events stream open, for proxies and hosts that cannot pass a stream through. The web client follows whichever the server asks for, a first step toward a version for shared PHP hosting (cPanel).
+- A sent text no longer stays on "Sending…" until the next check when the server's update arrives before the reply to the send (seen in demo mode, where sending is instant).
 - *Settings → Last check* now tells how long ago VoIP.ms was last checked ("2 minutes ago", exact time on hover), counting checks that failed, so you can see the checks are still running; when they fail, it also gives the last time one succeeded.
 
 ## 1.2.0 (2026-10-03)
