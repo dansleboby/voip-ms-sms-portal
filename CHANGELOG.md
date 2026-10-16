@@ -4,7 +4,9 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
-- `LIVE_UPDATES=poll` has open tabs ask for updates every 3 s instead of keeping a Server-Sent Events stream open, for proxies and hosts that cannot pass a stream through. The web client follows whichever the server asks for, a first step toward a version for shared PHP hosting (cPanel).
+- **Shared hosting (cPanel).** A PHP version of the server (`php/`, PHP 8.1+) runs the same web client on ordinary web hosting, without Docker or Node.js: a zip to extract, a `config.php` to fill in and a cron job that checks VoIP.ms while the app is closed. *Settings* shows when that job last ran, and the command to set it up when it does not. See *Shared hosting (cPanel)* in the README.
+- The sign-in page now says "Too many attempts" when sign-ins are rate limited, instead of reporting a lost connection.
+- `LIVE_UPDATES=poll` has open tabs ask for updates every 3 s instead of keeping a Server-Sent Events stream open, for proxies and hosts that cannot pass a stream through. The web client follows whichever the server asks for.
 - A sent text no longer stays on "Sending…" until the next check when the server's update arrives before the reply to the send (seen in demo mode, where sending is instant).
 - *Settings → Last check* now tells how long ago VoIP.ms was last checked ("2 minutes ago", exact time on hover), counting checks that failed, so you can see the checks are still running; when they fail, it also gives the last time one succeeded.
 

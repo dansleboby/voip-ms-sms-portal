@@ -100,6 +100,12 @@ export interface SyncStatusDto {
   lastCheckAt: number | null;
   lastError: string | null;
   importing: { done: number; total: number } | null;
+  /**
+   * Servers without a process of their own (the PHP version) check VoIP.ms
+   * from a cron job while no tab is open: when it last ran, and the command
+   * to schedule.
+   */
+  cron?: { lastRunAt: number | null; command: string };
 }
 
 export interface SetupStatusDto {

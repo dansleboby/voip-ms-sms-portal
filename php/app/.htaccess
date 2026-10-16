@@ -1,0 +1,3 @@
+# Settings and data: never served, even if this folder ends up in the web root.
+Require all denied
+Deny from all

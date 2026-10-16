@@ -28,13 +28,19 @@ export function Avatar({ name, seed, size }: { name: string; seed: string; size?
   );
 }
 
-/** "2 minutes ago", kept current while on screen; the exact time shows on hover. */
-export function Ago({ at }: { at: number }) {
+/** The current time, refreshed every 15 s while the component is on screen. */
+export function useNow(): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
   }, []);
+  return now;
+}
+
+/** "2 minutes ago", kept current while on screen; the exact time shows on hover. */
+export function Ago({ at }: { at: number }) {
+  const now = useNow();
   return (
     <time dateTime={new Date(at).toISOString()} title={formatDateTime(at)}>
       {formatAgo(at, Math.max(now, at))}

@@ -1620,6 +1620,20 @@ textarea.input {
   font-size: 13px;
 }
 
+/* A command to copy as is (the cron job's). */
+.command {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .ok-text {
   color: var(--success);
   font-weight: 500;

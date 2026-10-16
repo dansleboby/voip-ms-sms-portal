@@ -97,7 +97,8 @@ export const api = {
     form.set('did', input.did);
     form.set('to', input.to);
     form.set('body', input.body);
-    for (const file of input.files) form.append('files', file, file.name);
+    // "[]" so PHP keeps every file, not just the last one.
+    for (const file of input.files) form.append('files[]', file, file.name);
     return request<{ message: MessageDto; conversation: ConversationDto }>('POST', '/api/messages', form);
   },
   retry: (messageId: number) => request<MessageDto>('POST', `/api/messages/${messageId}/retry`),
