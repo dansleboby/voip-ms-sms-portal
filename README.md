@@ -14,6 +14,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
 - **Archive** the conversations you are done with; they come back as soon as a new text arrives.
 - **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
+- **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: no Node.js needed there. See [Shared hosting](#shared-hosting-cpanel).
 
 ## A quick tour
 
@@ -138,7 +139,7 @@ To update, extract the new zip over the old folders: `config.php` and `sms-porta
 | `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. |
 | `LIVE_UPDATES` | `stream` | How open tabs receive new texts and changes. `stream` keeps one connection open per tab (Server-Sent Events); `poll` has each tab ask every 3 s instead, for proxies or hosts that cannot pass a stream through. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
-| `DATA_DIR` | `./data` (`/data` in Docker) | Database and media location. |
+| `DATA_DIR` | `./data` (`/data` in Docker, `sms-portal/data` on shared hosting) | Database and media location. |
 | `PORT` | `8080` | HTTP port. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |

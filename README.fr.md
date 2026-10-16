@@ -14,6 +14,7 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 - **Notifications push**, même quand l'application est fermée ou le téléphone verrouillé, sur chaque appareil où vous les activez.
 - **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive.
 - **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche qui ignore les accents (« belanger » trouve « Bélanger »), thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
+- **Docker ou hébergement mutualisé.** Un seul conteneur, ou un hébergement web PHP ordinaire (cPanel) avec une tâche cron : pas besoin de Node.js. Voir [Hébergement mutualisé](#hébergement-mutualisé-cpanel).
 
 ## Visite guidée
 
@@ -138,7 +139,7 @@ Pour mettre à jour, décompressez le nouveau zip par-dessus les anciens dossier
 | `LIVE_UPDATES` | `stream` | Comment les onglets ouverts reçoivent les nouveaux textos et les changements. `stream` garde une connexion ouverte par onglet (Server-Sent Events) ; `poll` fait plutôt demander chaque onglet toutes les 3 s, pour les proxys ou hébergeurs qui ne laissent pas passer un flux. |
 | `PUBLIC_URL` | | Adresse de l'application, comme `https://sms.example.com`. Recommandé derrière un proxy inverse : s'il ne transmet pas le `Host` et le protocole d'origine, la connexion serait refusée sans ce réglage. |
 | `TRUST_PROXY` | `false` | `true` derrière un proxy inverse qui gère le HTTPS (cookies sécurisés, vraie IP des clients). `true` ne fait confiance qu'aux proxys sur la boucle locale et les réseaux privés ; on peut aussi lister des adresses/sous-réseaux (`10.0.0.5, 172.16.0.0/12`). |
-| `DATA_DIR` | `./data` (`/data` dans Docker) | Emplacement de la base et des médias. |
+| `DATA_DIR` | `./data` (`/data` dans Docker, `sms-portal/data` en hébergement mutualisé) | Emplacement de la base et des médias. |
 | `PORT` | `8080` | Port HTTP. |
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
