@@ -17,6 +17,7 @@ export function registerAuthRoutes(app: FastifyInstance, s: Services): void {
     version: VERSION,
     pollActiveSeconds: Math.round(s.config.pollActiveMs / 1000),
     pollIdleSeconds: Math.round(s.config.pollIdleMs / 1000),
+    liveUpdates: s.config.liveUpdates,
   }));
 
   app.post(

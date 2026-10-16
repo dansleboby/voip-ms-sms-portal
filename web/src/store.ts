@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
 import { errorText, t } from './i18n';
+import { openLiveUpdates } from './lib/live';
 import { notifyIncoming } from './lib/notify';
 import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
@@ -292,12 +293,23 @@ export async function fetchConversation(id: number): Promise<ConversationDto> {
 
 // ------------------------------------------------------------------ sending
 
+/**
+ * Live updates can overtake the response to a send or a retry: the response
+ * then holds an older state ("sending") than what they brought (sent,
+ * failed), and must not overwrite it.
+ */
+let messageEvents = 0;
+const lastMessageEvent = new Map<number, number>();
+const reportedSince = (messageId: number, mark: number) => (lastMessageEvent.get(messageId) ?? 0) > mark;
+
 export async function sendMessage(input: { did: string; to: string; body: string; files: File[] }): Promise<ConversationDto> {
+  const mark = messageEvents;
   const { message, conversation } = await api.send(input);
   // The message is on its way: a failure to refresh the thread must not look like a failed send.
   if (!state.threads[conversation.id]?.loaded) await loadThread(conversation.id).catch(() => undefined);
-  upsertMessage(message);
-  upsertConversation(conversation);
+  // The thread loaded since already holds the message as it is now.
+  if (!threadOf(state, conversation.id).items.some((m) => m.id === message.id)) upsertMessage(message);
+  if (!reportedSince(message.id, mark)) upsertConversation(conversation);
   return conversation;
 }
 
@@ -306,8 +318,10 @@ export async function retryMedia(id: number): Promise<void> {
 }
 
 export async function retryMessage(id: number): Promise<void> {
+  const mark = messageEvents;
   try {
-    upsertMessage(await api.retry(id));
+    const message = await api.retry(id);
+    if (!reportedSince(id, mark)) upsertMessage(message);
   } catch (err) {
     toastError(err);
   }
@@ -315,12 +329,13 @@ export async function retryMessage(id: number): Promise<void> {
 
 // ------------------------------------------------------------------- events
 
-let source: EventSource | null = null;
+let closeLive: (() => void) | null = null;
 const notified = new Set<number>();
 
 function handleEvent(event: ServerEvent): void {
   switch (event.type) {
     case 'message': {
+      lastMessageEvent.set(event.message.id, ++messageEvents);
       const isNew = upsertMessage(event.message);
       upsertConversation(event.conversation);
       const m = event.message;
@@ -353,46 +368,43 @@ function handleEvent(event: ServerEvent): void {
 const visible = () => document.visibilityState === 'visible';
 const reportVisibility = () => void api.presence(tabId, visible());
 
+/** Catches up on whatever happened while disconnected (the server may also have been updated). */
+function catchUp(): void {
+  void loadSession().catch(() => undefined);
+  reloadConversations();
+  reloadDids();
+  for (const id of Object.keys(state.threads)) void loadThread(Number(id));
+}
+
 export function connectEvents(): void {
-  if (source) return;
-  const params = new URLSearchParams({ device: deviceId(), tab: tabId, visible: visible() ? '1' : '0' });
-  source = new EventSource(`/api/events?${params}`);
+  if (closeLive) return;
   document.addEventListener('visibilitychange', reportVisibility);
-  source.onopen = () => {
-    const wasDisconnected = !state.connected;
-    setState({ connected: true });
-    // The URL's visibility may be stale after an automatic reconnection.
-    reportVisibility();
-    // Catch up on whatever happened while disconnected (the server may also have been updated).
-    if (wasDisconnected) {
-      void loadSession().catch(() => undefined);
-      reloadConversations();
-      reloadDids();
-      for (const id of Object.keys(state.threads)) void loadThread(Number(id));
-    }
-  };
-  source.onmessage = (e) => {
-    try {
-      handleEvent(JSON.parse(e.data as string) as ServerEvent);
-    } catch {
-      // Ignore malformed frames.
-    }
-  };
-  source.onerror = () => {
-    setState({ connected: false });
-    // EventSource hides the status code: check whether the session expired.
-    loadSession()
-      .then((session) => {
-        if (!session.authenticated) disconnectEvents();
-      })
-      .catch(() => undefined);
-  };
+  closeLive = openLiveUpdates(state.session?.liveUpdates ?? 'stream', { device: deviceId(), tab: tabId, visible }, {
+    onOpen: () => {
+      const wasDisconnected = !state.connected;
+      setState({ connected: true });
+      // The visibility given when connecting may be stale after an automatic reconnection.
+      reportVisibility();
+      if (wasDisconnected) catchUp();
+    },
+    onEvent: handleEvent,
+    onError: () => {
+      setState({ connected: false });
+      // EventSource hides the status code: check whether the session expired.
+      loadSession()
+        .then((session) => {
+          if (!session.authenticated) disconnectEvents();
+        })
+        .catch(() => undefined);
+    },
+    onReset: catchUp,
+  });
 }
 
 export function disconnectEvents(): void {
   document.removeEventListener('visibilitychange', reportVisibility);
-  source?.close();
-  source = null;
+  closeLive?.();
+  closeLive = null;
 }
 
 export function resetData(): void {

@@ -5,7 +5,7 @@ import type { Services } from '../app.js';
 import { isInlineSafe } from '../media.js';
 import { SendError, type OutgoingFile } from '../send.js';
 import { normalizePhone } from '../../shared/phone.js';
-import type { ConversationDto, DidDto, MessageDto, SyncStatusDto } from '../../shared/types.js';
+import type { ConversationDto, DidDto, EventsPollDto, MessageDto, SyncStatusDto } from '../../shared/types.js';
 
 const IdParams = z.object({ id: z.coerce.number().int().positive() });
 
@@ -32,6 +32,7 @@ const LookupQuery = z.object({ did: z.string(), phone: z.string() });
 
 const ClientId = z.string().regex(/^[\w-]{8,64}$/);
 const TabQuery = z.object({ device: ClientId.optional(), tab: ClientId.optional(), visible: z.enum(['0', '1']).optional() });
+const PollQuery = TabQuery.extend({ after: z.string().max(100).optional() });
 const PresenceBody = z.object({ tab: ClientId, visible: z.boolean() });
 
 const MessagesQuery = z.object({
@@ -192,5 +193,15 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     );
     reply.raw.write(`data: ${JSON.stringify({ type: 'sync', status: s.sync.status() })}\n\n`);
     req.raw.on('close', () => reply.raw.end());
+  });
+
+  /** The same events as /api/events, for tabs that poll instead (LIVE_UPDATES=poll). */
+  app.get('/api/events/poll', async (req, reply): Promise<EventsPollDto> => {
+    const { after, device, tab, visible } = PollQuery.parse(req.query);
+    const result = s.events.poll(after, { device, tab, visible: visible !== '0' });
+    // Like the stream's first frame: a tab starting over learns the sync state.
+    if (after === undefined || result.reset) result.events.unshift({ type: 'sync', status: s.sync.status() });
+    reply.header('Cache-Control', 'no-store');
+    return result;
   });
 }

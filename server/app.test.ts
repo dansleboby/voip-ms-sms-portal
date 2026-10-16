@@ -8,6 +8,7 @@ import { loadConfig } from './config.js';
 import { FakeVoipMs } from './test/fake-client.js';
 import { readVersion } from './version.js';
 import { browserKeys, decryptPayload } from './test/webpush-helpers.js';
+import type { EventsPollDto } from '../shared/types.js';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -123,7 +124,13 @@ describe('authentication', () => {
 
   it('reports the session state', async () => {
     const res = await app.inject({ url: '/api/session' });
-    expect(res.json()).toMatchObject({ authenticated: false, setupCompleted: false, credentialsSource: null, pollActiveSeconds: 10 });
+    expect(res.json()).toMatchObject({
+      authenticated: false,
+      setupCompleted: false,
+      credentialsSource: null,
+      pollActiveSeconds: 10,
+      liveUpdates: 'stream',
+    });
   });
 
   it('blocks cross-site writes', async () => {
@@ -209,6 +216,12 @@ describe('authentication', () => {
     expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: '' }).vapidSubject).toMatch(/^https:\/\//);
     expect(loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: 'mailto:me@example.com' }).vapidSubject).toBe('mailto:me@example.com');
     expect(() => loadConfig({ APP_PASSWORD: 'x', VAPID_SUBJECT: 'me@example.com' })).toThrow(/VAPID_SUBJECT/);
+  });
+
+  it('checks LIVE_UPDATES', () => {
+    expect(loadConfig({ APP_PASSWORD: 'x' }).liveUpdates).toBe('stream');
+    expect(loadConfig({ APP_PASSWORD: 'x', LIVE_UPDATES: ' Poll ' }).liveUpdates).toBe('poll');
+    expect(() => loadConfig({ APP_PASSWORD: 'x', LIVE_UPDATES: 'sse' })).toThrow(/LIVE_UPDATES/);
   });
 });
 
@@ -460,6 +473,40 @@ describe('messaging', () => {
   });
 });
 
+describe('live updates by polling', () => {
+  beforeEach(async () => {
+    await start({ VOIPMS_API_USERNAME: 'me@example.com', VOIPMS_API_PASSWORD: 'x', LIVE_UPDATES: 'poll' });
+    await login();
+    await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+    await app.inject({ method: 'POST', url: '/api/setup/complete', headers: { cookie } });
+  });
+
+  const poll = async (query: Record<string, string> = {}): Promise<EventsPollDto> => {
+    const res = await app.inject({ url: `/api/events/poll?${new URLSearchParams({ tab: 'tab-00000001', ...query })}`, headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    return res.json();
+  };
+
+  it('is what the session asks for, and needs to be signed in', async () => {
+    expect((await app.inject({ url: '/api/session' })).json().liveUpdates).toBe('poll');
+    expect((await app.inject({ url: '/api/events/poll' })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/events/poll?tab=x', headers: { cookie } })).statusCode).toBe(400);
+  });
+
+  it('serves the events the stream sends, from where the tab left off', async () => {
+    // A polling tab counts as open: VoIP.ms is checked at the faster pace.
+    const first = await poll();
+    expect(first.events).toEqual([{ type: 'sync', status: expect.objectContaining({ mode: 'active' }) }]);
+    await app.inject({ method: 'PATCH', url: '/api/dids/4506575294', headers: { cookie }, payload: { label: 'Bureau' } });
+    const next = await poll({ after: first.cursor });
+    expect(next).toMatchObject({ events: [{ type: 'dids' }, { type: 'reload' }], reset: false });
+    expect(await poll({ after: next.cursor })).toMatchObject({ events: [], reset: false });
+    // A cursor from before a restart: the tab reloads everything, and learns the sync state again.
+    expect(await poll({ after: 'gone.3' })).toMatchObject({ events: [{ type: 'sync' }], reset: true });
+  });
+});
+
 describe('contacts', () => {
   beforeEach(async () => {
     await start();
@@ -596,6 +643,27 @@ describe('push notifications', () => {
     // Once the tab is hidden, the device gets notifications again.
     const res = await app.inject({ method: 'POST', url: '/api/presence', headers: { cookie }, payload: { tab: tab.tab, visible: false } });
     expect(res.json()).toEqual({ ok: true });
+    pushed = [];
+    client.push({ direction: 'in', body: 'Encore', contact: '4383980707' });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 2);
+    expect(pushed.map((p) => p.url).sort()).toEqual([endpoint, 'https://push.example.net/send/other']);
+  });
+
+  it('also skips it when the tab polls for live updates', async () => {
+    await subscribe({ ...subscription, device: 'device-0001' });
+    const other = browserKeys();
+    await subscribe({ endpoint: 'https://push.example.net/send/other', keys: { p256dh: other.p256dh, auth: other.auth }, device: 'device-0002' });
+    const poll = (visible: '0' | '1') =>
+      app.inject({ url: `/api/events/poll?device=device-0001&tab=tab-00000001&visible=${visible}`, headers: { cookie } });
+    await poll('1');
+
+    client.push({ direction: 'in', body: 'Salut', contact: '4383980707' });
+    await services.sync.syncRecent();
+    await waitFor(() => pushed.length === 1);
+    expect(pushed.map((p) => p.url)).toEqual(['https://push.example.net/send/other']);
+
+    await poll('0');
     pushed = [];
     client.push({ direction: 'in', body: 'Encore', contact: '4383980707' });
     await services.sync.syncRecent();

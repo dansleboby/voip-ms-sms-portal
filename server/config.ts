@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { LiveUpdates } from '../shared/types.js';
 
 export interface Config {
   port: number;
@@ -29,6 +30,8 @@ export interface Config {
    * proxies that do not pass the original Host or protocol along.
    */
   publicOrigin: string | null;
+  /** Transport the web client uses for live updates; the server always answers both. */
+  liveUpdates: LiveUpdates;
   /** Problems worth logging once the logger exists (e.g. settings that had to be cleaned up). */
   warnings: string[];
 }
@@ -76,6 +79,7 @@ const SETTINGS = [
   'PORT',
   'VAPID_SUBJECT',
   'PUBLIC_URL',
+  'LIVE_UPDATES',
 ];
 
 /**
@@ -136,6 +140,11 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
     }
   }
 
+  const liveUpdates = env.LIVE_UPDATES?.trim().toLowerCase() || 'stream';
+  if (liveUpdates !== 'stream' && liveUpdates !== 'poll') {
+    throw new ConfigError(`LIVE_UPDATES must be "stream" or "poll", got "${env.LIVE_UPDATES}".`);
+  }
+
   return {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? '0.0.0.0',
@@ -152,6 +161,7 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
     webDir: path.resolve(env.WEB_DIR ?? 'dist/web'),
     vapidSubject,
     publicOrigin,
+    liveUpdates,
     warnings,
   };
 }

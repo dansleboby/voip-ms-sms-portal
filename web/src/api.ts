@@ -3,6 +3,7 @@ import type {
   ContactDto,
   ConversationDto,
   DidDto,
+  EventsPollDto,
   MessageDto,
   SessionDto,
   SetupStatusDto,
@@ -96,7 +97,8 @@ export const api = {
     form.set('did', input.did);
     form.set('to', input.to);
     form.set('body', input.body);
-    for (const file of input.files) form.append('files', file, file.name);
+    // "[]" so PHP keeps every file, not just the last one.
+    for (const file of input.files) form.append('files[]', file, file.name);
     return request<{ message: MessageDto; conversation: ConversationDto }>('POST', '/api/messages', form);
   },
   retry: (messageId: number) => request<MessageDto>('POST', `/api/messages/${messageId}/retry`),
@@ -123,6 +125,12 @@ export const api = {
       // Still delivered when the page is being hidden or frozen.
       keepalive: true,
     }).catch(() => undefined),
+
+  pollEvents: (params: { after?: string; device: string; tab: string; visible: boolean }) => {
+    const query = new URLSearchParams({ device: params.device, tab: params.tab, visible: params.visible ? '1' : '0' });
+    if (params.after !== undefined) query.set('after', params.after);
+    return request<EventsPollDto>('GET', `/api/events/poll?${query}`);
+  },
 
   syncStatus: () => request<SyncStatusDto>('GET', '/api/sync/status'),
   syncNow: () => request<SyncStatusDto>('POST', '/api/sync/now'),

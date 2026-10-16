@@ -6,6 +6,12 @@ export type Direction = 'in' | 'out';
 export type MessageStatus = 'received' | 'sending' | 'sent' | 'failed';
 export type AttachmentStatus = 'pending' | 'ready' | 'failed';
 export type CredentialsSource = 'env' | 'db' | null;
+/**
+ * How open tabs receive live updates: one Server-Sent Events stream each, or
+ * by polling /api/events/poll, for proxies and hosts that cannot hold a
+ * stream open (shared PHP hosting).
+ */
+export type LiveUpdates = 'stream' | 'poll';
 
 export interface SessionDto {
   authenticated: boolean;
@@ -16,6 +22,7 @@ export interface SessionDto {
   /** Polling periods, in seconds, shown in the UI. */
   pollActiveSeconds: number;
   pollIdleSeconds: number;
+  liveUpdates: LiveUpdates;
 }
 
 export interface DidDto {
@@ -87,9 +94,18 @@ export interface ContactDto {
 export interface SyncStatusDto {
   state: 'disabled' | 'idle' | 'syncing' | 'error';
   mode: 'active' | 'idle';
+  /** Last successful sync. */
   lastSyncAt: number | null;
+  /** Last attempt, successful or not: shows that checks keep running even while VoIP.ms refuses them. */
+  lastCheckAt: number | null;
   lastError: string | null;
   importing: { done: number; total: number } | null;
+  /**
+   * Servers without a process of their own (the PHP version) check VoIP.ms
+   * from a cron job while no tab is open: when it last ran, and the command
+   * to schedule.
+   */
+  cron?: { lastRunAt: number | null; command: string };
 }
 
 export interface SetupStatusDto {
@@ -114,6 +130,18 @@ export type ServerEvent =
   | { type: 'reload' }
   | { type: 'dids' }
   | { type: 'contacts' };
+
+/** GET /api/events/poll: the events since `after`, the same ones the stream sends. */
+export interface EventsPollDto {
+  /** Opaque; passed back as `after` on the next poll. */
+  cursor: string;
+  events: ServerEvent[];
+  /**
+   * The events since `after` are no longer known (the server restarted, or
+   * too much happened since): reload everything instead.
+   */
+  reset: boolean;
+}
 
 export interface ApiErrorBody {
   error: string;

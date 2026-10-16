@@ -1,0 +1,66 @@
+SMS Portal for VoIP.ms: installing on shared hosting (cPanel)
+=============================================================
+
+Needs PHP 8.1 or later with pdo_sqlite, openssl, curl and mbstring (all on by
+default in cPanel), and a subdomain, like sms.example.com, with HTTPS.
+
+1. Extract this zip in your home folder (cPanel > File Manager > Upload, then
+   Extract). You get two folders, side by side:
+     sms-portal       the portal, its settings and data; never served
+     sms-portal-site  what the browser loads
+
+2. Create the subdomain (cPanel > Domains > Create A New Domain) and set its
+   document root to sms-portal-site. Turn on HTTPS for it (cPanel > SSL/TLS
+   Status > Run AutoSSL) if it is not on already.
+
+3. In sms-portal, copy config.sample.php to config.php and set APP_PASSWORD,
+   the password of the web interface.
+
+4. Add the cron job (cPanel > Cron Jobs), to run once per minute:
+     /usr/local/bin/php /home/YOU/sms-portal/cron.php
+   It checks VoIP.ms for new texts while the app is closed, which is also
+   what sends push notifications then. Settings shows the exact line, and
+   when the job last ran.
+
+5. Open https://sms.example.com, sign in and follow the wizard. VoIP.ms must
+   allow the IP address the wizard shows (on shared hosting, the server's).
+
+Updating: extract the new zip over the old folders; config.php and the data
+folder are kept.
+
+More: https://github.com/dansleboby/voip-ms-sms-portal#shared-hosting-cpanel
+
+
+Installation sur un hébergement mutualisé (cPanel)
+==================================================
+
+Il faut PHP 8.1 ou plus récent avec pdo_sqlite, openssl, curl et mbstring
+(activés par défaut dans cPanel), et un sous-domaine, comme sms.exemple.com,
+en HTTPS.
+
+1. Décompressez ce zip dans votre dossier personnel (cPanel > Gestionnaire de
+   fichiers > Charger, puis Extraire). Vous obtenez deux dossiers, côte à côte :
+     sms-portal       le portail, ses réglages et ses données; jamais servi
+     sms-portal-site  ce que le navigateur charge
+
+2. Créez le sous-domaine (cPanel > Domaines > Créer un nouveau domaine) avec
+   sms-portal-site comme racine de document. Activez le HTTPS (cPanel > État
+   SSL/TLS > Exécuter AutoSSL) s'il ne l'est pas déjà.
+
+3. Dans sms-portal, copiez config.sample.php en config.php et réglez
+   APP_PASSWORD, le mot de passe de l'interface.
+
+4. Ajoutez la tâche cron (cPanel > Tâches Cron), à exécuter chaque minute :
+     /usr/local/bin/php /home/VOUS/sms-portal/cron.php
+   Elle vérifie les nouveaux textos de VoIP.ms quand l'application est
+   fermée, et envoie alors les notifications. Les Réglages affichent la ligne
+   exacte et sa dernière exécution.
+
+5. Ouvrez https://sms.exemple.com, connectez-vous et suivez l'assistant.
+   VoIP.ms doit autoriser l'adresse IP que l'assistant affiche (sur un
+   hébergement mutualisé, celle du serveur).
+
+Mise à jour : décompressez le nouveau zip par-dessus les anciens dossiers;
+config.php et le dossier des données sont conservés.
+
+Plus : https://github.com/dansleboby/voip-ms-sms-portal/blob/main/README.fr.md#hébergement-mutualisé-cpanel

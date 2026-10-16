@@ -14,6 +14,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
 - **Archive** the conversations you are done with; they come back as soon as a new text arrives.
 - **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
+- **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: no Node.js needed there. See [Shared hosting](#shared-hosting-cpanel).
 
 ## A quick tour
 
@@ -106,6 +107,27 @@ Open <http://localhost:8080>, sign in with `APP_PASSWORD` and follow the wizard.
 
 Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and conversations, an auto-reply, and no real texts sent.
 
+## Shared hosting (cPanel)
+
+The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a PHP version of the server answers the same API, and a cron job checks VoIP.ms while the app is closed.
+
+**You need** PHP 8.1 or later with `pdo_sqlite`, `openssl`, `curl` and `mbstring` (all on by default in cPanel), a subdomain with HTTPS, and cron jobs.
+
+1. Get `sms-portal-cpanel-<version>.zip`, attached to each [release](https://github.com/dansleboby/voip-ms-sms-portal/releases) (or build it: `npm run build:cpanel`), and extract it in your home folder (cPanel → *File Manager* → *Upload*, then *Extract*). You get two folders side by side: `sms-portal/`, the server with its settings and data, never served, and `sms-portal-site/`, what the browser loads.
+2. Create the subdomain (cPanel → *Domains* → *Create A New Domain*) with `sms-portal-site` as its document root, and make sure it has HTTPS (cPanel → *SSL/TLS Status* → *Run AutoSSL*).
+3. In `sms-portal/`, copy `config.sample.php` to `config.php` and set `APP_PASSWORD`. The other settings are those of the [table below](#configuration), apart from the Docker ones (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
+4. Add the cron job (cPanel → *Cron Jobs*), once per minute: `/usr/local/bin/php /home/you/sms-portal/cron.php`. *Settings* shows the exact line, and when the job last ran.
+5. Open the subdomain, sign in and follow the wizard.
+
+To update, extract the new zip over the old folders: `config.php` and `sms-portal/data/` stay.
+
+**Compared with Docker:**
+
+- Open tabs ask for updates every 3 s instead of keeping a connection open: a reply or a send's outcome can take a few seconds to show.
+- While the app is closed, the cron job checks VoIP.ms: new texts and push notifications can come up to a minute late, more on hosts that only allow cron jobs every 5 or 15 minutes.
+- The IP address to allow in VoIP.ms is the server's, shared with the other sites it hosts: the API password does all the protecting. If the host moves your account to another server, sync stops until the new address is allowed; *Settings* → *Test connection* shows it.
+- Moving from Docker: copy `data/portal.db` and `data/media/` into `sms-portal/data/`. Everything carries over except the VoIP.ms API password, which the wizard asks for again (the two versions derive their encryption key differently), and push notifications, to turn on again on each device.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -115,8 +137,9 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
 | `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. |
+| `LIVE_UPDATES` | `stream` | How open tabs receive new texts and changes. `stream` keeps one connection open per tab (Server-Sent Events); `poll` has each tab ask every 3 s instead, for proxies or hosts that cannot pass a stream through. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
-| `DATA_DIR` | `./data` (`/data` in Docker) | Database and media location. |
+| `DATA_DIR` | `./data` (`/data` in Docker, `sms-portal/data` on shared hosting) | Database and media location. |
 | `PORT` | `8080` | HTTP port. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
@@ -138,7 +161,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 
 ### Behind a reverse proxy
 
-Live updates use Server-Sent Events (`/api/events`): disable response buffering for that path.
+Live updates use Server-Sent Events (`/api/events`): disable response buffering for that path. If your proxy cannot do that, set `LIVE_UPDATES=poll`.
 
 **Caddy**
 
@@ -180,6 +203,7 @@ location / {
 - **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using Node's crypto, without a third-party library.
 - **Sending.** A message is saved immediately and delivered in the background; if VoIP.ms fails ambiguously (timeout, Cloudflare 5xx) and the message still went out, it is matched with the history instead of appearing twice. Failed messages can be retried.
 - **Stack.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript everywhere. A single container, no external service.
+- **Shared hosting.** `php/` holds the PHP version of the server: PHP 8.1+, no Composer package, the same database schema. With no process of its own, it keeps in the database what the Node server keeps in memory: the live updates tabs poll for, the open tabs, sync state; file locks keep a check and a send from overlapping. `tests/` runs the same API checks against both servers, and the PHP one against a fake VoIP.ms over HTTP.
 
 ## Development
 
@@ -191,11 +215,18 @@ npm run typecheck
 npm run build && APP_PASSWORD=dev npm start   # production build
 ```
 
+The PHP version, after `npm run build:web` (needs PHP 8.1+; `npm test` also tests it when `php` is installed):
+
+```bash
+SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php
+npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
+```
+
 If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) to use `HTTPS_PROXY`.
 
 ### Versions
 
-The version lives in `package.json` and is shown at the bottom of *Settings*; changes are listed in [CHANGELOG.md](CHANGELOG.md). To release one: `npm version <major|minor|patch> --no-git-tag-version`, add its section to the changelog, merge, then tag the merge commit `vX.Y.Z`. After an update, tabs that were already open offer to reload.
+The version lives in `package.json` and is shown at the bottom of *Settings*; changes are listed in [CHANGELOG.md](CHANGELOG.md). To release one: `npm version <major|minor|patch> --no-git-tag-version`, add its section to the changelog, merge, then tag the merge commit `vX.Y.Z` and attach `npm run build:cpanel`'s zip to its GitHub release (CI also keeps it for every commit, as the `sms-portal-cpanel` artifact). After an update, tabs that were already open offer to reload.
 
 ## Roadmap ideas
 

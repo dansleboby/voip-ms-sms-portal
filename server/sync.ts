@@ -8,6 +8,7 @@ import { normalizePhone } from '../shared/phone.js';
 import type { SyncStatusDto } from '../shared/types.js';
 
 const LAST_SUCCESS_KEY = 'sync.lastSuccessAt';
+const LAST_CHECK_KEY = 'sync.lastCheckAt';
 /** VoIP.ms refuses ranges over 92 days; smaller windows also keep responses small. */
 const WINDOW_DAYS = 30;
 /**
@@ -72,10 +73,12 @@ export class SyncEngine {
 
   status(): SyncStatusDto {
     const last = this.deps.repo.getSetting(LAST_SUCCESS_KEY);
+    const checked = this.deps.repo.getSetting(LAST_CHECK_KEY);
     return {
       state: this.deps.isEnabled() && this.deps.getClient() ? this.state : 'disabled',
       mode: this.active ? 'active' : 'idle',
       lastSyncAt: last ? Number(last) : null,
+      lastCheckAt: checked ? Number(checked) : null,
       lastError: this.lastError,
       importing: this.importing,
     };
@@ -163,6 +166,7 @@ export class SyncEngine {
       this.consecutiveErrors++;
       this.deps.log.warn({ err }, 'VoIP.ms sync failed');
     }
+    this.deps.repo.setSetting(LAST_CHECK_KEY, String(now));
     this.publishStatus();
   }
 

@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { User, X } from 'lucide-react';
-import { avatarColor, initials } from '../lib/format';
+import { avatarColor, formatAgo, formatDateTime, initials } from '../lib/format';
 import { dismissToast, useStore } from '../store';
 import { t } from '../i18n';
 
@@ -25,6 +25,26 @@ export function Avatar({ name, seed, size }: { name: string; seed: string; size?
     <span className={`avatar${size === 'lg' ? ' lg' : ''}`} style={{ background: avatarColor(seed) }} aria-hidden="true">
       {letters ?? <User size={size === 'lg' ? 28 : 22} />}
     </span>
+  );
+}
+
+/** The current time, refreshed every 15 s while the component is on screen. */
+export function useNow(): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/** "2 minutes ago", kept current while on screen; the exact time shows on hover. */
+export function Ago({ at }: { at: number }) {
+  const now = useNow();
+  return (
+    <time dateTime={new Date(at).toISOString()} title={formatDateTime(at)}>
+      {formatAgo(at, Math.max(now, at))}
+    </time>
   );
 }
 

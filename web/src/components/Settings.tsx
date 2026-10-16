@@ -1,19 +1,48 @@
 import { useState } from 'react';
 import { ArrowLeft, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../api';
-import { errorText, getLang, setLang, t, useLang } from '../i18n';
+import { errorText, setLang, t, useLang } from '../i18n';
 import { disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported, soundEnabled } from '../lib/notify';
 import { setIconBadge } from '../lib/install';
 import { prefs } from '../lib/prefs';
+import { formatDateTime } from '../lib/format';
 import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sendTestPush } from '../lib/push';
 import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
 import { DidEditor } from './DidEditor';
-import { Switch } from './ui';
-import type { ConnectionTestDto } from '../../../shared/types';
+import { Ago, Switch, useNow } from './ui';
+import type { ConnectionTestDto, SyncStatusDto } from '../../../shared/types';
 
 const IMPORT_CHOICES = [30, 90, 365, 730];
+/** It should run every minute; some hosts only allow every 15. */
+const CRON_LATE_MS = 20 * 60_000;
+
+/** The PHP version's cron job, which checks VoIP.ms while the app is closed. */
+function CronRow({ cron }: { cron: NonNullable<SyncStatusDto['cron']> }) {
+  const now = useNow();
+  const late = cron.lastRunAt === null || now - cron.lastRunAt > CRON_LATE_MS;
+  return (
+    <div className="row">
+      <div className="row-main">
+        <div className="row-title">{t('settings.cron')}</div>
+        <div className="row-sub">
+          {cron.lastRunAt !== null && (
+            <>
+              {t('settings.cronLastRun')} <Ago at={cron.lastRunAt} />
+            </>
+          )}
+          {late && (
+            <>
+              <div className="error-text">{t(cron.lastRunAt === null ? 'settings.cronNever' : 'settings.cronLate')}</div>
+              <code className="command">{cron.command}</code>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Settings() {
   useLang();
@@ -285,10 +314,19 @@ export function Settings() {
                 <div className="row-main">
                   <div className="row-title">{t('settings.lastSync')}</div>
                   <div className="row-sub">
-                    {sync?.lastSyncAt
-                      ? new Intl.DateTimeFormat(getLang() === 'fr' ? 'fr-CA' : 'en-CA', { dateStyle: 'medium', timeStyle: 'short' }).format(sync.lastSyncAt)
-                      : t('settings.never')}
-                    {sync?.state === 'error' && sync.lastError && <span className="error-text"> · {errorText(sync.lastError)}</span>}
+                    {sync?.lastCheckAt ? <Ago at={sync.lastCheckAt} /> : t('settings.never')}
+                    {sync?.state === 'error' && sync.lastError && (
+                      <span className="error-text">
+                        {' · '}
+                        {errorText(sync.lastError)}
+                        {sync.lastSyncAt !== null && sync.lastSyncAt < (sync.lastCheckAt ?? 0) && (
+                          <>
+                            {' · '}
+                            {t('settings.lastSuccess', { when: formatDateTime(sync.lastSyncAt) })}
+                          </>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button className="btn tonal small" onClick={() => void api.syncNow().catch(toastError)}>
@@ -296,6 +334,7 @@ export function Settings() {
                   {t('settings.syncNow')}
                 </button>
               </div>
+              {sync?.cron && <CronRow cron={sync.cron} />}
               <div className="row">
                 <div className="row-main">
                   <div className="row-title">{t('settings.importHistory')}</div>

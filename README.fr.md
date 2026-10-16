@@ -14,6 +14,7 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 - **Notifications push**, même quand l'application est fermée ou le téléphone verrouillé, sur chaque appareil où vous les activez.
 - **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive.
 - **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche qui ignore les accents (« belanger » trouve « Bélanger »), thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
+- **Docker ou hébergement mutualisé.** Un seul conteneur, ou un hébergement web PHP ordinaire (cPanel) avec une tâche cron : pas besoin de Node.js. Voir [Hébergement mutualisé](#hébergement-mutualisé-cpanel).
 
 ## Visite guidée
 
@@ -106,6 +107,27 @@ Ouvrez <http://localhost:8080>, connectez-vous avec `APP_PASSWORD` et suivez l'a
 
 Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des numéros et des conversations fictifs, avec une réponse automatique, sans envoyer de vrais textos.
 
+## Hébergement mutualisé (cPanel)
+
+La même application fonctionne aussi sur un hébergement web PHP ordinaire, sans Docker ni Node.js : une version PHP du serveur répond à la même API, et une tâche cron vérifie VoIP.ms quand l'application est fermée.
+
+**Il faut** PHP 8.1 ou plus récent avec `pdo_sqlite`, `openssl`, `curl` et `mbstring` (activés par défaut dans cPanel), un sous-domaine en HTTPS et les tâches cron.
+
+1. Prenez `sms-portal-cpanel-<version>.zip`, joint à chaque [version publiée](https://github.com/dansleboby/voip-ms-sms-portal/releases) (ou construisez-le : `npm run build:cpanel`), et décompressez-le dans votre dossier personnel (cPanel → *Gestionnaire de fichiers* → *Charger*, puis *Extraire*). Vous obtenez deux dossiers côte à côte : `sms-portal/`, le serveur avec ses réglages et ses données, jamais servi, et `sms-portal-site/`, ce que le navigateur charge.
+2. Créez le sous-domaine (cPanel → *Domaines* → *Créer un nouveau domaine*) avec `sms-portal-site` comme racine de document, et vérifiez qu'il est en HTTPS (cPanel → *État SSL/TLS* → *Exécuter AutoSSL*).
+3. Dans `sms-portal/`, copiez `config.sample.php` en `config.php` et réglez `APP_PASSWORD`. Les autres réglages sont ceux du [tableau ci-dessous](#configuration), sauf ceux propres à Docker (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
+4. Ajoutez la tâche cron (cPanel → *Tâches Cron*), chaque minute : `/usr/local/bin/php /home/vous/sms-portal/cron.php`. Les *Réglages* affichent la ligne exacte et sa dernière exécution.
+5. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant.
+
+Pour mettre à jour, décompressez le nouveau zip par-dessus les anciens dossiers : `config.php` et `sms-portal/data/` sont conservés.
+
+**Par rapport à Docker :**
+
+- Les onglets ouverts demandent les nouveautés toutes les 3 s au lieu de garder une connexion ouverte : une réponse ou le résultat d'un envoi peut prendre quelques secondes à s'afficher.
+- Quand l'application est fermée, c'est la tâche cron qui vérifie VoIP.ms : les nouveaux textos et les notifications peuvent arriver jusqu'à une minute plus tard, davantage chez les hébergeurs qui limitent les tâches cron à toutes les 5 ou 15 minutes.
+- L'adresse IP à autoriser dans VoIP.ms est celle du serveur, partagée avec les autres sites qu'il héberge : c'est le mot de passe d'API qui protège tout. Si l'hébergeur déplace votre compte sur un autre serveur, la synchronisation s'arrête jusqu'à ce que la nouvelle adresse soit autorisée ; *Réglages* → *Tester la connexion* l'affiche.
+- En venant de Docker : copiez `data/portal.db` et `data/media/` dans `sms-portal/data/`. Tout suit, sauf le mot de passe d'API VoIP.ms, que l'assistant redemande (les deux versions dérivent leur clé de chiffrement différemment), et les notifications push, à réactiver sur chaque appareil.
+
 ## Configuration
 
 | Variable | Défaut | Description |
@@ -114,9 +136,10 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | Courriel du compte VoIP.ms et mot de passe API. Facultatif : sinon, ils sont saisis dans l'assistant et chiffrés avec une clé dérivée d'`APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Secondes entre deux vérifications quand un onglet est ouvert. |
 | `POLL_INTERVAL_IDLE` | `60` | Secondes entre deux vérifications sinon. |
+| `LIVE_UPDATES` | `stream` | Comment les onglets ouverts reçoivent les nouveaux textos et les changements. `stream` garde une connexion ouverte par onglet (Server-Sent Events) ; `poll` fait plutôt demander chaque onglet toutes les 3 s, pour les proxys ou hébergeurs qui ne laissent pas passer un flux. |
 | `PUBLIC_URL` | | Adresse de l'application, comme `https://sms.example.com`. Recommandé derrière un proxy inverse : s'il ne transmet pas le `Host` et le protocole d'origine, la connexion serait refusée sans ce réglage. |
 | `TRUST_PROXY` | `false` | `true` derrière un proxy inverse qui gère le HTTPS (cookies sécurisés, vraie IP des clients). `true` ne fait confiance qu'aux proxys sur la boucle locale et les réseaux privés ; on peut aussi lister des adresses/sous-réseaux (`10.0.0.5, 172.16.0.0/12`). |
-| `DATA_DIR` | `./data` (`/data` dans Docker) | Emplacement de la base et des médias. |
+| `DATA_DIR` | `./data` (`/data` dans Docker, `sms-portal/data` en hébergement mutualisé) | Emplacement de la base et des médias. |
 | `PORT` | `8080` | Port HTTP. |
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
@@ -138,7 +161,7 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 
 ### Derrière un proxy inverse
 
-Les mises à jour en direct passent par Server-Sent Events (`/api/events`) : désactivez la mise en tampon des réponses. Voir les exemples Caddy et nginx dans le [README anglais](README.md#behind-a-reverse-proxy).
+Les mises à jour en direct passent par Server-Sent Events (`/api/events`) : désactivez la mise en tampon des réponses, ou réglez `LIVE_UPDATES=poll` si votre proxy ne le permet pas. Voir les exemples Caddy et nginx dans le [README anglais](README.md#behind-a-reverse-proxy).
 
 ## Mettre en place les notifications push
 
@@ -157,6 +180,7 @@ Les mises à jour en direct passent par Server-Sent Events (`/api/events`) : dé
 - **Push.** Chaque navigateur a un identifiant aléatoire, partagé par ses onglets et son abonnement push ; les onglets ouverts signalent s'ils sont visibles et le serveur évite les navigateurs qui affichent l'application. Les messages sont chiffrés selon la RFC 8291 et signés avec VAPID (RFC 8292) par le module crypto de Node, sans bibliothèque tierce.
 - **Envoi.** Le message est enregistré immédiatement puis livré en arrière-plan ; si VoIP.ms échoue de façon ambiguë (délai, erreur Cloudflare 5xx) alors que le message est bien parti, il est rapproché de l'historique au lieu d'apparaître en double. Un message en échec peut être renvoyé.
 - **Technologies.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript partout. Un seul conteneur, aucun service externe.
+- **Hébergement mutualisé.** `php/` contient la version PHP du serveur : PHP 8.1+, aucun paquet Composer, le même schéma de base de données. Sans processus à elle, elle garde dans la base ce que le serveur Node garde en mémoire : les mises à jour que les onglets viennent chercher, les onglets ouverts, l'état de la synchronisation ; des verrous de fichier évitent qu'une vérification et un envoi se chevauchent. `tests/` vérifie la même API sur les deux serveurs, et celui en PHP contre un faux VoIP.ms en HTTP.
 
 ## Développement
 
@@ -167,9 +191,16 @@ npm test
 npm run typecheck
 ```
 
+La version PHP, après `npm run build:web` (il faut PHP 8.1+ ; `npm test` la teste aussi quand `php` est installé) :
+
+```bash
+SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php
+npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
+```
+
 ### Versions
 
-La version est dans `package.json` et s'affiche au bas des *Réglages* ; les changements sont listés dans [CHANGELOG.md](CHANGELOG.md). Pour en publier une : `npm version <major|minor|patch> --no-git-tag-version`, ajoutez sa section au journal des changements, fusionnez, puis étiquetez le commit de fusion `vX.Y.Z`. Après une mise à jour, les onglets déjà ouverts proposent de recharger la page.
+La version est dans `package.json` et s'affiche au bas des *Réglages* ; les changements sont listés dans [CHANGELOG.md](CHANGELOG.md). Pour en publier une : `npm version <major|minor|patch> --no-git-tag-version`, ajoutez sa section au journal des changements, fusionnez, puis étiquetez le commit de fusion `vX.Y.Z` et joignez le zip de `npm run build:cpanel` à sa version publiée sur GitHub (la CI le garde aussi pour chaque commit, comme artefact `sms-portal-cpanel`). Après une mise à jour, les onglets déjà ouverts proposent de recharger la page.
 
 ## Licence
 
