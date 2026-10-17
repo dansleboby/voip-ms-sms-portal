@@ -5,7 +5,7 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## Unreleased
 
 - **Deleting messages and conversations.** Tap a message to delete it, or use the bin in a conversation's header to delete it all. Deleted texts leave the portal for good, on every device, and checking VoIP.ms does not bring them back; a new text brings a deleted conversation back, with that text only. The confirmation offers to delete them at VoIP.ms too (off by default, and for good), which the server does in the background, one message at a time, trying again after a network error.
-- On phones, the conversation header keeps its buttons closer together, so the name is not cut short.
+- On phones, a conversation's actions (contact, archive, delete) are in a ⋮ menu, so its name keeps its room in the header.
 
 ## 1.4.0 (2026-10-17)
 

@@ -64,6 +64,7 @@ export const en: Record<MessageKey, string> = {
   'thread.unarchive': 'Unarchive',
   'thread.archived': 'Conversation archived',
   'thread.unarchived': 'Conversation unarchived',
+  'thread.more': 'More options',
   'thread.delete': 'Delete conversation',
   'thread.deleted': 'Conversation deleted',
   'thread.messageDeleted': 'Message deleted',

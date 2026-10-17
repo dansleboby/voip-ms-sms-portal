@@ -814,6 +814,56 @@ textarea.input {
   min-width: 0;
 }
 
+.thread-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 220px;
+  padding: 8px 0;
+  border-radius: 12px;
+  background: var(--surface-container);
+  box-shadow: var(--shadow);
+}
+
+.menu [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu [role='menuitem'] svg {
+  color: var(--on-surface-variant);
+}
+
+.menu [role='menuitem']:hover,
+.menu [role='menuitem']:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+}
+
+.menu [role='menuitem'].danger,
+.menu [role='menuitem'].danger svg {
+  color: var(--error);
+}
+
 .thread-title h2 {
   margin: 0;
   overflow: hidden;
@@ -2006,17 +2056,6 @@ textarea.input {
   .main {
     margin: 0;
     border-radius: 0;
-  }
-
-  /* Back, avatar, name and three buttons share a phone's width: keep them close. */
-  .thread-header {
-    gap: 6px;
-    padding: 8px 4px;
-  }
-
-  .thread-header .icon-btn {
-    width: 40px;
-    height: 40px;
   }
 
   .messages {

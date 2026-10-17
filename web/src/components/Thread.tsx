@@ -24,7 +24,7 @@ import {
 import { Composer } from './Composer';
 import { ContactDialog } from './ContactDialog';
 import { DeleteDialog } from './DeleteDialog';
-import { Avatar, Lightbox } from './ui';
+import { Avatar, Lightbox, MenuButton } from './ui';
 import { formatPhone, isValidNanp } from '../../../shared/phone';
 import type { AttachmentDto, MessageDto } from '../../../shared/types';
 
@@ -83,6 +83,24 @@ export function Thread({ id }: { id: number }) {
     }
   };
 
+  const actions = [
+    ...(shortCode
+      ? []
+      : [
+          {
+            icon: conversation.contact ? <UserPen size={22} /> : <UserPlus size={22} />,
+            label: conversation.contact ? t('thread.editContact') : t('thread.addContact'),
+            onSelect: () => setEditingContact(true),
+          },
+        ]),
+    {
+      icon: conversation.archived ? <ArchiveRestore size={22} /> : <Archive size={22} />,
+      label: conversation.archived ? t('thread.unarchive') : t('thread.archive'),
+      onSelect: () => void toggleArchive(),
+    },
+    { icon: <Trash2 size={22} />, label: t('thread.delete'), danger: true, onSelect: () => setDeleting(true) },
+  ];
+
   return (
     <>
       <header className="thread-header">
@@ -108,27 +126,17 @@ export function Thread({ id }: { id: number }) {
             )}
           </div>
         </div>
-        {!shortCode && (
-          <button
-            className="icon-btn"
-            aria-label={conversation.contact ? t('thread.editContact') : t('thread.addContact')}
-            title={conversation.contact ? t('thread.editContact') : t('thread.addContact')}
-            onClick={() => setEditingContact(true)}
-          >
-            {conversation.contact ? <UserPen size={22} /> : <UserPlus size={22} />}
-          </button>
-        )}
-        <button
-          className="icon-btn"
-          aria-label={conversation.archived ? t('thread.unarchive') : t('thread.archive')}
-          title={conversation.archived ? t('thread.unarchive') : t('thread.archive')}
-          onClick={() => void toggleArchive()}
-        >
-          {conversation.archived ? <ArchiveRestore size={22} /> : <Archive size={22} />}
-        </button>
-        <button className="icon-btn" aria-label={t('thread.delete')} title={t('thread.delete')} onClick={() => setDeleting(true)}>
-          <Trash2 size={22} />
-        </button>
+        {/* A button each on large screens; on phones, a menu leaves the name its room. */}
+        <div className="thread-actions desktop-only">
+          {actions.map((action) => (
+            <button key={action.label} className="icon-btn" aria-label={action.label} title={action.label} onClick={action.onSelect}>
+              {action.icon}
+            </button>
+          ))}
+        </div>
+        <div className="mobile-only">
+          <MenuButton label={t('thread.more')} items={actions} />
+        </div>
       </header>
 
       <MessageList conversationId={id} messages={thread.items} hasMore={thread.hasMore} loading={thread.loading} loaded={thread.loaded} />

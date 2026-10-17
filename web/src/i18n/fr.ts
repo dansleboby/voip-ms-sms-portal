@@ -62,6 +62,7 @@ export const fr = {
   'thread.unarchive': 'Désarchiver',
   'thread.archived': 'Conversation archivée',
   'thread.unarchived': 'Conversation désarchivée',
+  'thread.more': 'Plus d’options',
   'thread.delete': 'Supprimer la conversation',
   'thread.deleted': 'Conversation supprimée',
   'thread.messageDeleted': 'Message supprimé',
