@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkOutgoing, pickMessageKind, utf8Length } from './message.js';
 import { formatPhone, formatPhoneInput, isValidNanp, normalizePhone, searchDigits } from './phone.js';
-import { foldText } from './text.js';
+import { foldText, isBlank } from './text.js';
 
 describe('phone', () => {
   it('normalizes to the 10 digits VoIP.ms uses', () => {
@@ -89,5 +89,16 @@ describe('foldText', () => {
     expect(foldText('Ça va? À tantôt, Noël!')).toBe('ca va? a tantot, noel!');
     expect(foldText('Œuvre, cœur, Ærø')).toBe('oeuvre, coeur, aerø');
     expect(foldText('😊 ok')).toBe('😊 ok');
+  });
+});
+
+describe('isBlank', () => {
+  it('sees spaces, line breaks and invisible characters as nothing', () => {
+    expect(isBlank('')).toBe(true);
+    expect(isBlank('\n\n \r\n\t')).toBe(true);
+    expect(isBlank('\u200b\ufeff\u00a0\u2028')).toBe(true);
+    expect(isBlank(' a ')).toBe(false);
+    expect(isBlank('🎤')).toBe(false);
+    expect(isBlank('.')).toBe(false);
   });
 });

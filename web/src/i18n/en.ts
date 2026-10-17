@@ -87,6 +87,11 @@ export const en: Record<MessageKey, string> = {
   'attachment.failed': 'Attachment unavailable',
   'attachment.download': 'Download',
   'attachment.file': 'File',
+  'attachment.audio': 'Audio file',
+  'audio.play': 'Play',
+  'audio.pause': 'Pause',
+  'audio.position': 'Position in the voice message',
+  'audio.speed': 'Playback speed',
 
   'composer.placeholderSms': 'Text message',
   'composer.placeholderMms': 'MMS message',

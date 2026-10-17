@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Auth } from './auth.js';
 import { openDatabase, Repo } from './db.js';
@@ -67,5 +71,38 @@ describe('database migrations', () => {
     expect(reopened.getMessage(id)!.body).toBe("l'accès");
     // Later migrations index the cleaned body for accent-insensitive search.
     expect(reopened.listConversations({ query: "L'ACCES" }).map((c) => c.id)).toEqual([conversationId]);
+  });
+
+  /** A database at the schema before blank bodies were emptied, holding one of each. */
+  function withBlankBodies(): { file: string; ids: { blank: number; text: number; emoji: number } } {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mig-')), 'portal.db');
+    const db = openDatabase(file, 9);
+    db.prepare("INSERT INTO dids (did, color) VALUES ('4506575294', '#1a73e8')").run();
+    const conversationId = Number(db.prepare("INSERT INTO conversations (did, phone) VALUES ('4506575294', '4383980707')").run().lastInsertRowid);
+    const insert = db.prepare(
+      "INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, created_at) VALUES (?, 'mms', ?, 'in', ?, ?, 0, 'received', 0)",
+    );
+    const add = (remoteId: string, body: string) => Number(insert.run(conversationId, remoteId, body, body).lastInsertRowid);
+    const ids = { blank: add('1', '\n\n\n \u200b\r\n'), text: add('2', ' Allo\n'), emoji: add('3', '🎤') };
+    db.close();
+    return { file, ids };
+  }
+
+  it('empties bodies stored as only line breaks or invisible characters', () => {
+    const { file, ids } = withBlankBodies();
+    const repo = new Repo(openDatabase(file));
+    expect(repo.getMessage(ids.blank)!.body).toBe('');
+    expect(repo.getMessage(ids.text)!.body).toBe(' Allo\n');
+    expect(repo.getMessage(ids.emoji)!.body).toBe('🎤');
+  });
+
+  it.runIf(spawnSync('php', ['-v']).status === 0 || process.env.REQUIRE_PHP)('empties them the same way on the PHP server', () => {
+    const { file, ids } = withBlankBodies();
+    const run = spawnSync('php', ['-r', 'require $argv[1]; SmsPortal\\Db::open($argv[2]);', path.resolve('php/app/bootstrap.php'), file], { encoding: 'utf8' });
+    expect(run.stderr + run.stdout).toBe('');
+    const repo = new Repo(openDatabase(file));
+    expect(repo.getMessage(ids.blank)!.body).toBe('');
+    expect(repo.getMessage(ids.text)!.body).toBe(' Allo\n');
+    expect(repo.getMessage(ids.emoji)!.body).toBe('🎤');
   });
 });

@@ -85,6 +85,11 @@ export const fr = {
   'attachment.failed': 'Pièce jointe indisponible',
   'attachment.download': 'Télécharger',
   'attachment.file': 'Fichier',
+  'attachment.audio': 'Fichier audio',
+  'audio.play': 'Écouter',
+  'audio.pause': 'Pause',
+  'audio.position': 'Position dans le message vocal',
+  'audio.speed': 'Vitesse de lecture',
 
   'composer.placeholderSms': 'Message texte',
   'composer.placeholderMms': 'Message MMS',

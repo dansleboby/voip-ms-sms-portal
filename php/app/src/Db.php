@@ -129,6 +129,14 @@ final class Db
             ALTER TABLE messages ADD COLUMN delete_remote INTEGER NOT NULL DEFAULT 0;
             CREATE INDEX messages_delete_remote ON messages(delete_remote) WHERE delete_remote = 1;
             SQL,
+            static function (PDO $db): void {
+                $update = $db->prepare("UPDATE messages SET body = '', search_text = '' WHERE id = ?");
+                foreach ($db->query("SELECT id, body FROM messages WHERE body <> '' AND body NOT GLOB '*[0-9A-Za-z]*'")->fetchAll() as $row) {
+                    if (Text::isBlank($row['body'])) {
+                        self::execute($update, [$row['id']]);
+                    }
+                }
+            },
         ];
     }
 

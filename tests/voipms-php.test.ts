@@ -92,6 +92,20 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
     expect(Buffer.from(await media.arrayBuffer()).equals(PNG)).toBe(true);
   });
 
+  it('shows nothing for the blank text that comes with some voice messages', async () => {
+    const amr = Buffer.concat([Buffer.from('#!AMR\n'), Buffer.alloc(32 * 10, 0x3c)]);
+    voipms.files.set('voice.amr', { type: 'audio/amr', data: amr });
+    voipms.push({ direction: 'in', contact: '5145559876', message: '\n\n\n \n', media: `${voipms.url}/media/voice.amr` });
+    const voice = await waitFor(async () => {
+      await poll();
+      const conversation = (await conversations()).find((c) => c.phone === '5145559876');
+      const last = conversation && (await thread(conversation.id)).at(-1);
+      return last?.attachments[0]?.status === 'ready' && last;
+    });
+    expect(voice.body).toBe('');
+    expect(voice.attachments[0]!.mime).toBe('audio/amr');
+  });
+
   it('sends SMS and MMS through VoIP.ms', async () => {
     const sms = (await send({ did: DID, to: MARIE, body: 'Allô é' })).json.message as MessageDto;
     const mms = (await send({ did: DID, to: MARIE, body: 'Photo' }, [PNG])).json.message as MessageDto;
