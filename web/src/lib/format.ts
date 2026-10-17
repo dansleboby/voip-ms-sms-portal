@@ -74,7 +74,7 @@ export function initials(name: string): string | null {
   return letters.map((w) => [...w][0]!.toUpperCase()).join('');
 }
 
-const AVATAR_COLORS = ['#1a73e8', '#e37400', '#1e8e3e', '#d93025', '#9334e6', '#12a4af', '#e52592', '#7cb342'];
+export const AVATAR_COLORS = ['#1a73e8', '#e37400', '#1e8e3e', '#d93025', '#9334e6', '#12a4af', '#e52592', '#7cb342'];
 
 /** Stable color per phone number. */
 export function avatarColor(seed: string): string {

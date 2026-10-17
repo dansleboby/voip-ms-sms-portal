@@ -1,4 +1,5 @@
 import { DAY_MS, epochToZonedDate, epochToZonedDateTime } from '../time.js';
+import type { ContactIcon } from '../../shared/contact.js';
 import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type VoipMsApi } from './client.js';
 
 /**
@@ -42,10 +43,10 @@ const DIDS: DidInfo[] = [
 ];
 
 /** Contacts created locally in demo mode so names show up. */
-export const DEMO_CONTACTS = [
+export const DEMO_CONTACTS: { name: string; phones: string[]; icon?: ContactIcon }[] = [
   { name: 'Marie Tremblay', phones: ['4385550142'] },
   { name: 'Alex Martin', phones: ['5145550187'] },
-  { name: 'Garage Bélanger', phones: ['4505550111'] },
+  { name: 'Garage Bélanger', phones: ['4505550111'], icon: 'car' },
 ];
 
 const SEEDS: Seed[] = [

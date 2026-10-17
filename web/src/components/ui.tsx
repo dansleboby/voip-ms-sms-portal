@@ -1,9 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
-import { User, X } from 'lucide-react';
+import {
+  Baby,
+  Briefcase,
+  Building2,
+  Car,
+  Dog,
+  GraduationCap,
+  Heart,
+  House,
+  Star,
+  Stethoscope,
+  User,
+  Users,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { avatarColor, formatAgo, formatDateTime, initials } from '../lib/format';
 import { dismissToast, useStore } from '../store';
 import { t } from '../i18n';
 import { formatPhoneInput } from '../../../shared/phone';
+import type { ContactIcon } from '../../../shared/contact';
+import type { ContactRef } from '../../../shared/types';
 
 export function Logo({ size = 40 }: { size?: number }) {
   return (
@@ -20,11 +38,39 @@ export function Logo({ size = 40 }: { size?: number }) {
   );
 }
 
-export function Avatar({ name, seed, size }: { name: string; seed: string; size?: 'lg' }) {
+export const CONTACT_ICON_COMPONENTS: Record<ContactIcon, LucideIcon> = {
+  heart: Heart,
+  star: Star,
+  house: House,
+  users: Users,
+  baby: Baby,
+  dog: Dog,
+  briefcase: Briefcase,
+  building: Building2,
+  car: Car,
+  wrench: Wrench,
+  stethoscope: Stethoscope,
+  'graduation-cap': GraduationCap,
+};
+
+/** Initials on a color the number picks, unless the contact chose its own color or an icon. */
+export function Avatar({
+  name,
+  seed,
+  look,
+  size,
+}: {
+  name: string;
+  seed: string;
+  look?: Pick<ContactRef, 'color' | 'icon'> | null;
+  size?: 'lg';
+}) {
   const letters = initials(name);
+  const Icon = look?.icon ? CONTACT_ICON_COMPONENTS[look.icon] : null;
+  const iconSize = size === 'lg' ? 28 : 22;
   return (
-    <span className={`avatar${size === 'lg' ? ' lg' : ''}`} style={{ background: avatarColor(seed) }} aria-hidden="true">
-      {letters ?? <User size={size === 'lg' ? 28 : 22} />}
+    <span className={`avatar${size === 'lg' ? ' lg' : ''}`} style={{ background: look?.color ?? avatarColor(seed) }} aria-hidden="true">
+      {Icon ? <Icon size={iconSize} /> : (letters ?? <User size={iconSize} />)}
     </span>
   );
 }

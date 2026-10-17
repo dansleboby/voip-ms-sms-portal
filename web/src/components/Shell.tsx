@@ -384,7 +384,7 @@ function ConversationItem({
       aria-current={active}
       onClick={() => navigate({ name: 'conversation', id: c.id })}
     >
-      <Avatar name={name} seed={c.phone} />
+      <Avatar name={name} seed={c.phone} look={c.contact} />
       <div className="conv-body">
         <div className="conv-row">
           <span className="conv-name">{name}</span>

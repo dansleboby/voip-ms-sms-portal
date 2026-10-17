@@ -21,7 +21,7 @@ final class Repo
         SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
                m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
                (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
-               ct.id AS contact_id, ct.name AS contact_name
+               ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
         FROM conversations c
         LEFT JOIN messages m ON m.id = c.last_message_id
         LEFT JOIN contact_phones cp ON cp.phone = c.phone
@@ -541,7 +541,7 @@ final class Repo
 
     public function listContacts(): array
     {
-        $contacts = $this->all('SELECT id, name, notes FROM contacts ORDER BY name COLLATE NOCASE');
+        $contacts = $this->all('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE');
         $byContact = [];
         foreach ($this->all('SELECT phone, contact_id FROM contact_phones ORDER BY rowid') as $p) {
             $byContact[$p['contact_id']][] = $p['phone'];
@@ -572,15 +572,21 @@ final class Repo
         ));
     }
 
-    public function saveContact(?int $id, string $name, ?string $notes, array $phones): int
+    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null): int
     {
-        return $this->transaction(function () use ($id, $name, $notes, $phones): int {
+        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon): int {
             $now = Time::nowMs();
             if ($id) {
-                $this->run('UPDATE contacts SET name = ?, notes = ?, updated_at = ? WHERE id = ?', [$name, $notes, $now, $id]);
+                $this->run(
+                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?',
+                    [$name, $color, $icon, $notes, $now, $id],
+                );
                 $this->run('DELETE FROM contact_phones WHERE contact_id = ?', [$id]);
             } else {
-                $this->run('INSERT INTO contacts (name, notes, created_at, updated_at) VALUES (?, ?, ?, ?)', [$name, $notes, $now, $now]);
+                $this->run(
+                    'INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    [$name, $color, $icon, $notes, $now, $now],
+                );
                 $id = (int) $this->db->lastInsertId();
             }
             $phones = array_values(array_unique($phones));
@@ -649,7 +655,9 @@ final class Repo
             'id' => $row['id'],
             'did' => $row['did'],
             'phone' => $row['phone'],
-            'contact' => $row['contact_id'] !== null ? ['id' => $row['contact_id'], 'name' => $row['contact_name'] ?? ''] : null,
+            'contact' => $row['contact_id'] !== null
+                ? ['id' => $row['contact_id'], 'name' => $row['contact_name'] ?? '', 'color' => $row['contact_color'], 'icon' => $row['contact_icon']]
+                : null,
             'unreadCount' => $row['unread_count'],
             'archived' => $row['archived_at'] !== null,
             'lastMessageAt' => $row['last_message_at'],

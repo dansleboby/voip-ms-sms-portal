@@ -217,8 +217,20 @@ describe.each(backendNames)('%s server', (name) => {
     // Jean Roy had no other number: he is gone.
     expect(((await client.get('/api/contacts')).json as ContactDto[]).some((c) => c.id === id)).toBe(false);
     expect((await client.post('/api/contacts', { name: 'X', phones: ['123'] })).json).toEqual({ error: 'invalid_phone', phones: ['123'] });
-    const updated = await client.request('PUT', `/api/contacts/${moved.json.id}`, { name: 'Autre nom', phones: ['5145551234', '32665'] });
-    expect(updated.json).toMatchObject({ name: 'Autre nom', phones: ['5145551234', '32665'] });
+    expect(moved.json).toMatchObject({ color: null, icon: null });
+    const updated = await client.request('PUT', `/api/contacts/${moved.json.id}`, {
+      name: 'Autre nom',
+      phones: ['5145551234', '32665'],
+      color: '#e52592',
+      icon: 'briefcase',
+    });
+    expect(updated.json).toMatchObject({ name: 'Autre nom', phones: ['5145551234', '32665'], color: '#e52592', icon: 'briefcase' });
+    // Conversations show the contact's look.
+    const code = ((await client.get('/api/conversations?q=32665')).json as ConversationDto[])[0]!;
+    expect(code.contact).toEqual({ id: moved.json.id, name: 'Autre nom', color: '#e52592', icon: 'briefcase' });
+    for (const look of [{ color: 'pink' }, { icon: 'skull' }]) {
+      expect((await client.request('PUT', `/api/contacts/${moved.json.id}`, { name: 'x', phones: ['32665'], ...look })).status).toBe(400);
+    }
     expect((await client.request('DELETE', `/api/contacts/${moved.json.id}`)).json).toEqual({ ok: true });
     expect((await client.request('DELETE', `/api/contacts/${moved.json.id}`)).status).toBe(404);
 

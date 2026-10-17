@@ -120,6 +120,10 @@ final class Db
             );
             SQL,
             'ALTER TABLE dids ADD COLUMN sms_available INTEGER NOT NULL DEFAULT 1;',
+            <<<'SQL'
+            ALTER TABLE contacts ADD COLUMN color TEXT;
+            ALTER TABLE contacts ADD COLUMN icon TEXT;
+            SQL,
         ];
     }
 

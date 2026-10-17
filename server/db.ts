@@ -9,6 +9,7 @@ import type {
   MessageDto,
   MessageStatus,
 } from '../shared/types.js';
+import type { ContactIcon } from '../shared/contact.js';
 import type { MessageKind } from '../shared/message.js';
 import { searchDigits } from '../shared/phone.js';
 import { foldText } from '../shared/text.js';
@@ -127,6 +128,11 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
   `,
   // Whether VoIP.ms offers SMS on a number at all (toll-free numbers, for one, may not).
   `ALTER TABLE dids ADD COLUMN sms_available INTEGER NOT NULL DEFAULT 1;`,
+  // A contact's avatar: its color and an icon in place of the initials (null: the defaults).
+  `
+  ALTER TABLE contacts ADD COLUMN color TEXT;
+  ALTER TABLE contacts ADD COLUMN icon TEXT;
+  `,
 ];
 
 /** `version` stops migrations early, to test upgrades from an older schema. */
@@ -182,6 +188,8 @@ interface ConversationRow {
   last_attachments: number | null;
   contact_id: number | null;
   contact_name: string | null;
+  contact_color: string | null;
+  contact_icon: string | null;
 }
 
 interface MessageRow {
@@ -249,7 +257,7 @@ const CONVERSATION_SELECT = `
   SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
          m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
          (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
-         ct.id AS contact_id, ct.name AS contact_name
+         ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
   FROM conversations c
   LEFT JOIN messages m ON m.id = c.last_message_id
   LEFT JOIN contact_phones cp ON cp.phone = c.phone
@@ -702,9 +710,11 @@ export class Repo {
   // ---------------------------------------------------------------- contacts
 
   listContacts(): ContactDto[] {
-    const contacts = this.db.prepare('SELECT id, name, notes FROM contacts ORDER BY name COLLATE NOCASE').all() as {
+    const contacts = this.db.prepare('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE').all() as {
       id: number;
       name: string;
+      color: string | null;
+      icon: ContactIcon | null;
       notes: string | null;
     }[];
     const phones = this.db.prepare('SELECT phone, contact_id FROM contact_phones ORDER BY rowid').all() as {
@@ -729,18 +739,28 @@ export class Repo {
     return rows.filter((r) => r.contact_id !== exceptId).map((r) => r.phone);
   }
 
-  saveContact(input: { id?: number; name: string; notes?: string | null; phones: string[] }): number {
+  saveContact(input: {
+    id?: number;
+    name: string;
+    color?: string | null;
+    icon?: ContactIcon | null;
+    notes?: string | null;
+    phones: string[];
+  }): number {
     return this.transaction(() => {
       const now = Date.now();
+      const look = [input.color ?? null, input.icon ?? null];
       let id = input.id;
       if (id) {
-        this.db.prepare('UPDATE contacts SET name = ?, notes = ?, updated_at = ? WHERE id = ?').run(input.name, input.notes ?? null, now, id);
+        this.db
+          .prepare('UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?')
+          .run(input.name, ...look, input.notes ?? null, now, id);
         this.db.prepare('DELETE FROM contact_phones WHERE contact_id = ?').run(id);
       } else {
         id = Number(
           this.db
-            .prepare('INSERT INTO contacts (name, notes, created_at, updated_at) VALUES (?, ?, ?, ?)')
-            .run(input.name, input.notes ?? null, now, now).lastInsertRowid,
+            .prepare('INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(input.name, ...look, input.notes ?? null, now, now).lastInsertRowid,
         );
       }
       const phones = [...new Set(input.phones)];
@@ -810,7 +830,10 @@ function toConversationDto(row: ConversationRow): ConversationDto {
     id: row.id,
     did: row.did,
     phone: row.phone,
-    contact: row.contact_id !== null ? { id: row.contact_id, name: row.contact_name ?? '' } : null,
+    contact:
+      row.contact_id !== null
+        ? { id: row.contact_id, name: row.contact_name ?? '', color: row.contact_color, icon: row.contact_icon as ContactIcon | null }
+        : null,
     unreadCount: row.unread_count,
     archived: row.archived_at !== null,
     lastMessageAt: row.last_message_at,

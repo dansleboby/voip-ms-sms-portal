@@ -1,5 +1,6 @@
 /** Shapes exchanged between the server's REST/SSE API and the web client. */
 
+import type { ContactIcon } from './contact.js';
 import type { MessageKind } from './message.js';
 
 export type Direction = 'in' | 'out';
@@ -69,6 +70,10 @@ export interface MessageDto {
 export interface ContactRef {
   id: number;
   name: string;
+  /** Avatar color chosen for the contact; null for the one its number gives. */
+  color: string | null;
+  /** Icon shown instead of the initials; null for the initials. */
+  icon: ContactIcon | null;
 }
 
 export interface ConversationDto {
@@ -88,9 +93,7 @@ export interface ConversationDto {
   } | null;
 }
 
-export interface ContactDto {
-  id: number;
-  name: string;
+export interface ContactDto extends ContactRef {
   notes: string | null;
   phones: string[];
 }

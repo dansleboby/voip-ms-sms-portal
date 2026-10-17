@@ -31,7 +31,7 @@ final class DemoClient implements VoipMsApi
     public const CONTACTS = [
         ['name' => 'Marie Tremblay', 'phones' => ['4385550142']],
         ['name' => 'Alex Martin', 'phones' => ['5145550187']],
-        ['name' => 'Garage Bélanger', 'phones' => ['4505550111']],
+        ['name' => 'Garage Bélanger', 'phones' => ['4505550111'], 'icon' => 'car'],
     ];
 
     public function __construct(private readonly PDO $db, private readonly string $timeZone)

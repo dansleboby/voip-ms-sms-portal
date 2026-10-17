@@ -2,11 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Services } from '../app.js';
 import { parseVCards } from '../vcard.js';
+import { CONTACT_ICONS } from '../../shared/contact.js';
 import { isValidNanp, normalizePhone } from '../../shared/phone.js';
 import type { ContactDto } from '../../shared/types.js';
 
 const ContactBody = z.object({
   name: z.string().trim().min(1).max(120),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
+  icon: z.enum(CONTACT_ICONS).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   phones: z.array(z.string()).min(1).max(20),
   /** Move numbers that already belong to another contact instead of refusing. */
@@ -30,7 +37,7 @@ export function registerContactRoutes(app: FastifyInstance, s: Services): void {
     if (invalid.length) return { status: 400, body: { error: 'invalid_phone', phones: invalid } };
     const conflicts = s.repo.conflictingPhones(phones, id ?? null);
     if (conflicts.length && !body.force) return { status: 409, body: { error: 'phone_taken', phones: conflicts } };
-    const contactId = s.repo.saveContact({ id, name: body.name, notes: body.notes ?? null, phones });
+    const contactId = s.repo.saveContact({ id, name: body.name, color: body.color, icon: body.icon, notes: body.notes ?? null, phones });
     changed();
     return { status: 200, body: s.repo.getContact(contactId)! };
   };

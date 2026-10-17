@@ -1,11 +1,16 @@
 import { useState, type FormEvent } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, User, X } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, t } from '../i18n';
+import { AVATAR_COLORS, avatarColor, initials } from '../lib/format';
 import { loadContacts, loadConversations } from '../store';
-import { Dialog, PhoneInput } from './ui';
+import { Avatar, CONTACT_ICON_COMPONENTS, Dialog, PhoneInput } from './ui';
+import { CONTACT_ICONS, type ContactIcon } from '../../../shared/contact';
 import { formatPhone, normalizePhone } from '../../../shared/phone';
 import type { ContactDto } from '../../../shared/types';
+
+/** The automatic colors, and two quieter ones. */
+const CONTACT_COLORS = [...AVATAR_COLORS, '#b06000', '#5f6368'];
 
 export function ContactDialog({
   contact,
@@ -21,6 +26,10 @@ export function ContactDialog({
     contact?.phones.map(formatPhone) ?? (initialPhone ? [formatPhone(initialPhone)] : ['']),
   );
   const [notes, setNotes] = useState(contact?.notes ?? '');
+  const [color, setColor] = useState<string | null>(contact?.color ?? null);
+  const [icon, setIcon] = useState<ContactIcon | null>(contact?.icon ?? null);
+  // The color a contact gets without choosing one: its first number's, as in the contact list.
+  const seed = normalizePhone(phones[0] ?? '') || name;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -29,6 +38,8 @@ export function ContactDialog({
     setError(null);
     const payload = {
       name: name.trim(),
+      color,
+      icon,
       phones: phones.map(normalizePhone).filter(Boolean),
       notes: notes.trim() || null,
       force,
@@ -67,10 +78,45 @@ export function ContactDialog({
   return (
     <Dialog title={contact ? t('contacts.edit') : t('contacts.new')} onClose={onClose}>
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <label className="field">
-          <span>{t('contacts.name')}</span>
-          <input className="input" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
+        <div className="contact-name-row">
+          <Avatar name={name} seed={seed} look={{ color, icon }} size="lg" />
+          <label className="field">
+            <span>{t('contacts.name')}</span>
+            <input className="input" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+        </div>
+        <div className="field">
+          <span>{t('contacts.look')}</span>
+          <div className="swatches" role="group" aria-label={t('contacts.color')}>
+            <button
+              type="button"
+              className="swatch auto"
+              style={{ background: avatarColor(seed) }}
+              aria-pressed={color === null}
+              aria-label={t('contacts.colorAuto')}
+              title={t('contacts.colorAuto')}
+              onClick={() => setColor(null)}
+            >
+              A
+            </button>
+            {CONTACT_COLORS.map((c) => (
+              <button key={c} type="button" className="swatch" style={{ background: c }} aria-pressed={color === c} aria-label={c} onClick={() => setColor(c)} />
+            ))}
+          </div>
+          <div className="icon-choices" role="group" aria-label={t('contacts.icon')}>
+            <button type="button" className="icon-choice" aria-pressed={icon === null} title={t('contacts.iconInitials')} onClick={() => setIcon(null)}>
+              {initials(name) ?? <User size={18} />}
+            </button>
+            {CONTACT_ICONS.map((key) => {
+              const Icon = CONTACT_ICON_COMPONENTS[key];
+              return (
+                <button key={key} type="button" className="icon-choice" aria-pressed={icon === key} aria-label={t(`contacts.icons.${key}`)} title={t(`contacts.icons.${key}`)} onClick={() => setIcon(key)}>
+                  <Icon size={18} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="field">
           <span>{t('contacts.phones')}</span>
           {phones.map((phone, i) => (

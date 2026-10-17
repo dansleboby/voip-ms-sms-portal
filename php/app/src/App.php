@@ -96,7 +96,7 @@ final class App
 
         if ($config->demo && !$this->repo->listContacts()) {
             foreach (DemoClient::CONTACTS as $contact) {
-                $this->repo->saveContact(null, $contact['name'], null, $contact['phones']);
+                $this->repo->saveContact(null, $contact['name'], null, $contact['phones'], icon: $contact['icon'] ?? null);
             }
         }
 
