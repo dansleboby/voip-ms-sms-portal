@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { User, X } from 'lucide-react';
 import { avatarColor, formatAgo, formatDateTime, initials } from '../lib/format';
 import { dismissToast, useStore } from '../store';
 import { t } from '../i18n';
+import { formatPhoneInput } from '../../../shared/phone';
 
 export function Logo({ size = 40 }: { size?: number }) {
   return (
@@ -68,6 +69,48 @@ export function Switch({
       className="switch"
       disabled={disabled}
       onClick={() => onChange(!checked)}
+    />
+  );
+}
+
+/** Where the caret goes in `text` to come right after its `count`th digit. */
+function afterDigits(text: string, count: number): number {
+  if (count === 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (/\d/.test(text[i]!) && ++seen === count) return i + 1;
+  }
+  return text.length;
+}
+
+/** A phone number field that formats North American numbers as they are typed: (514) 555-0100. */
+export function PhoneInput({
+  value,
+  onChange,
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & { value: string; onChange: (value: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    // Formatting adds characters: keep the caret after the same digit as before.
+    if (caret.current !== null && ref.current === document.activeElement) ref.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      type="tel"
+      inputMode="tel"
+      autoComplete="tel"
+      value={value}
+      onChange={(e) => {
+        const typed = e.target.value;
+        const formatted = formatPhoneInput(typed);
+        const digitsBefore = typed.slice(0, e.target.selectionStart ?? typed.length).replace(/\D/g, '').length;
+        caret.current = afterDigits(formatted, digitsBefore);
+        onChange(formatted);
+      }}
     />
   );
 }

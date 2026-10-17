@@ -3,7 +3,7 @@ import { Plus, Trash2, X } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, t } from '../i18n';
 import { loadContacts, loadConversations } from '../store';
-import { Dialog } from './ui';
+import { Dialog, PhoneInput } from './ui';
 import { formatPhone, normalizePhone } from '../../../shared/phone';
 import type { ContactDto } from '../../../shared/types';
 
@@ -75,12 +75,11 @@ export function ContactDialog({
           <span>{t('contacts.phones')}</span>
           {phones.map((phone, i) => (
             <div key={i} style={{ display: 'flex', gap: 4 }}>
-              <input
+              <PhoneInput
                 className="input"
-                inputMode="tel"
                 aria-label={`${t('contacts.phones')} ${i + 1}`}
                 value={phone}
-                onChange={(e) => setPhones((list) => list.map((p, j) => (j === i ? e.target.value : p)))}
+                onChange={(value) => setPhones((list) => list.map((p, j) => (j === i ? value : p)))}
               />
               {phones.length > 1 && (
                 <button type="button" className="icon-btn" aria-label={t('composer.remove')} onClick={() => setPhones((l) => l.filter((_, j) => j !== i))}>
