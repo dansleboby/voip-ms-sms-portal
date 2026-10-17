@@ -32,6 +32,7 @@ final class App
     public readonly Sync $sync;
     public readonly Sender $sender;
     public readonly Push $push;
+    public readonly Updates $updates;
     public readonly Router $router;
     public readonly string $version;
 
@@ -40,7 +41,10 @@ final class App
     /** @var list<callable> */
     private array $deferred = [];
 
-    private function __construct(public readonly Config $config)
+    /**
+     * @param ?string $siteDir the web root (where api.php is), which updates replace along with the app
+     */
+    private function __construct(public readonly Config $config, public readonly ?string $siteDir = null)
     {
         $dataDir = $config->dataDir;
         if (!is_dir($dataDir)) {
@@ -79,6 +83,16 @@ final class App
             cronCommand: self::cronCommand($config->appDir),
         );
         $this->sender = new Sender($this->repo, $this->events, $this->media, $this->sync, fn () => $this->client(), $dataDir, fn (callable $work) => $this->defer($work));
+        $this->updates = new Updates(
+            repo: $this->repo,
+            version: $this->version,
+            enabled: $config->updateCheck,
+            manifestUrl: $config->updateManifestUrl,
+            appDir: $config->appDir,
+            siteDir: $siteDir,
+            workDir: "$dataDir/update",
+            lockDir: $dataDir,
+        );
 
         if ($config->demo && !$this->repo->listContacts()) {
             foreach (DemoClient::CONTACTS as $contact) {
@@ -92,19 +106,20 @@ final class App
         Routes\MessagingRoutes::register($this);
         Routes\ContactRoutes::register($this);
         Routes\PushRoutes::register($this);
+        Routes\UpdateRoutes::register($this);
     }
 
-    public static function boot(string $appDir): self
+    public static function boot(string $appDir, ?string $siteDir = null): self
     {
-        return new self(Config::load($appDir));
+        return new self(Config::load($appDir), $siteDir);
     }
 
     /** What www/api.php runs: one request, start to finish. */
-    public static function serve(string $appDir): void
+    public static function serve(string $appDir, ?string $siteDir = null): void
     {
         $request = Request::fromGlobals();
         try {
-            $app = self::boot($appDir);
+            $app = self::boot($appDir, $siteDir);
         } catch (ConfigError $e) {
             self::secure(Response::error(500, 'config_error', ['message' => $e->getMessage()]))->send();
             return;

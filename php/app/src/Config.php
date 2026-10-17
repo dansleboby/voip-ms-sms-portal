@@ -11,6 +11,8 @@ namespace SmsPortal;
 final class Config
 {
     private const DEFAULT_VAPID_SUBJECT = 'https://github.com/dansleboby/voip-ms-sms-portal';
+    /** Every release publishes its release.json; this address always leads to the newest one. */
+    private const DEFAULT_UPDATE_MANIFEST_URL = 'https://github.com/dansleboby/voip-ms-sms-portal/releases/latest/download/release.json';
 
     /**
      * @param array{username: string, password: string}|null $voipmsEnv
@@ -29,6 +31,10 @@ final class Config
         public readonly ?string $publicOrigin,
         /** Only for tests: a stand-in for the VoIP.ms API. */
         public readonly string $voipmsApiUrl,
+        /** Whether Settings looks for new releases. */
+        public readonly bool $updateCheck,
+        /** Where the newest release is described (release.json). */
+        public readonly string $updateManifestUrl,
     ) {
     }
 
@@ -93,6 +99,8 @@ final class Config
             vapidSubject: $vapidSubject,
             publicOrigin: $publicOrigin,
             voipmsApiUrl: (string) ($get('VOIPMS_API_URL') ?? '') ?: 'https://voip.ms/api/v1/rest.php',
+            updateCheck: $get('UPDATE_CHECK') === null || trim((string) $get('UPDATE_CHECK')) === '' || self::bool($get('UPDATE_CHECK')),
+            updateManifestUrl: self::url($get('UPDATE_MANIFEST_URL'), self::DEFAULT_UPDATE_MANIFEST_URL, 'UPDATE_MANIFEST_URL'),
         );
     }
 
@@ -105,6 +113,18 @@ final class Config
             throw new ConfigError("$name: expected a number of seconds >= $min, got \"$value\".");
         }
         return (int) round((float) $value * 1000);
+    }
+
+    private static function url(mixed $value, string $fallback, string $name): string
+    {
+        $url = trim((string) ($value ?? ''));
+        if ($url === '') {
+            return $fallback;
+        }
+        if (!preg_match('~^https?://\S+$~', $url)) {
+            throw new ConfigError("$name must be an http(s) address, got \"$url\".");
+        }
+        return $url;
     }
 
     private static function bool(mixed $value): bool

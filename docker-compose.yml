@@ -1,5 +1,8 @@
 services:
   sms-portal:
+    # Published with each release; "docker compose pull && docker compose up -d" updates it.
+    # Compose builds from this folder instead when the image cannot be pulled.
+    image: ghcr.io/dansleboby/voip-ms-sms-portal:latest
     build: .
     container_name: sms-portal
     restart: unless-stopped
@@ -22,6 +25,8 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       # Optional: contact given to browser push services (mailto: or https: URL).
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # Look for new releases on GitHub (Settings > Updates).
+      UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # Owner of ./data and user running the app (default 1000:1000).
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}

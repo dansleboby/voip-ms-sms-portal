@@ -1620,9 +1620,39 @@ textarea.input {
   font-size: 13px;
 }
 
+/* A release's changelog section, in Settings > Updates. */
+.update-details {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.update-details > .btn {
+  align-self: flex-start;
+}
+
+.release-notes {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.release-notes li + li {
+  margin-top: 4px;
+}
+
+.release-notes code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 /* A command to copy as is (the cron job's). */
 .command {
   display: block;
+  white-space: pre-wrap;
   margin-top: 6px;
   padding: 8px 12px;
   border-radius: 8px;

@@ -25,8 +25,9 @@ default in cPanel), and a subdomain, like sms.example.com, with HTTPS.
 5. Open https://sms.example.com, sign in and follow the wizard. VoIP.ms must
    allow the IP address the wizard shows (on shared hosting, the server's).
 
-Updating: extract the new zip over the old folders; config.php and the data
-folder are kept.
+Updating: Settings > Updates says when a new version is out and installs it
+in one click (config.php and the data folder are kept). If PHP cannot write
+to its own files on your host, extract the new zip over the old folders.
 
 More: https://github.com/dansleboby/voip-ms-sms-portal#shared-hosting-cpanel
 
@@ -60,7 +61,9 @@ en HTTPS.
    VoIP.ms doit autoriser l'adresse IP que l'assistant affiche (sur un
    hébergement mutualisé, celle du serveur).
 
-Mise à jour : décompressez le nouveau zip par-dessus les anciens dossiers;
-config.php et le dossier des données sont conservés.
+Mise à jour : Réglages > Mises à jour indique quand une nouvelle version sort
+et l'installe en un clic (config.php et le dossier des données sont
+conservés). Si PHP ne peut pas modifier ses propres fichiers chez votre
+hébergeur, décompressez le nouveau zip par-dessus les anciens dossiers.
 
 Plus : https://github.com/dansleboby/voip-ms-sms-portal/blob/main/README.fr.md#hébergement-mutualisé-cpanel

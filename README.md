@@ -100,10 +100,14 @@ The layout adapts to small screens (numbers become filter chips). On a phone, a 
 git clone https://github.com/dansleboby/voip-ms-sms-portal.git
 cd voip-ms-sms-portal
 cp .env.example .env        # then set APP_PASSWORD
-docker compose up -d --build
+docker compose up -d
 ```
 
 Open <http://localhost:8080>, sign in with `APP_PASSWORD` and follow the wizard. Data (SQLite database and media) lives in `./data`; the container makes it writable for the app user on startup (see `PUID`/`PGID`).
+
+Compose runs the image published with each [release](https://github.com/dansleboby/voip-ms-sms-portal/releases) (`ghcr.io/dansleboby/voip-ms-sms-portal`, for x86 and ARM), and builds it from the folder when it cannot pull it; `docker compose up -d --build` always builds from source.
+
+**Updating.** *Settings* → *Updates* says when a new version is out, with what changed. Then, where `docker-compose.yml` is: `docker compose pull && docker compose up -d`. Your data stays in `./data`. (A container cannot replace its own image, so this one does not update itself.)
 
 Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and conversations, an auto-reply, and no real texts sent.
 
@@ -119,7 +123,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 4. Add the cron job (cPanel → *Cron Jobs*), once per minute: `/usr/local/bin/php /home/you/sms-portal/cron.php`. *Settings* shows the exact line, and when the job last ran.
 5. Open the subdomain, sign in and follow the wizard.
 
-To update, extract the new zip over the old folders: `config.php` and `sms-portal/data/` stay.
+**Updating.** *Settings* → *Updates* says when a new version is out, with what changed, and installs it in one click: the server downloads the release's zip, checks it against the SHA-256 the release announces, and replaces its own files, keeping the ones it replaces in `sms-portal/data/update/backup/`. `config.php` and `sms-portal/data/` are never touched. On hosts where PHP cannot write to its own files, *Settings* says which ones; extract the new zip over the old folders instead.
 
 **Compared with Docker:**
 
@@ -145,6 +149,7 @@ To update, extract the new zip over the old folders: `config.php` and `sms-porta
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
 | `VAPID_SUBJECT` | project URL | Contact (`mailto:you@example.com` or an `https://` URL) sent to browser push services with each notification. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
+| `UPDATE_CHECK` | `true` | Look for new releases (*Settings* → *Updates* reads the newest one's `release.json` on GitHub, at most every 6 hours). `UPDATE_MANIFEST_URL` points a fork at its own releases. |
 | `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |
 
 ## Preparing your VoIP.ms account
@@ -226,7 +231,12 @@ If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_P
 
 ### Versions
 
-The version lives in `package.json` and is shown at the bottom of *Settings*; changes are listed in [CHANGELOG.md](CHANGELOG.md). To release one: `npm version <major|minor|patch> --no-git-tag-version`, add its section to the changelog, merge, then tag the merge commit `vX.Y.Z` and attach `npm run build:cpanel`'s zip to its GitHub release (CI also keeps it for every commit, as the `sms-portal-cpanel` artifact). After an update, tabs that were already open offer to reload.
+The version lives in `package.json` ([Semantic Versioning](https://semver.org/)) and is shown in *Settings*; changes go under *Unreleased* in [CHANGELOG.md](CHANGELOG.md) as they are made. To release:
+
+1. `npm run release:prepare -- minor` (or `major`, `patch`, `X.Y.Z`): bumps `package.json` and turns *Unreleased* into the new version's section, dated today.
+2. Commit, open a pull request, merge it.
+
+On `main`, the *Release* workflow sees a version without a tag and publishes it: it runs the tests, tags `vX.Y.Z`, creates the GitHub release with the changelog section as notes, attaches the cPanel zip and `release.json` (what running servers read to offer the update), and pushes the Docker image to `ghcr.io` (`X.Y.Z`, `X.Y` and `latest`). The first time, make the image public: on GitHub, *Packages* → *voip-ms-sms-portal* → *Package settings* → *Change visibility*. After an update, tabs that were already open offer to reload.
 
 ## Roadmap ideas
 

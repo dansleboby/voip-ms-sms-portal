@@ -1,5 +1,8 @@
 import path from 'node:path';
-import type { LiveUpdates } from '../shared/types.js';
+import type { InstallKind, LiveUpdates } from '../shared/types.js';
+
+/** Every release publishes its release.json; this address always leads to the newest one. */
+export const DEFAULT_UPDATE_MANIFEST_URL = 'https://github.com/dansleboby/voip-ms-sms-portal/releases/latest/download/release.json';
 
 export interface Config {
   port: number;
@@ -32,6 +35,12 @@ export interface Config {
   publicOrigin: string | null;
   /** Transport the web client uses for live updates; the server always answers both. */
   liveUpdates: LiveUpdates;
+  /** Whether Settings looks for new releases (UPDATE_CHECK). */
+  updateCheck: boolean;
+  /** Where the newest release is described (release.json). */
+  updateManifestUrl: string;
+  /** "docker" in the image (SMS_PORTAL_INSTALL), "source" otherwise. */
+  install: Exclude<InstallKind, 'php'>;
   /** Problems worth logging once the logger exists (e.g. settings that had to be cleaned up). */
   warnings: string[];
 }
@@ -80,6 +89,8 @@ const SETTINGS = [
   'VAPID_SUBJECT',
   'PUBLIC_URL',
   'LIVE_UPDATES',
+  'UPDATE_CHECK',
+  'UPDATE_MANIFEST_URL',
 ];
 
 /**
@@ -145,6 +156,11 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(`LIVE_UPDATES must be "stream" or "poll", got "${env.LIVE_UPDATES}".`);
   }
 
+  const updateManifestUrl = env.UPDATE_MANIFEST_URL?.trim() || DEFAULT_UPDATE_MANIFEST_URL;
+  if (!/^https?:\/\/\S+$/.test(updateManifestUrl)) {
+    throw new ConfigError(`UPDATE_MANIFEST_URL must be an http(s) address, got "${updateManifestUrl}".`);
+  }
+
   return {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? '0.0.0.0',
@@ -162,6 +178,9 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
     vapidSubject,
     publicOrigin,
     liveUpdates,
+    updateCheck: env.UPDATE_CHECK === undefined || env.UPDATE_CHECK.trim() === '' || bool(env.UPDATE_CHECK),
+    updateManifestUrl,
+    install: env.SMS_PORTAL_INSTALL === 'docker' ? 'docker' : 'source',
     warnings,
   };
 }

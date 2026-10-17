@@ -131,6 +131,40 @@ export type ServerEvent =
   | { type: 'dids' }
   | { type: 'contacts' };
 
+/** How this server was installed, which decides how it updates. */
+export type InstallKind = 'docker' | 'source' | 'php';
+
+/** A published version, from its release.json (scripts/release-manifest.mjs). */
+export interface ReleaseDto {
+  version: string;
+  publishedAt: string | null;
+  /** Its page on GitHub. */
+  url: string;
+  /** Its changelog section (Markdown bullets). */
+  notes: string;
+}
+
+/** GET /api/update */
+export interface UpdateStatusDto {
+  current: string;
+  install: InstallKind;
+  /** False when UPDATE_CHECK is off: nothing is asked of GitHub. */
+  enabled: boolean;
+  /** The newest release as of the last check. */
+  latest: ReleaseDto | null;
+  /** The newest release is newer than this server. */
+  available: boolean;
+  checkedAt: number | null;
+  /** Why the last check failed (unreachable, invalid_manifest...); null when it worked. */
+  error: string | null;
+  /** The PHP version can replace its own files (POST /api/update/install). */
+  canInstall: boolean;
+  /** Why it cannot, when it is the PHP version: not_packaged, not_writable, no_unzip. */
+  blocked: string | null;
+  /** Files or folders it cannot write to, when blocked is "not_writable". */
+  paths?: string[];
+}
+
 /** GET /api/events/poll: the events since `after`, the same ones the stream sends. */
 export interface EventsPollDto {
   /** Opaque; passed back as `after` on the next poll. */

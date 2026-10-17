@@ -12,6 +12,7 @@ RUN npm run build && npm prune --omit=dev
 
 FROM docker.io/library/node:24-bookworm-slim
 ENV NODE_ENV=production \
+    SMS_PORTAL_INSTALL=docker \
     PORT=8080 \
     DATA_DIR=/data \
     WEB_DIR=/app/dist/web

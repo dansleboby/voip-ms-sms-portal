@@ -11,6 +11,7 @@ import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
 import { DidEditor } from './DidEditor';
+import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
 import type { ConnectionTestDto, SyncStatusDto } from '../../../shared/types';
 
@@ -355,6 +356,8 @@ export function Settings() {
               </div>
             </div>
           </section>
+
+          <UpdatesSection />
 
           <section className="section" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button className="btn outlined" onClick={logout}>
