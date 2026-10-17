@@ -146,9 +146,9 @@ export function ContactDialog({
         {error && <div className="error-text">{error}</div>}
         <div className="dialog-actions">
           {contact && (
-            <button type="button" className="btn danger" onClick={remove}>
+            <button type="button" className="btn danger" onClick={remove} aria-label={t('common.delete')} title={t('common.delete')}>
               <Trash2 size={18} />
-              {t('common.delete')}
+              <span className="btn-label">{t('common.delete')}</span>
             </button>
           )}
           <span className="spacer" />
