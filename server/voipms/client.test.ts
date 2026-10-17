@@ -152,4 +152,10 @@ describe('parseMessage', () => {
     expect(m.body).toBe('Malheureusement, tant que l\'accès n\'est pas restauré, "merci"');
     expect(parseMessage('sms', { id: '2', message: 'C:\\temp et :-\\' }).body).toBe('C:\\temp et :-\\');
   });
+
+  it('empties a body that shows nothing, as some voice messages come', () => {
+    const m = parseMessage('mms', { id: '3', type: '1', message: '\n\n\n \u200b\n', media: ['https://voip.ms/media/x/media.amr'] });
+    expect(m.body).toBe('');
+    expect(parseMessage('sms', { id: '4', message: ' ok\n' }).body).toBe(' ok\n');
+  });
 });

@@ -12,7 +12,7 @@ import type {
 import type { ContactIcon } from '../shared/contact.js';
 import type { MessageKind } from '../shared/message.js';
 import { searchDigits } from '../shared/phone.js';
-import { foldText } from '../shared/text.js';
+import { foldText, isBlank } from '../shared/text.js';
 import { unescapeQuotes } from './voipms/text.js';
 
 export type DB = Database.Database;
@@ -140,6 +140,13 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
   ALTER TABLE messages ADD COLUMN delete_remote INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX messages_delete_remote ON messages(delete_remote) WHERE delete_remote = 1;
   `,
+  // Bodies VoIP.ms gave as only line breaks or invisible characters (some voice messages)
+  // showed as an empty bubble; they are now stored empty. A letter or digit rules a body out.
+  (db) => {
+    const rows = db.prepare(`SELECT id, body FROM messages WHERE body <> '' AND body NOT GLOB '*[0-9A-Za-z]*'`).all() as { id: number; body: string }[];
+    const update = db.prepare(`UPDATE messages SET body = '', search_text = '' WHERE id = ?`);
+    for (const row of rows) if (isBlank(row.body)) update.run(row.id);
+  },
 ];
 
 /** `version` stops migrations early, to test upgrades from an older schema. */

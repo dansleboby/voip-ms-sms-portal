@@ -10,6 +10,7 @@
  * - "No results" comes back as an error status (no_sms, no_did).
  */
 
+import { isBlank } from '../../shared/text.js';
 import { unescapeQuotes } from './text.js';
 
 export const VOIPMS_API_URL = 'https://voip.ms/api/v1/rest.php';
@@ -270,6 +271,7 @@ export function parseMessage(kind: RemoteKind, row: Json): RemoteMessage {
     if (m) media.add(absoluteMediaUrl(m));
   }
   const carrier = str(row.carrier_status).trim();
+  const body = unescapeQuotes(str(row.message));
   return {
     kind,
     id: str(row.id),
@@ -278,7 +280,7 @@ export function parseMessage(kind: RemoteKind, row: Json): RemoteMessage {
     direction: str(row.type) === '1' ? 'in' : 'out',
     did: str(row.did),
     contact: str(row.contact),
-    body: unescapeQuotes(str(row.message)),
+    body: isBlank(body) ? '' : body,
     carrierStatus: carrier || null,
     media: [...media],
   };

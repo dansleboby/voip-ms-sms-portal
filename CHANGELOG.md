@@ -5,6 +5,7 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## Unreleased
 
 - **Voice messages play.** The AMR files most phones send voice messages in played in no desktop browser (the player stayed at 0:00): they are now decoded in the browser. Audio attachments get a player of their own, with the recording's waveform as its progress bar (tap or drag it to move around), the time, and a 1×, 1.5× or 2× speed.
+- A voice message no longer comes with a tall empty bubble: VoIP.ms gives some of them a text made only of line breaks, which is now dropped, including in messages already received.
 
 ## 1.5.1 (2026-10-17)
 

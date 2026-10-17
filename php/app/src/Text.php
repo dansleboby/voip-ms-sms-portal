@@ -31,6 +31,15 @@ final class Text
     }
 
     /**
+     * Whether a text shows nothing: only spaces, line breaks, control or
+     * invisible characters, as VoIP.ms gives some voice messages (shared/text.ts).
+     */
+    public static function isBlank(string $text): bool
+    {
+        return preg_match('/^[\p{Z}\p{Cc}\p{Cf}]*$/u', $text) === 1;
+    }
+
+    /**
      * Some VoIP.ms bodies come back with quotes escaped, at times more than
      * once ("l\\\'accès"); a backslash right before a quote never means
      * anything in a text message (server/voipms/text.ts).
