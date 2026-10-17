@@ -415,7 +415,8 @@ textarea.input {
 .app {
   display: grid;
   grid-template-columns: 80px minmax(300px, 380px) 1fr;
-  height: 100dvh;
+  /* What is on screen, keyboard aside (lib/viewport.ts). */
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   background: var(--surface-dim);
 }
@@ -883,17 +884,21 @@ textarea.input {
 }
 
 .messages {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 16px 24px 8px;
 }
 
+/* A short conversation sits right above the message box, like the end of a long one. */
 .messages-inner {
   display: flex;
   flex-direction: column;
+  width: 100%;
   max-width: 880px;
-  margin: 0 auto;
+  margin: auto auto 0;
 }
 
 .day-sep {
@@ -1917,6 +1922,7 @@ textarea.input {
 
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }
@@ -2068,6 +2074,15 @@ textarea.input {
 
   .composer {
     padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  /* The dialog's three buttons would not fit: deleting keeps its bin, and its title. */
+  .dialog-actions .btn.danger {
+    padding: 0 10px;
+  }
+
+  .dialog-actions .btn.danger .btn-label {
+    display: none;
   }
 
   .segmented button {

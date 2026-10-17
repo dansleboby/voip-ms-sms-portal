@@ -218,6 +218,15 @@ function MessageList({
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, []);
 
+  // So does a phone's keyboard opening, which shrinks the list from below.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const observer = new ResizeObserver(onMediaLoad);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onMediaLoad]);
+
   const lastOutgoingId = useMemo(() => [...messages].reverse().find((m) => m.direction === 'out')?.id, [messages]);
 
   return (
