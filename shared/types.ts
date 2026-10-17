@@ -23,6 +23,8 @@ export interface SessionDto {
   pollActiveSeconds: number;
   pollIdleSeconds: number;
   liveUpdates: LiveUpdates;
+  /** Whether the server's configuration leaves some of the account's numbers out (ALLOWED_DIDS, EXCLUDED_DIDS). */
+  didsRestricted: boolean;
 }
 
 export interface DidDto {

@@ -30,8 +30,43 @@ final class Repo
 
     private int $depth = 0;
 
-    public function __construct(public readonly PDO $db)
+    /**
+     * @param list<string>|null $allowedDids the only numbers of the account the configuration lets the portal use (null: all of them)
+     * @param list<string> $excludedDids numbers it leaves alone
+     */
+    public function __construct(
+        public readonly PDO $db,
+        private readonly ?array $allowedDids = null,
+        private readonly array $excludedDids = [],
+    ) {
+    }
+
+    /**
+     * Whether the configuration lets the portal use a number. The others are
+     * out of sight everywhere: their texts are not fetched, and those stored
+     * before the number was left out stay in the database, hidden.
+     */
+    public function allowsDid(string $did): bool
     {
+        return ($this->allowedDids === null || in_array($did, $this->allowedDids, true))
+            && !in_array($did, $this->excludedDids, true);
+    }
+
+    /**
+     * The same, as an SQL condition on $column, with its parameters.
+     *
+     * @return array{0: string, 1: list<string>}
+     */
+    private function didScope(string $column): array
+    {
+        $conditions = [];
+        if ($this->allowedDids !== null) {
+            $conditions[] = "$column IN (" . implode(', ', array_fill(0, count($this->allowedDids), '?')) . ')';
+        }
+        if ($this->excludedDids) {
+            $conditions[] = "$column NOT IN (" . implode(', ', array_fill(0, count($this->excludedDids), '?')) . ')';
+        }
+        return [$conditions ? implode(' AND ', $conditions) : '1', [...($this->allowedDids ?? []), ...$this->excludedDids]];
     }
 
     /**
@@ -104,9 +139,11 @@ final class Repo
 
     public function listDids(): array
     {
+        [$scope, $scopeParams] = $this->didScope('d.did');
         $rows = $this->all(
-            'SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
-             FROM dids d ORDER BY d.position, d.did',
+            "SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
+             FROM dids d WHERE $scope ORDER BY d.position, d.did",
+            $scopeParams,
         );
         return array_map(static fn (array $r) => [
             'did' => $r['did'],
@@ -178,6 +215,9 @@ final class Repo
 
     public function updateDid(string $did, array $patch): bool
     {
+        if (!$this->allowsDid($did)) {
+            return false;
+        }
         $sets = [];
         $values = [];
         if (array_key_exists('label', $patch)) {
@@ -224,7 +264,8 @@ final class Repo
 
     public function getConversation(int $id): ?array
     {
-        $row = $this->one(self::CONVERSATION_SELECT . ' WHERE c.id = ?', [$id]);
+        [$scope, $scopeParams] = $this->didScope('c.did');
+        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$id, ...$scopeParams]);
         return $row ? self::conversationDto($row) : null;
     }
 
@@ -234,8 +275,8 @@ final class Repo
      */
     public function listConversations(?string $did = null, ?string $query = null, ?bool $archived = null, int $limit = 500): array
     {
-        $where = ['c.last_message_id IS NOT NULL'];
-        $params = [];
+        [$scope, $params] = $this->didScope('c.did');
+        $where = ['c.last_message_id IS NOT NULL', $scope];
         $q = trim($query ?? '');
         $archived ??= $q !== '' ? null : false;
         if ($archived !== null) {

@@ -253,8 +253,37 @@ const CONVERSATION_SELECT = `
   LEFT JOIN contacts ct ON ct.id = cp.contact_id
 `;
 
+/** The numbers of the account the configuration lets the portal use (ALLOWED_DIDS, EXCLUDED_DIDS). */
+export interface DidFilter {
+  /** Null: all of them. */
+  allowed: string[] | null;
+  excluded: string[];
+}
+
 export class Repo {
-  constructor(readonly db: DB) {}
+  constructor(
+    readonly db: DB,
+    private readonly didFilter: DidFilter = { allowed: null, excluded: [] },
+  ) {}
+
+  /**
+   * Whether the configuration lets the portal use a number. The others are
+   * out of sight everywhere: their texts are not fetched, and those stored
+   * before the number was left out stay in the database, hidden.
+   */
+  allowsDid(did: string): boolean {
+    const { allowed, excluded } = this.didFilter;
+    return (allowed === null || allowed.includes(did)) && !excluded.includes(did);
+  }
+
+  /** The same, as an SQL condition on `column`, with its parameters. */
+  private didScope(column: string): { sql: string; params: string[] } {
+    const { allowed, excluded } = this.didFilter;
+    const conditions: string[] = [];
+    if (allowed) conditions.push(`${column} IN (${allowed.map(() => '?').join(', ')})`);
+    if (excluded.length) conditions.push(`${column} NOT IN (${excluded.map(() => '?').join(', ')})`);
+    return { sql: conditions.length ? conditions.join(' AND ') : '1', params: [...(allowed ?? []), ...excluded] };
+  }
 
   transaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
@@ -280,12 +309,13 @@ export class Repo {
   // -------------------------------------------------------------------- dids
 
   listDids(): DidDto[] {
+    const scope = this.didScope('d.did');
     const rows = this.db
       .prepare(
         `SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
-         FROM dids d ORDER BY d.position, d.did`,
+         FROM dids d WHERE ${scope.sql} ORDER BY d.position, d.did`,
       )
-      .all() as DidRow[];
+      .all(...scope.params) as DidRow[];
     return rows.map((r) => ({
       did: r.did,
       label: r.label,
@@ -341,6 +371,7 @@ export class Repo {
   }
 
   updateDid(did: string, patch: { label?: string | null; color?: string; visible?: boolean; position?: number }): boolean {
+    if (!this.allowsDid(did)) return false;
     const sets: string[] = [];
     const values: unknown[] = [];
     if (patch.label !== undefined) {
@@ -382,7 +413,10 @@ export class Repo {
   }
 
   getConversation(id: number): ConversationDto | null {
-    const row = this.db.prepare(`${CONVERSATION_SELECT} WHERE c.id = ?`).get(id) as ConversationRow | undefined;
+    const scope = this.didScope('c.did');
+    const row = this.db.prepare(`${CONVERSATION_SELECT} WHERE c.id = ? AND ${scope.sql}`).get(id, ...scope.params) as
+      | ConversationRow
+      | undefined;
     return row ? toConversationDto(row) : null;
   }
 
@@ -391,8 +425,9 @@ export class Repo {
    * left out unless asked for; a search looks through both unless told otherwise.
    */
   listConversations(opts: { did?: string; query?: string; archived?: boolean; limit?: number } = {}): ConversationDto[] {
-    const where = ['c.last_message_id IS NOT NULL'];
-    const params: unknown[] = [];
+    const scope = this.didScope('c.did');
+    const where = ['c.last_message_id IS NOT NULL', scope.sql];
+    const params: unknown[] = [...scope.params];
     const q = opts.query?.trim();
     const archived = opts.archived ?? (q ? undefined : false);
     if (archived !== undefined) where.push(archived ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL');

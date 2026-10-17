@@ -81,9 +81,10 @@ final class MessagingRoutes
         $r->add('PATCH', '/api/conversations/{id}', function (Request $req) use ($repo, $events): Response {
             $id = Input::id($req->param('id'));
             $archived = (new Input($req->json()))->bool('archived');
-            if (!$repo->setArchived($id, $archived)) {
+            if (!$repo->getConversation($id)) {
                 throw new HttpError(404, 'not_found');
             }
+            $repo->setArchived($id, $archived);
             $conversation = $repo->getConversation($id);
             $events->broadcast(['type' => 'conversation', 'conversation' => $conversation]);
             $events->broadcast(['type' => 'dids']);

@@ -148,6 +148,8 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
 | `VAPID_SUBJECT` | URL du projet | Contact (`mailto:vous@example.com` ou une URL `https://`) transmis aux services push des navigateurs avec chaque notification. |
+| `ALLOWED_DIDS` | | Les seuls numéros du compte qu'utilise le portail, séparés par des virgules (`514 555-0100, 450-555-0199`). Les autres n'apparaissent nulle part et leurs textos ne sont pas récupérés : pour les comptes dont certains numéros appartiennent à quelqu'un d'autre. Sur un hébergement mutualisé, `config.php` accepte aussi une liste (`['5145550100', '4505550199']`). |
+| `EXCLUDED_DIDS` | | Numéros du compte que le portail laisse de côté, sous la même forme ; ils l'emportent sur `ALLOWED_DIDS`. Les textos déjà enregistrés d'un numéro écarté restent dans la base, cachés : ils reviennent s'il est permis de nouveau. |
 | `DEMO_MODE` | `false` | Données fictives au lieu d'un vrai compte. |
 | `UPDATE_CHECK` | `true` | Vérifier s'il y a de nouvelles versions (*Réglages* → *Mises à jour* lit le `release.json` de la plus récente sur GitHub, au plus toutes les 6 heures). `UPDATE_MANIFEST_URL` fait pointer une copie dérivée (fork) vers ses propres versions. |
 | `PUID` / `PGID` | `1000` | Docker seulement : utilisateur/groupe propriétaire de `./data` qui exécute l'application (le conteneur démarre en root uniquement pour corriger le propriétaire du dossier, puis abandonne ces droits). |

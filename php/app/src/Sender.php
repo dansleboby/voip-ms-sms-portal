@@ -93,7 +93,7 @@ final class Sender
     public function retry(int $messageId): array
     {
         $row = $this->repo->getMessageRow($messageId);
-        if (!$row || $row['direction'] !== 'out') {
+        if (!$row || $row['direction'] !== 'out' || !$this->repo->getConversation($row['conversation_id'])) {
             throw new HttpError(404, 'not_found');
         }
         if ($row['status'] !== 'failed') {

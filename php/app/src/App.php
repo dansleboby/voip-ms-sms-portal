@@ -60,7 +60,7 @@ final class App
         Log::to("$dataDir/portal.log");
 
         $this->version = self::readVersion($config->appDir);
-        $this->repo = new Repo(Db::open("$dataDir/portal.db"));
+        $this->repo = new Repo(Db::open("$dataDir/portal.db"), $config->allowedDids, $config->excludedDids);
         $this->events = new Events($this->repo);
         $this->auth = new Auth($this->repo, $config->appPassword, $config->sessionDays);
         $this->credentials = new Credentials(

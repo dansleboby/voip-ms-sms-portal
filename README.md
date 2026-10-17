@@ -148,6 +148,8 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
 | `VAPID_SUBJECT` | project URL | Contact (`mailto:you@example.com` or an `https://` URL) sent to browser push services with each notification. |
+| `ALLOWED_DIDS` | | The only numbers of the account the portal uses, separated by commas (`514 555-0100, 450-555-0199`). The others do not show up anywhere and their texts are not fetched: for accounts with numbers that belong to someone else. On shared hosting, `config.php` also takes a list (`['5145550100', '4505550199']`). |
+| `EXCLUDED_DIDS` | | Numbers of the account the portal leaves alone, in the same form; they win over `ALLOWED_DIDS`. Texts already stored from a number left out stay in the database, hidden: they come back if it is allowed again. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
 | `UPDATE_CHECK` | `true` | Look for new releases (*Settings* → *Updates* reads the newest one's `release.json` on GitHub, at most every 6 hours). `UPDATE_MANIFEST_URL` points a fork at its own releases. |
 | `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |

@@ -85,7 +85,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const log: Logger = app.log;
 
   const db = openDatabase(path.join(config.dataDir, 'portal.db'));
-  const repo = new Repo(db);
+  const repo = new Repo(db, { allowed: config.allowedDids, excluded: config.excludedDids });
   const interrupted = repo.failInterruptedSends();
   if (interrupted) log.warn({ count: interrupted }, 'Messages left sending by a restart were marked failed');
   const events = new EventHub();

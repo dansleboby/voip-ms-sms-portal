@@ -131,6 +131,7 @@ export const en: Record<MessageKey, string> = {
   'settings.title': 'Settings',
   'settings.numbers': 'Numbers',
   'settings.numbersHint': 'Give each number a name and a color to tell them apart at a glance.',
+  'settings.numbersRestricted': 'Only the numbers the server’s settings allow are listed (ALLOWED_DIDS, EXCLUDED_DIDS).',
   'settings.label': 'Name',
   'settings.color': 'Color',
   'settings.labelPlaceholder': 'e.g. Personal, Work',

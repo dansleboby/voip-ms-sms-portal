@@ -129,6 +129,7 @@ export const fr = {
   'settings.title': 'Réglages',
   'settings.numbers': 'Numéros',
   'settings.numbersHint': 'Donnez un nom et une couleur à chaque numéro pour les reconnaître d’un coup d’œil.',
+  'settings.numbersRestricted': 'Seuls les numéros permis par les réglages du serveur sont affichés (ALLOWED_DIDS, EXCLUDED_DIDS).',
   'settings.label': 'Nom',
   'settings.color': 'Couleur',
   'settings.labelPlaceholder': 'ex. Perso, Bureau',

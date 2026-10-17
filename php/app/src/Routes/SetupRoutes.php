@@ -66,7 +66,7 @@ final class SetupRoutes
 
         /** Refreshes the numbers from VoIP.ms and returns them with their local names and colors. */
         $r->add('GET', '/api/setup/dids', function () use ($app): Response {
-            $dids = self::client($app)->getDids();
+            $dids = array_filter(self::client($app)->getDids(), fn (array $did) => $app->repo->allowsDid($did['did']));
             $app->repo->transaction(function () use ($app, $dids): void {
                 foreach ($dids as $did) {
                     $app->repo->upsertDid($did);

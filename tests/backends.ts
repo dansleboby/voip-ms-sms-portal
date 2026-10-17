@@ -41,9 +41,11 @@ function freePort(): Promise<number> {
   });
 }
 
+/** A DATA_DIR in `env` is left in place when the server stops (to start another one on the same data). */
 export async function startBackend(name: Backend['name'], env: Record<string, string> = {}): Promise<Backend> {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-`));
-  const settings = { ...ENV, DATA_DIR: dataDir, ...env };
+  const dataDir = env.DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-`));
+  const cleanUp = () => env.DATA_DIR === undefined && fs.rmSync(dataDir, { recursive: true, force: true });
+  const settings = { ...ENV, ...env, DATA_DIR: dataDir };
 
   if (name === 'node') {
     const config = loadConfig({ ...settings, WEB_DIR: path.join(dataDir, 'no-web') });
@@ -57,14 +59,14 @@ export async function startBackend(name: Backend['name'], env: Record<string, st
       dataDir,
       stop: async () => {
         await app.close();
-        fs.rmSync(dataDir, { recursive: true, force: true });
+        cleanUp();
       },
     };
   }
 
   const port = await freePort();
   const webRoot = path.join(dataDir, 'www');
-  fs.mkdirSync(webRoot);
+  fs.mkdirSync(webRoot, { recursive: true });
   const child: ChildProcess = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', webRoot, path.join(root, 'php/dev-router.php')], {
     env: { ...process.env, ...settings, SMS_PORTAL_DIR: path.join(root, 'php/app'), PHP_CLI_SERVER_WORKERS: '4' },
     stdio: 'ignore',
@@ -87,7 +89,7 @@ export async function startBackend(name: Backend['name'], env: Record<string, st
       const exited = new Promise((r) => child.once('exit', r));
       child.kill('SIGTERM');
       await exited;
-      fs.rmSync(dataDir, { recursive: true, force: true });
+      cleanUp();
     },
   };
 }

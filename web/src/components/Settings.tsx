@@ -167,6 +167,7 @@ export function Settings() {
           <section className="section">
             <h3>{t('settings.numbers')}</h3>
             <p>{t('settings.numbersHint')}</p>
+            {session?.didsRestricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
             <div className="card">
               {dids.map((d) => (
                 <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />

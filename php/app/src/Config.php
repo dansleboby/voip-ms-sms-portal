@@ -35,6 +35,10 @@ final class Config
         public readonly bool $updateCheck,
         /** Where the newest release is described (release.json). */
         public readonly string $updateManifestUrl,
+        /** @var list<string>|null the only numbers of the account the portal uses (ALLOWED_DIDS); null for all of them */
+        public readonly ?array $allowedDids = null,
+        /** @var list<string> numbers of the account the portal leaves alone (EXCLUDED_DIDS) */
+        public readonly array $excludedDids = [],
     ) {
     }
 
@@ -101,7 +105,32 @@ final class Config
             voipmsApiUrl: (string) ($get('VOIPMS_API_URL') ?? '') ?: 'https://voip.ms/api/v1/rest.php',
             updateCheck: $get('UPDATE_CHECK') === null || trim((string) $get('UPDATE_CHECK')) === '' || self::bool($get('UPDATE_CHECK')),
             updateManifestUrl: self::url($get('UPDATE_MANIFEST_URL'), self::DEFAULT_UPDATE_MANIFEST_URL, 'UPDATE_MANIFEST_URL'),
+            allowedDids: self::didList($get('ALLOWED_DIDS'), 'ALLOWED_DIDS'),
+            excludedDids: self::didList($get('EXCLUDED_DIDS'), 'EXCLUDED_DIDS') ?? [],
         );
+    }
+
+    /**
+     * A list of numbers, in config.php or as text ("514 555-0100, 450-555-0199").
+     *
+     * @return list<string>|null their 10 digits, or null when empty
+     */
+    private static function didList(mixed $value, string $name): ?array
+    {
+        $entries = is_array($value) ? $value : preg_split('/[,;\n]/', (string) ($value ?? ''));
+        $dids = [];
+        foreach ($entries as $entry) {
+            $entry = trim((string) $entry);
+            if ($entry === '') {
+                continue;
+            }
+            $did = Phone::normalize($entry);
+            if (!preg_match('/^\d{10}$/', $did)) {
+                throw new ConfigError("$name: \"$entry\" is not a 10-digit phone number.");
+            }
+            $dids[] = $did;
+        }
+        return $dids ? array_values(array_unique($dids)) : null;
     }
 
     private static function seconds(mixed $value, int $fallback, int $min, string $name): int
