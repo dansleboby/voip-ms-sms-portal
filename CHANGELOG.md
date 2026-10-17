@@ -2,6 +2,16 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.4.0 (2026-10-17)
+
+- **Numbers to use, or to leave alone.** `ALLOWED_DIDS` lists the only numbers of the account the portal uses, `EXCLUDED_DIDS` the ones it leaves alone (for accounts with numbers that belong to someone else). Their texts are not fetched and they show up nowhere; texts stored before stay in the database, hidden, and come back if the number is allowed again. On shared hosting, `config.php` also takes them as lists.
+- **Turning SMS on from the portal.** In the wizard and in *Settings*, turning on a number whose SMS is off enables it in your VoIP.ms account, keeping its email, forwarding and callback settings; the row says so beforehand. Numbers that VoIP.ms offers no SMS on stay greyed out. A number that gets SMS in VoIP.ms now shows up on the next refresh.
+- **Cron job in the wizard (shared hosting).** When the cron job has not run yet, the wizard gives its command, sees its first run, and says what skipping it costs. *Settings* and that step show a green "Running" badge, or a red one when the job is not set up or seems stopped.
+- **Contacts.** Each contact can have its own avatar color, and an icon instead of its initials (home, work, family, car…). Phone numbers are formatted as you type them in the contact dialog.
+- Shared hosting: the site's `.htaccess` no longer needs `mod_env`; on hosts without it, every page answered with an error 500.
+- The first text sent to a new number no longer stays in the message box once the conversation opens.
+- `npm run screenshots` takes the README's screenshots again, and lists the ones whose look changed.
+
 ## 1.3.0 (2026-10-17)
 
 - **Releases.** Each version is published on GitHub as it reaches `main`: release notes from this changelog, the shared hosting zip, and the Docker image on `ghcr.io/dansleboby/voip-ms-sms-portal`, which `docker-compose.yml` now uses.
