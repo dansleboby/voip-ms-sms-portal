@@ -73,6 +73,7 @@ export const api = {
   dids: () => request<DidDto[]>('GET', '/api/dids'),
   updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position'>>) =>
     request<DidDto>('PATCH', `/api/dids/${did}`, patch),
+  enableSms: (did: string) => request<DidDto>('POST', `/api/dids/${did}/enable-sms`),
 
   conversations: (params: { q?: string; archived?: boolean } = {}) => {
     const query = new URLSearchParams();

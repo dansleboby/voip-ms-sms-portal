@@ -184,6 +184,16 @@ describe.each(backendNames)('%s server', (name) => {
     expect(await client.post('/api/messages/999999/retry')).toMatchObject({ status: 404, json: { error: 'not_found' } });
   });
 
+  it('turns SMS on for a number in the VoIP.ms account', async () => {
+    const before = ((await client.get('/api/dids')).json as DidDto[]).find((d) => d.did === GATINEAU);
+    expect(before).toMatchObject({ smsEnabled: false, smsAvailable: true, visible: false });
+    expect((await client.post(`/api/dids/${GATINEAU}/enable-sms`)).json).toMatchObject({ did: GATINEAU, smsEnabled: true, visible: true });
+    // Still on once the numbers are read from VoIP.ms again.
+    expect(((await client.get('/api/setup/dids')).json as DidDto[]).find((d) => d.did === GATINEAU)).toMatchObject({ smsEnabled: true });
+    expect((await sendForm({ did: GATINEAU, to: MARIE, body: 'Enfin' })).status).toBe(202);
+    expect((await client.post('/api/dids/5550000000/enable-sms')).status).toBe(404);
+  });
+
   it('archives conversations and marks them read', async () => {
     const [first] = (await client.get('/api/conversations')).json as ConversationDto[];
     const archived = await client.request('PATCH', `/api/conversations/${first!.id}`, { archived: true });

@@ -67,6 +67,7 @@ interface Stored extends RemoteMessage {
 }
 
 export class DemoVoipMs implements VoipMsApi {
+  private readonly dids = DIDS.map((d) => ({ ...d }));
   private readonly messages: Stored[] = [];
   private nextId = { sms: 900000, mms: 50000 };
 
@@ -101,7 +102,14 @@ export class DemoVoipMs implements VoipMsApi {
   }
 
   async getDids(): Promise<DidInfo[]> {
-    return DIDS;
+    return this.dids.map((d) => ({ ...d }));
+  }
+
+  async enableSms(did: string): Promise<void> {
+    const info = this.dids.find((d) => d.did === did);
+    if (!info?.smsAvailable) throw new VoipMsError('invalid_did');
+    info.smsEnabled = true;
+    info.mmsAvailable = true;
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {
@@ -117,7 +125,7 @@ export class DemoVoipMs implements VoipMsApi {
   }
 
   private check(did: string): void {
-    const info = DIDS.find((d) => d.did === did);
+    const info = this.dids.find((d) => d.did === did);
     if (!info?.smsEnabled) throw new VoipMsError('invalid_did');
   }
 

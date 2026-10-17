@@ -287,16 +287,22 @@ function NumbersStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
     void refresh();
   }, []);
 
+  const restricted = useStore((s) => s.session?.didsRestricted ?? false);
   const withSms = dids?.filter((d) => d.smsEnabled) ?? [];
   return (
     <div className="setup-body">
       <h2>{t('setup.numbers.title')}</h2>
       <p>{t('setup.numbers.intro')}</p>
+      {restricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
       {dids === null ? (
         <p className="muted">{t('common.loading')}</p>
       ) : (
         <>
-          {withSms.length === 0 && <div className="banner warning" style={{ margin: 0 }}>{t('setup.numbers.none')}</div>}
+          {withSms.length === 0 && (
+            <div className="banner warning" style={{ margin: 0 }}>
+              {t(dids.some((d) => d.smsAvailable) ? 'setup.numbers.none' : 'setup.numbers.noneAvailable')}
+            </div>
+          )}
           {dids.length > 0 && (
             <div className="card">
               {dids.map((d) => (
@@ -304,7 +310,6 @@ function NumbersStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
               ))}
             </div>
           )}
-          {dids.some((d) => !d.smsEnabled) && <p className="muted" style={{ fontSize: 13 }}>{t('setup.numbers.disabledHint')}</p>}
         </>
       )}
       <Actions onBack={onBack}>

@@ -55,6 +55,33 @@ final class MessagingRoutes
             return Response::json($repo->getDid($did));
         });
 
+        /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
+        $r->add('POST', '/api/dids/{did}/enable-sms', function (Request $req) use ($app, $repo, $events): Response {
+            $did = $req->param('did');
+            $current = $repo->getDid($did) ?? throw new HttpError(404, 'not_found');
+            if (!$current['smsAvailable']) {
+                throw new HttpError(409, 'sms_not_available');
+            }
+            $client = $app->client() ?? throw new HttpError(409, 'not_configured');
+            if (!$current['smsEnabled']) {
+                $client->enableSms($did);
+            }
+            $info = [];
+            foreach ($client->getDids() as $d) {
+                if ($d['did'] === $did) {
+                    $info = $d;
+                }
+            }
+            $repo->transaction(function () use ($repo, $did, $current, $info): void {
+                // VoIP.ms accepted it: trust that over a list that may not show it yet.
+                $repo->upsertDid(['smsEnabled' => true] + $info + $current);
+                $repo->updateDid($did, ['visible' => true]);
+            });
+            $events->broadcast(['type' => 'dids']);
+            $events->broadcast(['type' => 'reload']);
+            return Response::json($repo->getDid($did));
+        });
+
         // ---------------------------------------------------------- conversations
 
         $r->add('GET', '/api/conversations', function (Request $req) use ($repo): Response {

@@ -158,7 +158,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 1. **API access**: in the VoIP.ms portal, *Main Menu → SOAP & REST/JSON API*: set an **API password** (different from your login password) and click *Enable/Disable API*.
 2. **Allowed IP**: VoIP.ms only answers API calls from whitelisted addresses. The wizard shows the address VoIP.ms sees for your server; add it under *Enable IP Addresses*. For a home connection whose IP changes, VoIP.ms also accepts ranges (`203.0.113.0/24`), wildcards (`203.0.113.*`) and host names (dynamic DNS).
-3. **SMS on your numbers**: *DID Numbers → Manage DID(s)*, edit the number, *Message Service (SMS/MMS)* → enable. By default VoIP.ms limits sending through the API to 100 SMS per day ([messaging@voip.ms](mailto:messaging@voip.ms) can raise it).
+3. **SMS on your numbers**: turning on a number without SMS in the wizard (or in *Settings*) enables it in VoIP.ms, keeping its email and forwarding settings; by hand, it is under *DID Numbers → Manage DID(s)*, edit the number, *Message Service (SMS/MMS)*. By default VoIP.ms limits sending through the API to 100 SMS per day ([messaging@voip.ms](mailto:messaging@voip.ms) can raise it).
 
 ## Security
 

@@ -34,6 +34,8 @@ export interface DidDto {
   color: string;
   visible: boolean;
   smsEnabled: boolean;
+  /** Whether VoIP.ms offers SMS on the number at all; when it does, the portal can turn it on. */
+  smsAvailable: boolean;
   mmsAvailable: boolean;
   /** VoIP.ms description, usually the rate center ("Le Gardeur, QC"). */
   description: string | null;

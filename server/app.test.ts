@@ -268,6 +268,32 @@ describe('setup wizard', () => {
     await app.inject({ method: 'POST', url: '/api/setup/complete', headers: { cookie } });
     expect((await app.inject({ url: '/api/session', headers: { cookie } })).json().setupCompleted).toBe(true);
   });
+
+  it('shows a number once SMS is turned on for it in VoIP.ms, then leaves it as the user sets it', async () => {
+    client.dids[1]!.smsEnabled = false;
+    services.credentials.save({ username: 'a@b.c', password: 'x' });
+    services.resetClient();
+    const refresh = async () => {
+      await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+      return services.repo.getDid('5143604702')!.visible;
+    };
+    expect(await refresh()).toBe(false);
+    client.dids[1]!.smsEnabled = true;
+    expect(await refresh()).toBe(true);
+    await app.inject({ method: 'PATCH', url: '/api/dids/5143604702', headers: { cookie }, payload: { visible: false } });
+    expect(await refresh()).toBe(false);
+  });
+
+  it('turns SMS on only where VoIP.ms offers it', async () => {
+    client.dids.push({ did: '8335550142', description: 'Sans frais', smsAvailable: false, smsEnabled: false, mmsAvailable: false });
+    services.credentials.save({ username: 'a@b.c', password: 'x' });
+    services.resetClient();
+    await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+    const tollFree = await app.inject({ method: 'POST', url: '/api/dids/8335550142/enable-sms', headers: { cookie } });
+    expect(tollFree.statusCode).toBe(409);
+    expect(tollFree.json()).toEqual({ error: 'sms_not_available' });
+    expect(services.repo.getDid('8335550142')).toMatchObject({ smsEnabled: false, smsAvailable: false, visible: false });
+  });
 });
 
 describe('messaging', () => {

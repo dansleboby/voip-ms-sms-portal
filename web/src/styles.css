@@ -1478,6 +1478,25 @@ textarea.input {
   opacity: 0.6;
 }
 
+.did-row .did-note {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -6px;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+}
+
+.did-row .did-note .btn {
+  margin-left: -12px;
+}
+
+.switch:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
 .contact-item {
   display: flex;
   align-items: center;

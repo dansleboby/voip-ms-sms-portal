@@ -151,6 +151,7 @@ final class Repo
             'color' => $r['color'],
             'visible' => $r['visible'] === 1,
             'smsEnabled' => $r['sms_enabled'] === 1,
+            'smsAvailable' => $r['sms_available'] === 1,
             'mmsAvailable' => $r['mms_available'] === 1,
             'description' => $r['description'],
             'position' => $r['position'],
@@ -179,25 +180,37 @@ final class Repo
         return self::DID_COLORS[count($used) % count(self::DID_COLORS)];
     }
 
-    /** Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color and visibility. */
+    /**
+     * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
+     * and visibility; a number that just got SMS shows up, like a new one.
+     */
     public function upsertDid(array $info): void
     {
         if ($this->one('SELECT did FROM dids WHERE did = ?', [$info['did']])) {
             $this->run(
-                'UPDATE dids SET description = ?, sms_enabled = ?, mms_available = ? WHERE did = ?',
-                [$info['description'], $info['smsEnabled'] ? 1 : 0, $info['mmsAvailable'] ? 1 : 0, $info['did']],
+                'UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
+                   description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?',
+                [
+                    $info['smsEnabled'] ? 1 : 0,
+                    $info['description'],
+                    $info['smsEnabled'] ? 1 : 0,
+                    $info['smsAvailable'] ? 1 : 0,
+                    $info['mmsAvailable'] ? 1 : 0,
+                    $info['did'],
+                ],
             );
             return;
         }
         $position = (int) $this->run('SELECT COUNT(*) FROM dids')->fetchColumn();
         $this->run(
-            'INSERT INTO dids (did, label, color, visible, sms_enabled, mms_available, description, position)
-             VALUES (?, NULL, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
+             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $info['did'],
                 $this->nextDidColor(),
                 $info['smsEnabled'] ? 1 : 0,
                 $info['smsEnabled'] ? 1 : 0,
+                $info['smsAvailable'] ? 1 : 0,
                 $info['mmsAvailable'] ? 1 : 0,
                 $info['description'],
                 $position,
@@ -209,7 +222,7 @@ final class Repo
     public function ensureDid(string $did): void
     {
         if (!$this->one('SELECT did FROM dids WHERE did = ?', [$did])) {
-            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'mmsAvailable' => true]);
+            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true]);
         }
     }
 

@@ -31,6 +31,24 @@ export class FakeVoipMsServer {
   readonly failNext: Record<string, string> = {};
   /** Files served under /media/, for MMS links. */
   readonly files = new Map<string, { type: string; data: Buffer }>();
+  /** The account's numbers, as getDIDsInfo reports them; setSMS changes them. */
+  readonly dids: Record<string, string | number>[] = [
+    { did: '4506575294', description: 'Le Gardeur, QC', sms_available: '1', sms_enabled: 1, mms_available: '1' },
+    {
+      did: '5143604702',
+      description: '',
+      sms_available: 1,
+      sms_enabled: '0',
+      mms_available: 0,
+      sms_email: 'me@example.com',
+      sms_email_enabled: '1',
+      sms_forward: '',
+      sms_forward_enabled: '0',
+      sms_url_callback: 'https://hook.example/sms?from={FROM}',
+      sms_url_callback_enabled: '1',
+      sms_url_callback_retry: '1',
+    },
+  ];
   private readonly rows: Row[] = [];
   private nextId = { sms: 1000, mms: 5000 };
   private server: http.Server | null = null;
@@ -107,14 +125,27 @@ export class FakeVoipMsServer {
         return json({ status: 'success', ip: '198.51.100.7' });
       case 'getBalance':
         return json({ status: 'success', balance: { current_balance: '24.1175' } });
-      case 'getDIDsInfo':
-        return json({
-          status: 'success',
-          dids: [
-            { did: '4506575294', description: 'Le Gardeur, QC', sms_available: '1', sms_enabled: 1, mms_available: '1' },
-            { did: '5143604702', description: '', sms_available: 1, sms_enabled: '0', mms_available: 0 },
-          ],
+      case 'getDIDsInfo': {
+        const dids = this.dids.filter((d) => !fields.did || d.did === fields.did);
+        return json(dids.length ? { status: 'success', dids } : { status: 'invalid_did' });
+      }
+      case 'setSMS': {
+        const did = this.dids.find((d) => d.did === fields.did);
+        if (!did) return json({ status: 'invalid_did' });
+        if (!fields.enable) return json({ status: 'missing_enable' });
+        // Settings left out are reset: the safe guess about the live API.
+        Object.assign(did, {
+          sms_enabled: fields.enable,
+          sms_email: fields.email_address ?? '',
+          sms_email_enabled: fields.email_enabled ?? '0',
+          sms_forward: fields.sms_forward ?? '',
+          sms_forward_enabled: fields.sms_forward_enable ?? '0',
+          sms_url_callback: fields.url_callback ?? '',
+          sms_url_callback_enabled: fields.url_callback_enable ?? '0',
+          sms_url_callback_retry: fields.url_callback_retry ?? '0',
         });
+        return json({ status: 'success' });
+      }
       case 'getSMS':
       case 'getMMS': {
         const kind = method === 'getSMS' ? 'sms' : 'mms';

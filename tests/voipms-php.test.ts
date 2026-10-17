@@ -106,6 +106,24 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
     expect(sendMms.media2).toBeUndefined();
   });
 
+  it('turns SMS on for a number, keeping its other SMS settings', async () => {
+    const OFF = '5143604702';
+    const enabled = await client.post(`/api/dids/${OFF}/enable-sms`);
+    expect(enabled.json).toMatchObject({ did: OFF, smsEnabled: true, smsAvailable: true, visible: true });
+    expect(voipms.calls.findLast((c) => c.method === 'setSMS')!.fields).toMatchObject({
+      did: OFF,
+      enable: '1',
+      email_enabled: '1',
+      email_address: 'me@example.com',
+      sms_forward_enable: '0',
+      url_callback_enable: '1',
+      url_callback: 'https://hook.example/sms?from={FROM}',
+      url_callback_retry: '1',
+    });
+    expect(voipms.dids.find((d) => d.did === OFF)).toMatchObject({ sms_enabled: '1', sms_email_enabled: '1', sms_url_callback_enabled: '1' });
+    expect((await client.post('/api/dids/5550000000/enable-sms')).status).toBe(404);
+  });
+
   it('checks the history before sending again after an ambiguous failure', async () => {
     voipms.failNext.sendSMS = 'http_522';
     const message = (await send({ did: DID, to: MARIE, body: 'Une seule fois' })).json.message as MessageDto;

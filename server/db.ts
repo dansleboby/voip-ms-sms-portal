@@ -125,6 +125,8 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // Whether VoIP.ms offers SMS on a number at all (toll-free numbers, for one, may not).
+  `ALTER TABLE dids ADD COLUMN sms_available INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 /** `version` stops migrations early, to test upgrades from an older schema. */
@@ -159,6 +161,7 @@ interface DidRow {
   color: string;
   visible: number;
   sms_enabled: number;
+  sms_available: number;
   mms_available: number;
   description: string | null;
   position: number;
@@ -322,6 +325,7 @@ export class Repo {
       color: r.color,
       visible: r.visible === 1,
       smsEnabled: r.sms_enabled === 1,
+      smsAvailable: r.sms_available === 1,
       mmsAvailable: r.mms_available === 1,
       description: r.description,
       position: r.position,
@@ -338,26 +342,40 @@ export class Repo {
     return DID_COLORS.find((c) => !used.includes(c)) ?? DID_COLORS[used.length % DID_COLORS.length]!;
   }
 
-  /** Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color and visibility. */
-  upsertDid(info: { did: string; description: string | null; smsEnabled: boolean; mmsAvailable: boolean }): void {
+  /**
+   * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
+   * and visibility; a number that just got SMS shows up, like a new one.
+   */
+  upsertDid(info: { did: string; description: string | null; smsEnabled: boolean; smsAvailable: boolean; mmsAvailable: boolean }): void {
     const existing = this.db.prepare('SELECT did FROM dids WHERE did = ?').get(info.did);
     if (existing) {
       this.db
-        .prepare('UPDATE dids SET description = ?, sms_enabled = ?, mms_available = ? WHERE did = ?')
-        .run(info.description, info.smsEnabled ? 1 : 0, info.mmsAvailable ? 1 : 0, info.did);
+        .prepare(
+          `UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
+             description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?`,
+        )
+        .run(
+          info.smsEnabled ? 1 : 0,
+          info.description,
+          info.smsEnabled ? 1 : 0,
+          info.smsAvailable ? 1 : 0,
+          info.mmsAvailable ? 1 : 0,
+          info.did,
+        );
       return;
     }
     const position = (this.db.prepare('SELECT COUNT(*) AS n FROM dids').get() as { n: number }).n;
     this.db
       .prepare(
-        `INSERT INTO dids (did, label, color, visible, sms_enabled, mms_available, description, position)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         info.did,
         this.nextDidColor(),
         info.smsEnabled ? 1 : 0,
         info.smsEnabled ? 1 : 0,
+        info.smsAvailable ? 1 : 0,
         info.mmsAvailable ? 1 : 0,
         info.description,
         position,
@@ -367,7 +385,7 @@ export class Repo {
   /** Makes sure a DID seen in message history exists locally. */
   ensureDid(did: string): void {
     if (this.db.prepare('SELECT did FROM dids WHERE did = ?').get(did)) return;
-    this.upsertDid({ did, description: null, smsEnabled: true, mmsAvailable: true });
+    this.upsertDid({ did, description: null, smsEnabled: true, smsAvailable: true, mmsAvailable: true });
   }
 
   updateDid(did: string, patch: { label?: string | null; color?: string; visible?: boolean; position?: number }): boolean {

@@ -68,6 +68,8 @@ export interface VoipMsApi {
   getIP(): Promise<string>;
   getBalance(): Promise<number>;
   getDids(): Promise<DidInfo[]>;
+  /** Turns SMS on for one of the account's numbers, keeping its other SMS settings. */
+  enableSms(did: string): Promise<void>;
   getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]>;
   sendSms(did: string, dst: string, message: string): Promise<string>;
   /** `media` holds data URIs ("data:image/png;base64,...") or public URLs, at most 3. */
@@ -85,6 +87,24 @@ export interface VoipMsClientOptions {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A number's SMS settings as getDIDsInfo reports them, and the names setSMS
+ * takes them under: enabling SMS gives them back, so as not to reset them.
+ */
+const SMS_SETTINGS: [reported: string, param: string][] = [
+  ['sms_email_enabled', 'email_enabled'],
+  ['sms_email', 'email_address'],
+  ['sms_forward_enabled', 'sms_forward_enable'],
+  ['sms_forward', 'sms_forward'],
+  ['sms_url_callback_enabled', 'url_callback_enable'],
+  ['sms_url_callback', 'url_callback'],
+  ['sms_url_callback_retry', 'url_callback_retry'],
+  ['smpp_enabled', 'smpp_enabled'],
+  ['smpp_url', 'smpp_url'],
+  ['smpp_user', 'smpp_user'],
+  ['smpp_pass', 'smpp_pass'],
+];
 
 function flag(value: unknown): boolean {
   return value === 1 || value === '1' || value === true;
@@ -182,6 +202,17 @@ export class VoipMsClient implements VoipMsApi {
       smsEnabled: flag(d.sms_enabled),
       mmsAvailable: flag(d.mms_available),
     }));
+  }
+
+  async enableSms(did: string): Promise<void> {
+    const data = await this.call('getDIDsInfo', { did });
+    const info = (Array.isArray(data.dids) ? (data.dids as Json[]) : []).find((d) => str(d.did) === did);
+    if (!info) throw new VoipMsError('invalid_did');
+    const params: Params = { did, enable: 1 };
+    for (const [reported, param] of SMS_SETTINGS) {
+      if (info[reported] !== undefined && info[reported] !== null) params[param] = str(info[reported]);
+    }
+    await this.call('setSMS', params);
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {

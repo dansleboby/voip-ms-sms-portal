@@ -20,6 +20,9 @@ interface VoipMsApi
     /** @return list<array{did: string, description: ?string, smsAvailable: bool, smsEnabled: bool, mmsAvailable: bool}> */
     public function getDids(): array;
 
+    /** Turns SMS on for one of the account's numbers, keeping its other SMS settings. */
+    public function enableSms(string $did): void;
+
     /** Messages between two calendar dates, inclusive ("YYYY-MM-DD", VoIP.ms's time zone). */
     public function getMessages(string $kind, string $from, string $to, int $limit): array;
 

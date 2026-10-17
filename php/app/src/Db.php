@@ -119,6 +119,7 @@ final class Db
               updated_at INTEGER NOT NULL
             );
             SQL,
+            'ALTER TABLE dids ADD COLUMN sms_available INTEGER NOT NULL DEFAULT 1;',
         ];
     }
 
