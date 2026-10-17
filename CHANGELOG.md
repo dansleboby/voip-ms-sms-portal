@@ -2,7 +2,7 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
-## Unreleased
+## 1.3.0 (2026-10-17)
 
 - **Releases.** Each version is published on GitHub as it reaches `main`: release notes from this changelog, the shared hosting zip, and the Docker image on `ghcr.io/dansleboby/voip-ms-sms-portal`, which `docker-compose.yml` now uses.
 - **Updates in Settings.** *Settings → Updates* says when a new version is out, with what changed. The shared hosting version installs it in one click, after checking the download against the release's SHA-256 and keeping the files it replaces; Docker shows the command to run. `UPDATE_CHECK=false` turns the check off.
