@@ -122,6 +122,13 @@ final class DemoClient implements VoipMsApi
         );
     }
 
+    public function deleteMessage(string $kind, string $id): void
+    {
+        if (Db::run($this->db, 'DELETE FROM demo_messages WHERE kind = ? AND remote_id = ?', [$kind, $id])->rowCount() === 0) {
+            throw new VoipMsError($kind === 'sms' ? 'invalid_sms' : 'invalid_mms');
+        }
+    }
+
     public function enableSms(string $did): void
     {
         if (!(array_column(self::DIDS, 'smsAvailable', 'did')[$did] ?? false)) {

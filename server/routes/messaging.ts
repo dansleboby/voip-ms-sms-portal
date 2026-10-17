@@ -28,6 +28,9 @@ const ConversationQuery = z.object({
 
 const ConversationPatch = z.object({ archived: z.boolean() });
 
+/** voipms=1: delete at VoIP.ms too, for good; otherwise VoIP.ms keeps its copy. */
+const DeleteQuery = z.object({ voipms: z.enum(['0', '1']).optional() });
+
 const LookupQuery = z.object({ did: z.string(), phone: z.string() });
 
 const ClientId = z.string().regex(/^[\w-]{8,64}$/);
@@ -44,6 +47,17 @@ const MessagesQuery = z.object({
 const SENDABLE = /^(image|video|audio)\/[\w.+-]+$|^text\/(x-)?vcard$/;
 
 export function registerMessagingRoutes(app: FastifyInstance, s: Services): void {
+  /** Deletes messages of a conversation (all of them when `ids` is null); returns the deleted ids. */
+  const deleteMessages = (conversationId: number, ids: number[] | null, alsoAtVoipMs: boolean): number[] => {
+    const deleted = s.repo.deleteMessages(conversationId, ids, alsoAtVoipMs);
+    if (deleted.ids.length === 0) return [];
+    void s.media.remove(deleted.files).catch((err: unknown) => app.log.warn({ err }, 'Media files of deleted messages remain'));
+    if (alsoAtVoipMs) s.deletions.kick();
+    s.events.broadcast({ type: 'deleted', conversation: s.repo.getConversation(conversationId)!, messageIds: deleted.ids });
+    s.events.broadcast({ type: 'dids' });
+    return deleted.ids;
+  };
+
   // ------------------------------------------------------------------ numbers
 
   app.get('/api/dids', async (): Promise<DidDto[]> => s.repo.listDids());
@@ -112,6 +126,14 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     return conversation;
   });
 
+  /** Deletes the whole conversation; a new text brings it back, with that text only. */
+  app.delete('/api/conversations/:id', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { voipms } = DeleteQuery.parse(req.query);
+    if (!s.repo.getConversation(id)) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, deleted: deleteMessages(id, null, voipms === '1').length };
+  });
+
   app.get('/api/conversations/:id/messages', async (req, reply): Promise<MessageDto[] | void> => {
     const { id } = IdParams.parse(req.params);
     const { before, limit } = MessagesQuery.parse(req.query);
@@ -155,6 +177,17 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
       files,
     });
     return reply.code(202).send(result);
+  });
+
+  app.delete('/api/messages/:id', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const { voipms } = DeleteQuery.parse(req.query);
+    const row = s.repo.getMessageRow(id);
+    if (!row || !s.repo.getConversation(row.conversation_id)) return reply.code(404).send({ error: 'not_found' });
+    // Its outcome is not known yet: VoIP.ms may be sending it right now.
+    if (row.status === 'sending') return reply.code(409).send({ error: 'still_sending' });
+    deleteMessages(row.conversation_id, [id], voipms === '1');
+    return { ok: true };
   });
 
   app.post('/api/messages/:id/retry', async (req) => {

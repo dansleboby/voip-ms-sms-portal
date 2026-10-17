@@ -124,6 +124,11 @@ final class Db
             ALTER TABLE contacts ADD COLUMN color TEXT;
             ALTER TABLE contacts ADD COLUMN icon TEXT;
             SQL,
+            <<<'SQL'
+            ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
+            ALTER TABLE messages ADD COLUMN delete_remote INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX messages_delete_remote ON messages(delete_remote) WHERE delete_remote = 1;
+            SQL,
         ];
     }
 

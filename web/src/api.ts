@@ -83,6 +83,10 @@ export const api = {
     return request<ConversationDto[]>('GET', `/api/conversations${qs ? `?${qs}` : ''}`);
   },
   conversation: (id: number) => request<ConversationDto>('GET', `/api/conversations/${id}`),
+  /** atVoipMs: delete it from the VoIP.ms account too, for good. */
+  deleteMessage: (id: number, atVoipMs: boolean) => request<{ ok: true }>('DELETE', `/api/messages/${id}${atVoipMs ? '?voipms=1' : ''}`),
+  deleteConversation: (id: number, atVoipMs: boolean) =>
+    request<{ ok: true; deleted: number }>('DELETE', `/api/conversations/${id}${atVoipMs ? '?voipms=1' : ''}`),
   updateConversation: (id: number, patch: { archived: boolean }) =>
     request<ConversationDto>('PATCH', `/api/conversations/${id}`, patch),
   lookupConversation: (did: string, phone: string) =>

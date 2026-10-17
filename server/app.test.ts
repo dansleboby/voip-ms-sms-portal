@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp, type Services } from './app.js';
 import { loadConfig } from './config.js';
 import { FakeVoipMs } from './test/fake-client.js';
@@ -353,6 +353,50 @@ describe('messaging', () => {
   it('validates the destination and the DID', async () => {
     expect((await send({ did: '4506575294', to: '123', body: 'x' })).json()).toEqual({ error: 'invalid_destination' });
     expect((await send({ did: '9999999999', to: '4383980707', body: 'x' })).json()).toEqual({ error: 'unknown_did' });
+  });
+
+  it('deletes at VoIP.ms in the background, trying again after a failure that may pass', async () => {
+    const [gone, kept] = ['À effacer', 'À garder', 'Refusé'].map((body) => client.push({ direction: 'in', body, contact: '4383980707' }));
+    await services.sync.syncRecent();
+    const conversation = services.repo.listConversations()[0]!;
+    const local = (body: string) => services.repo.listMessages(conversation.id).find((m) => m.body === body)!;
+    const del = (id: number) => app.inject({ method: 'DELETE', url: `/api/messages/${id}?voipms=1`, headers: { cookie } });
+
+    client.failNext.deleteMessage = 'network_error';
+    expect((await del(local('À effacer').id)).json()).toEqual({ ok: true });
+    await vi.waitFor(() => expect(client.failNext.deleteMessage).toBeUndefined());
+    expect(services.repo.pendingRemoteDeletes(10)).toHaveLength(1);
+    // A minute later, or on the next deletion:
+    services.deletions.kick();
+    await vi.waitFor(() => expect(client.deleted).toEqual([{ kind: 'sms', id: gone!.id }]));
+    expect(services.repo.pendingRemoteDeletes(10)).toEqual([]);
+
+    // A refusal is final: the message stays deleted here.
+    client.failNext.deleteMessage = 'invalid_sms';
+    await del(local('Refusé').id);
+    await vi.waitFor(() => expect(services.repo.pendingRemoteDeletes(10)).toEqual([]));
+    expect(client.deleted).toHaveLength(1);
+    expect(services.repo.listMessages(conversation.id).map((m) => m.body)).toEqual([kept!.body]);
+  });
+
+  it('does not delete a message still being sent', async () => {
+    await send({ did: '4506575294', to: '4383980707', body: 'Premier' });
+    const conversation = services.repo.listConversations()[0]!;
+    const id = services.repo.insertMessage({
+      conversationId: conversation.id,
+      kind: 'sms',
+      remoteId: null,
+      direction: 'out',
+      body: 'En route',
+      sentAt: Date.now(),
+      status: 'sending',
+    });
+    const res = await app.inject({ method: 'DELETE', url: `/api/messages/${id}`, headers: { cookie } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'still_sending' });
+    // Deleting the conversation leaves it too.
+    await app.inject({ method: 'DELETE', url: `/api/conversations/${conversation.id}`, headers: { cookie } });
+    expect(services.repo.listMessages(conversation.id).map((m) => m.body)).toEqual(['En route']);
   });
 
   it('marks failed sends and retries them', async () => {

@@ -269,6 +269,10 @@ final class Sync
                     }
                     $existing = $repo->findMessageByRemote($remote['kind'], $remote['id']);
                     if ($existing) {
+                        // Deleted in the portal: it stays deleted.
+                        if ($existing['deleted']) {
+                            continue;
+                        }
                         if ($remote['carrierStatus'] && $remote['carrierStatus'] !== $existing['carrierStatus']) {
                             $repo->updateMessage($existing['id'], ['carrierStatus' => $remote['carrierStatus']]);
                             $row = $repo->getMessageRow($existing['id']);

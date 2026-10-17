@@ -18,6 +18,7 @@
   --outline: #747775;
   --outline-variant: #c4c7c5;
   --error: #b3261e;
+  --on-error: #ffffff;
   --error-container: #f9dedc;
   --on-error-container: #410e0b;
   --warning-container: #ffefc9;
@@ -57,6 +58,7 @@
     --outline: #8e918f;
     --outline-variant: #444746;
     --error: #f2b8b5;
+    --on-error: #601410;
     --error-container: #8c1d18;
     --on-error-container: #f9dedc;
     --warning-container: #5c4300;
@@ -93,6 +95,7 @@
   --outline: #8e918f;
   --outline-variant: #444746;
   --error: #f2b8b5;
+  --on-error: #601410;
   --error-container: #8c1d18;
   --on-error-container: #f9dedc;
   --warning-container: #5c4300;
@@ -1027,6 +1030,63 @@ textarea.input {
   color: var(--error);
 }
 
+.msg > .bubble,
+.msg > .media-group {
+  cursor: pointer;
+}
+
+.msg.selected > .bubble {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.msg-actions {
+  display: flex;
+  margin-top: 2px;
+}
+
+.msg.out .msg-actions {
+  justify-content: flex-end;
+}
+
+.dialog-text {
+  margin: 0;
+  color: var(--on-surface-variant);
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--error);
+}
+
+.check-title {
+  display: block;
+  font-weight: 500;
+}
+
+.check-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.check-hint.error-text {
+  color: var(--error);
+}
+
+.btn.danger-filled {
+  background: var(--error);
+  color: var(--on-error);
+}
+
 .msg-meta button {
   padding: 0;
   border: none;
@@ -1946,6 +2006,17 @@ textarea.input {
   .main {
     margin: 0;
     border-radius: 0;
+  }
+
+  /* Back, avatar, name and three buttons share a phone's width: keep them close. */
+  .thread-header {
+    gap: 6px;
+    padding: 8px 4px;
+  }
+
+  .thread-header .icon-btn {
+    width: 40px;
+    height: 40px;
   }
 
   .messages {

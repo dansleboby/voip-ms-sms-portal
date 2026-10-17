@@ -132,6 +132,8 @@ export interface ConnectionTestDto {
 export type ServerEvent =
   | { type: 'message'; message: MessageDto; conversation: ConversationDto }
   | { type: 'conversation'; conversation: ConversationDto }
+  /** Messages deleted; the conversation as it is now (no last message once all of them are gone). */
+  | { type: 'deleted'; conversation: ConversationDto; messageIds: number[] }
   | { type: 'sync'; status: SyncStatusDto }
   /** Many conversations changed at once (history import): reload the list. */
   | { type: 'reload' }

@@ -106,6 +106,12 @@ export class DemoVoipMs implements VoipMsApi {
     return this.dids.map((d) => ({ ...d }));
   }
 
+  async deleteMessage(kind: RemoteKind, id: string): Promise<void> {
+    const index = this.messages.findIndex((m) => m.kind === kind && m.id === id);
+    if (index < 0) throw new VoipMsError(kind === 'sms' ? 'invalid_sms' : 'invalid_mms');
+    this.messages.splice(index, 1);
+  }
+
   async enableSms(did: string): Promise<void> {
     const info = this.dids.find((d) => d.did === did);
     if (!info?.smsAvailable) throw new VoipMsError('invalid_did');

@@ -327,11 +327,63 @@ final class Repo
     /** Recomputes the conversation's last message and optionally bumps its unread counter. */
     public function touchConversation(int $conversationId, int $unreadDelta = 0): void
     {
-        $last = $this->one('SELECT id, sent_at FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT 1', [$conversationId]);
+        $last = $this->one(
+            'SELECT id, sent_at FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT 1',
+            [$conversationId],
+        );
         $this->run(
             'UPDATE conversations SET last_message_id = ?, last_message_at = ?, unread_count = unread_count + ? WHERE id = ?',
             [$last['id'] ?? null, $last['sent_at'] ?? null, $unreadDelta, $conversationId],
         );
+    }
+
+    /**
+     * Deletes messages of a conversation (all of them when $ids is null),
+     * except one still being sent. Those VoIP.ms knows stay as their id, text
+     * and attachments gone, so that its history does not bring them back; the
+     * others go entirely.
+     *
+     * @param list<int>|null $ids
+     * @return array{ids: list<int>, files: list<string>} the deleted ids and the media files to remove
+     */
+    public function deleteMessages(int $conversationId, ?array $ids, bool $alsoAtVoipMs): array
+    {
+        return $this->transaction(function () use ($conversationId, $ids, $alsoAtVoipMs): array {
+            $rows = array_values(array_filter(
+                array_column($this->all("SELECT id FROM messages WHERE conversation_id = ? AND deleted_at IS NULL AND status != 'sending'", [$conversationId]), 'id'),
+                static fn (int $id) => $ids === null || in_array($id, $ids, true),
+            ));
+            if (!$rows) {
+                return ['ids' => [], 'files' => []];
+            }
+            $list = self::placeholders($rows);
+            $files = array_column($this->all("SELECT file_name FROM attachments WHERE message_id IN ($list) AND file_name IS NOT NULL", $rows), 'file_name');
+            $this->run("DELETE FROM attachments WHERE message_id IN ($list)", $rows);
+            $this->run("DELETE FROM messages WHERE id IN ($list) AND remote_id IS NULL", $rows);
+            $this->run(
+                "UPDATE messages SET deleted_at = ?, delete_remote = ?, body = '', search_text = '' WHERE id IN ($list)",
+                [Time::nowMs(), $alsoAtVoipMs ? 1 : 0, ...$rows],
+            );
+            $this->touchConversation($conversationId);
+            if ($ids === null) {
+                $this->run('UPDATE conversations SET unread_count = 0 WHERE id = ?', [$conversationId]);
+            }
+            return ['ids' => $rows, 'files' => $files];
+        });
+    }
+
+    /** @return list<array{id: int, kind: string, remoteId: string}> deleted messages still to be deleted at VoIP.ms, oldest first */
+    public function pendingRemoteDeletes(int $limit): array
+    {
+        return array_map(
+            static fn (array $r) => ['id' => $r['id'], 'kind' => $r['kind'], 'remoteId' => (string) $r['remote_id']],
+            $this->all('SELECT id, kind, remote_id FROM messages WHERE delete_remote = 1 ORDER BY id LIMIT ?', [$limit]),
+        );
+    }
+
+    public function remoteDeleteDone(int $id): void
+    {
+        $this->run('UPDATE messages SET delete_remote = 0 WHERE id = ?', [$id]);
     }
 
     public function setArchived(int $id, bool $archived): bool
@@ -376,11 +428,11 @@ final class Repo
         return (int) $this->db->lastInsertId();
     }
 
-    /** @return array{id: int, carrierStatus: ?string}|null */
+    /** @return array{id: int, carrierStatus: ?string, deleted: bool}|null */
     public function findMessageByRemote(string $kind, string $remoteId): ?array
     {
-        $row = $this->one('SELECT id, carrier_status FROM messages WHERE kind = ? AND remote_id = ?', [$kind, $remoteId]);
-        return $row ? ['id' => $row['id'], 'carrierStatus' => $row['carrier_status']] : null;
+        $row = $this->one('SELECT id, carrier_status, deleted_at FROM messages WHERE kind = ? AND remote_id = ?', [$kind, $remoteId]);
+        return $row ? ['id' => $row['id'], 'carrierStatus' => $row['carrier_status'], 'deleted' => $row['deleted_at'] !== null] : null;
     }
 
     public function updateMessage(int $id, array $patch): void
@@ -402,7 +454,7 @@ final class Repo
 
     public function getMessageRow(int $id): ?array
     {
-        return $this->one('SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages WHERE id = ?', [$id]);
+        return $this->one('SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages WHERE id = ? AND deleted_at IS NULL', [$id]);
     }
 
     public function getMessage(int $id): ?array
@@ -418,13 +470,14 @@ final class Repo
         $before = $beforeId ? $this->getMessageRow($beforeId) : null;
         if ($before) {
             $rows = $this->all(
-                'SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages WHERE conversation_id = ? AND (sent_at < ? OR (sent_at = ? AND id < ?))
+                'SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages
+                 WHERE conversation_id = ? AND deleted_at IS NULL AND (sent_at < ? OR (sent_at = ? AND id < ?))
                  ORDER BY sent_at DESC, id DESC LIMIT ?',
                 [$conversationId, $before['sent_at'], $before['sent_at'], $before['id'], $limit],
             );
         } else {
             $rows = $this->all(
-                'SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT ?',
+                'SELECT ' . self::MESSAGE_COLUMNS . ' FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT ?',
                 [$conversationId, $limit],
             );
         }

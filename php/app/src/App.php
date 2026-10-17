@@ -31,6 +31,7 @@ final class App
     public readonly Media $media;
     public readonly Sync $sync;
     public readonly Sender $sender;
+    public readonly RemoteDeletions $deletions;
     public readonly Push $push;
     public readonly Updates $updates;
     public readonly Router $router;
@@ -83,6 +84,7 @@ final class App
             cronCommand: self::cronCommand($config->appDir),
         );
         $this->sender = new Sender($this->repo, $this->events, $this->media, $this->sync, fn () => $this->client(), $dataDir, fn (callable $work) => $this->defer($work));
+        $this->deletions = new RemoteDeletions($this->repo, fn () => $this->client(), $dataDir);
         $this->updates = new Updates(
             repo: $this->repo,
             version: $this->version,
@@ -190,6 +192,7 @@ final class App
             }
             $this->sync->continueImport($deadline);
             $this->media->drain($deadline);
+            $this->deletions->drain($deadline);
         });
     }
 

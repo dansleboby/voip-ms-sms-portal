@@ -117,6 +117,11 @@ final class RestClient implements VoipMsApi
         ], array_values(array_filter($dids, 'is_array')));
     }
 
+    public function deleteMessage(string $kind, string $id): void
+    {
+        $this->call($kind === 'sms' ? 'deleteSMS' : 'deleteMMS', ['id' => $id]);
+    }
+
     public function enableSms(string $did): void
     {
         $data = $this->call('getDIDsInfo', ['did' => $did]);

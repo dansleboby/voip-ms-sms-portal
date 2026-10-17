@@ -46,6 +46,7 @@ final class Cron
             }
             $app->sync->continueImport($deadline);
             $app->media->drain($deadline);
+            $app->deletions->drain($deadline);
             $app->events->prune();
             $app->runDeferred();
         } catch (\Throwable $e) {

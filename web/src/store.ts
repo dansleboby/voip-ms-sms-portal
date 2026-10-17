@@ -280,6 +280,26 @@ export async function markRead(conversationId: number): Promise<void> {
   await api.markRead(conversationId).catch(() => undefined);
 }
 
+/** Takes deleted messages out of their thread, if it is loaded. */
+function removeMessages(conversationId: number, ids: number[]): void {
+  const thread = state.threads[conversationId];
+  if (thread) patchThread(conversationId, { items: thread.items.filter((m) => !ids.includes(m.id)) });
+}
+
+export async function deleteMessage(message: MessageDto, atVoipMs: boolean): Promise<void> {
+  await api.deleteMessage(message.id, atVoipMs);
+  removeMessages(message.conversationId, [message.id]);
+  upsertConversation(await api.conversation(message.conversationId));
+}
+
+/** Deletes every message of the conversation, which leaves the lists until a new text arrives. */
+export async function deleteConversation(conversationId: number, atVoipMs: boolean): Promise<void> {
+  await api.deleteConversation(conversationId, atVoipMs);
+  const thread = state.threads[conversationId];
+  if (thread) removeMessages(conversationId, thread.items.map((m) => m.id));
+  upsertConversation(await api.conversation(conversationId));
+}
+
 export async function setArchived(conversationId: number, archived: boolean): Promise<void> {
   upsertConversation(await api.updateConversation(conversationId, { archived }));
 }
@@ -347,6 +367,10 @@ function handleEvent(event: ServerEvent): void {
       break;
     }
     case 'conversation':
+      upsertConversation(event.conversation);
+      break;
+    case 'deleted':
+      removeMessages(event.conversation.id, event.messageIds);
       upsertConversation(event.conversation);
       break;
     case 'reload':

@@ -1,10 +1,12 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Archive, ArchiveRestore, ArrowLeft, Download, FileText, UserPen, UserPlus } from 'lucide-react';
+import { AlertCircle, Archive, ArchiveRestore, ArrowLeft, Download, FileText, Trash2, UserPen, UserPlus } from 'lucide-react';
 import { errorText, t } from '../i18n';
 import { didName, displayName, formatDayHeader, formatTime, isEmojiOnly, isSameDay, linkify } from '../lib/format';
 import { clearNotifications } from '../lib/push';
 import { navigate } from '../lib/router';
 import {
+  deleteConversation,
+  deleteMessage,
   fetchConversation,
   getState,
   loadOlder,
@@ -21,6 +23,7 @@ import {
 } from '../store';
 import { Composer } from './Composer';
 import { ContactDialog } from './ContactDialog';
+import { DeleteDialog } from './DeleteDialog';
 import { Avatar, Lightbox } from './ui';
 import { formatPhone, isValidNanp } from '../../../shared/phone';
 import type { AttachmentDto, MessageDto } from '../../../shared/types';
@@ -33,6 +36,7 @@ export function Thread({ id }: { id: number }) {
   const dids = useStore((s) => s.dids);
   const contacts = useStore((s) => s.contacts);
   const [editingContact, setEditingContact] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setActiveConversation(id);
@@ -122,6 +126,9 @@ export function Thread({ id }: { id: number }) {
         >
           {conversation.archived ? <ArchiveRestore size={22} /> : <Archive size={22} />}
         </button>
+        <button className="icon-btn" aria-label={t('thread.delete')} title={t('thread.delete')} onClick={() => setDeleting(true)}>
+          <Trash2 size={22} />
+        </button>
       </header>
 
       <MessageList conversationId={id} messages={thread.items} hasMore={thread.hasMore} loading={thread.loading} loaded={thread.loaded} />
@@ -138,6 +145,17 @@ export function Thread({ id }: { id: number }) {
 
       {editingContact && (
         <ContactDialog contact={contact} initialPhone={conversation.phone} onClose={() => setEditingContact(false)} />
+      )}
+      {deleting && (
+        <DeleteDialog
+          what="conversation"
+          onClose={() => setDeleting(false)}
+          onConfirm={async (atVoipMs) => {
+            await deleteConversation(id, atVoipMs);
+            back();
+            toast(t('thread.deleted'));
+          }}
+        />
       )}
     </>
   );
@@ -160,6 +178,9 @@ function MessageList({
   const stickToBottom = useRef(true);
   const previousHeight = useRef<number | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  // The message tapped, which shows its actions; the one asked about before deleting.
+  const [selected, setSelected] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<MessageDto | null>(null);
 
   const onScroll = () => {
     const el = scroller.current;
@@ -222,6 +243,9 @@ function MessageList({
                 first={first}
                 last={last}
                 showStatus={m.id === lastOutgoingId}
+                selected={m.id === selected}
+                onSelect={() => setSelected((current) => (current === m.id ? null : m.id))}
+                onDelete={() => setDeleting(m)}
                 onOpenImage={setLightbox}
                 onMediaLoad={onMediaLoad}
               />
@@ -230,6 +254,17 @@ function MessageList({
         })}
       </div>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {deleting && (
+        <DeleteDialog
+          what="message"
+          onClose={() => setDeleting(null)}
+          onConfirm={async (atVoipMs) => {
+            await deleteMessage(deleting, atVoipMs);
+            setSelected(null);
+            toast(t('thread.messageDeleted'));
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -239,6 +274,9 @@ function MessageView({
   first,
   last,
   showStatus,
+  selected,
+  onSelect,
+  onDelete,
   onOpenImage,
   onMediaLoad,
 }: {
@@ -246,17 +284,33 @@ function MessageView({
   first: boolean;
   last: boolean;
   showStatus: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
   onOpenImage: (src: string) => void;
   onMediaLoad: () => void;
 }) {
-  const classes = ['msg', m.direction, first && 'first', last && 'last', m.status === 'failed' && 'failed', m.status === 'sending' && 'sending']
+  const classes = [
+    'msg',
+    m.direction,
+    first && 'first',
+    last && 'last',
+    m.status === 'failed' && 'failed',
+    m.status === 'sending' && 'sending',
+    selected && 'selected',
+  ]
     .filter(Boolean)
     .join(' ');
+  // A tap on the message (not on a link, a picture or a button, nor the end of a text selection) shows its actions.
+  const select = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a, button, img, video, audio') || window.getSelection()?.toString()) return;
+    onSelect();
+  };
   const emoji = m.attachments.length === 0 && isEmojiOnly(m.body);
   const delivered = m.carrierStatus && /deliver/i.test(m.carrierStatus);
 
   return (
-    <div className={classes}>
+    <div className={classes} onClick={select}>
       {m.attachments.length > 0 && (
         <div className="media-group">
           {m.attachments.map((a) => (
@@ -284,7 +338,7 @@ function MessageView({
           <button onClick={() => void retryMessage(m.id)}>{t('status.tapRetry')}</button>
         </div>
       ) : (
-        (last || (showStatus && m.status === 'sending')) && (
+        (last || selected || (showStatus && m.status === 'sending')) && (
           <div className="msg-meta">
             {formatTime(m.sentAt)}
             {m.kind === 'mms' && <span>· MMS</span>}
@@ -293,6 +347,14 @@ function MessageView({
             )}
           </div>
         )
+      )}
+      {selected && m.status !== 'sending' && (
+        <div className="msg-actions">
+          <button type="button" className="btn danger small" onClick={onDelete}>
+            <Trash2 size={16} />
+            {t('common.delete')}
+          </button>
+        </div>
       )}
     </div>
   );
