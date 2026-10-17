@@ -14,6 +14,7 @@ import type { Logger } from './logger.js';
 import { MediaStore } from './media.js';
 import { PushService } from './push.js';
 import { CredentialStore } from './secrets.js';
+import { RemoteDeletions } from './deletions.js';
 import { MessageSender, SendError } from './send.js';
 import { SyncEngine } from './sync.js';
 import { VoipMsClient, VoipMsError, type VoipMsApi, type VoipMsCredentials } from './voipms/client.js';
@@ -39,6 +40,7 @@ export interface Services {
   auth: Auth;
   sync: SyncEngine;
   sender: MessageSender;
+  deletions: RemoteDeletions;
   push: PushService;
   updates: UpdateChecker;
   /** Client for the configured credentials, or null. */
@@ -141,6 +143,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     onIncoming: (items) => push.notifyIncoming(items),
   });
   const sender = new MessageSender({ repo, events, media, sync, getClient: client, log });
+  const deletions = new RemoteDeletions({ repo, getClient: client, log });
+  // Deletions at VoIP.ms left over from before a restart.
+  deletions.kick();
   events.onClientCountChange((count) => sync.setActive(count > 0));
 
   if (config.demo && repo.listContacts().length === 0) {
@@ -156,6 +161,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     auth,
     sync,
     sender,
+    deletions,
     push,
     updates: new UpdateChecker({
       repo,
@@ -261,7 +267,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     events.close();
   });
   app.addHook('onClose', async () => {
-    await media.stop();
+    await Promise.all([media.stop(), deletions.stop()]);
     db.close();
   });
 

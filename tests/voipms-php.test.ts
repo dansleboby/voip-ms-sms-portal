@@ -124,6 +124,29 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
     expect((await client.post('/api/dids/5550000000/enable-sms')).status).toBe(404);
   });
 
+  it('deletes messages at VoIP.ms after answering, when asked', async () => {
+    voipms.push({ direction: 'in', contact: '5145557777', message: 'Effacez-moi' });
+    voipms.push({ direction: 'in', contact: '5145557777', message: 'Moi aussi' });
+    const conversation = await waitFor(async () => {
+      await poll();
+      return (await conversations()).find((c) => c.phone === '5145557777');
+    });
+    const [first] = await thread(conversation.id);
+    // Deleted here only: VoIP.ms keeps its copy.
+    expect((await client.request('DELETE', `/api/messages/${first!.id}`)).json).toEqual({ ok: true });
+    expect((await client.request('DELETE', `/api/conversations/${conversation.id}?voipms=1`)).json).toEqual({ ok: true, deleted: 1 });
+    const deletes = await waitFor(async () => {
+      const calls = voipms.calls.filter((c) => c.method === 'deleteSMS');
+      return calls.length > 0 && calls;
+    });
+    // Only the other one goes at VoIP.ms; neither comes back from the history.
+    expect(deletes).toHaveLength(1);
+    await client.post('/api/sync/now');
+    await poll();
+    await waitFor(async () => (await client.get('/api/sync/status')).json.state === 'idle');
+    expect((await conversations()).some((c) => c.phone === '5145557777')).toBe(false);
+  });
+
   it('checks the history before sending again after an ambiguous failure', async () => {
     voipms.failNext.sendSMS = 'http_522';
     const message = (await send({ did: DID, to: MARIE, body: 'Une seule fois' })).json.message as MessageDto;

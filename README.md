@@ -12,7 +12,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **Attachments.** Send pictures, videos, audio clips and vCards (up to 3 per message); large photos are resized in the browser to fit VoIP.ms's 1.2 MB limit. Received media is downloaded and kept locally.
 - **Setup wizard.** It walks you through enabling the API, shows the exact IP address to whitelist, tests the connection, lists your numbers and imports your history.
 - **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
-- **Archive** the conversations you are done with; they come back as soon as a new text arrives.
+- **Archive** the conversations you are done with; they come back as soon as a new text arrives. **Delete** messages or whole conversations, in the portal only or at VoIP.ms too.
 - **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
 - **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: no Node.js needed there. See [Shared hosting](#shared-hosting-cpanel).
 
@@ -71,6 +71,10 @@ Contacts are stored on the server, so every browser sees the same names. Add the
 The archive button in a conversation's header puts it away (with an *Undo*); the box icon above the list opens the archive. A new text, received or sent, brings the conversation back to the main list. Searching the main list also looks through archived conversations and flags them.
 
 ![Archived conversations](docs/screenshots/en/archived.png)
+
+### Deleting
+
+Tap a message to show its *Delete* button; the bin in a conversation's header deletes the whole conversation. Deleted texts leave the portal for good, on every device: checking VoIP.ms does not bring them back. VoIP.ms keeps its own copy in your account's history unless you tick *Delete at VoIP.ms too*, which erases it there as well, for good (the portal does it in the background, one message at a time). A new text brings a deleted conversation back, with that text only.
 
 ### Push notifications
 
@@ -246,7 +250,6 @@ On `main`, the *Release* workflow sees a version without a tag and publishes it:
 ## Roadmap ideas
 
 - Optional VoIP.ms webhook/URL callback for instant delivery (and instant notifications) when the instance is reachable from the Internet
-- Deleting messages and conversations
 
 ## License
 

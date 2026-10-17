@@ -100,6 +100,11 @@ export class MediaStore {
     return { fileName, size: buffer.length, mime: type };
   }
 
+  /** Removes the files of deleted attachments. */
+  async remove(fileNames: string[]): Promise<void> {
+    await Promise.all(fileNames.map((name) => fs.rm(this.filePath(name), { force: true })));
+  }
+
   async read(row: AttachmentRow): Promise<Buffer> {
     if (!row.file_name) throw new Error(`Attachment ${row.id} has no file`);
     return fs.readFile(this.filePath(row.file_name));

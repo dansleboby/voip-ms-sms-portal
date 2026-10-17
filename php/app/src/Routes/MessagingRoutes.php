@@ -27,6 +27,25 @@ final class MessagingRoutes
         $repo = $app->repo;
         $events = $app->events;
 
+        /**
+         * Deletes messages of a conversation (all of them when $ids is null); voipms=1 in the
+         * query deletes them at VoIP.ms too, after the response. Returns the deleted ids.
+         */
+        $deleteMessages = static function (int $conversationId, ?array $ids, Request $req) use ($app, $repo, $events): array {
+            $alsoAtVoipMs = (new Input($req->query))->choice('voipms', ['0', '1']) === '1';
+            $deleted = $repo->deleteMessages($conversationId, $ids, $alsoAtVoipMs);
+            if (!$deleted['ids']) {
+                return [];
+            }
+            $app->media->remove($deleted['files']);
+            if ($alsoAtVoipMs) {
+                $app->defer(fn () => $app->deletions->drain(microtime(true) + 20));
+            }
+            $events->broadcast(['type' => 'deleted', 'conversation' => $repo->getConversation($conversationId), 'messageIds' => $deleted['ids']]);
+            $events->broadcast(['type' => 'dids']);
+            return $deleted['ids'];
+        };
+
         // ---------------------------------------------------------------- numbers
 
         $r->add('GET', '/api/dids', fn () => Response::json($repo->listDids()));
@@ -118,6 +137,15 @@ final class MessagingRoutes
             return Response::json($conversation);
         });
 
+        /** Deletes the whole conversation; a new text brings it back, with that text only. */
+        $r->add('DELETE', '/api/conversations/{id}', function (Request $req) use ($repo, $deleteMessages): Response {
+            $id = Input::id($req->param('id'));
+            if (!$repo->getConversation($id)) {
+                throw new HttpError(404, 'not_found');
+            }
+            return Response::json(['ok' => true, 'deleted' => count($deleteMessages($id, null, $req))]);
+        });
+
         $r->add('GET', '/api/conversations/{id}/messages', function (Request $req) use ($repo): Response {
             $id = Input::id($req->param('id'));
             $query = new Input($req->query);
@@ -155,6 +183,20 @@ final class MessagingRoutes
             $field = static fn (string $name) => is_string($req->post[$name] ?? null) ? $req->post[$name] : '';
             $result = $app->sender->queue($field('did'), $field('to'), $field('body'), $files);
             return Response::json($result, 202);
+        });
+
+        $r->add('DELETE', '/api/messages/{id}', function (Request $req) use ($repo, $deleteMessages): Response {
+            $id = Input::id($req->param('id'));
+            $row = $repo->getMessageRow($id);
+            if (!$row || !$repo->getConversation($row['conversation_id'])) {
+                throw new HttpError(404, 'not_found');
+            }
+            // Its outcome is not known yet: VoIP.ms may be sending it right now.
+            if ($row['status'] === 'sending') {
+                throw new HttpError(409, 'still_sending');
+            }
+            $deleteMessages($row['conversation_id'], [$id], $req);
+            return Response::json(['ok' => true]);
         });
 
         $r->add('POST', '/api/messages/{id}/retry', fn (Request $req) => Response::json($app->sender->retry(Input::id($req->param('id')))));

@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.5.0 (2026-10-17)
+
+- **Deleting messages and conversations.** Tap a message to delete it, or use the bin in a conversation's header to delete it all. Deleted texts leave the portal for good, on every device, and checking VoIP.ms does not bring them back; a new text brings a deleted conversation back, with that text only. The confirmation offers to delete them at VoIP.ms too (off by default, and for good), which the server does in the background, one message at a time, trying again after a network error.
+- On phones, a conversation's actions (contact, archive, delete) are in a ⋮ menu, so its name keeps its room in the header.
+
 ## 1.4.0 (2026-10-17)
 
 - **Numbers to use, or to leave alone.** `ALLOWED_DIDS` lists the only numbers of the account the portal uses, `EXCLUDED_DIDS` the ones it leaves alone (for accounts with numbers that belong to someone else). Their texts are not fetched and they show up nowhere; texts stored before stay in the database, hidden, and come back if the number is allowed again. On shared hosting, `config.php` also takes them as lists.

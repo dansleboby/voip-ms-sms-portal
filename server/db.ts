@@ -133,6 +133,13 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
   ALTER TABLE contacts ADD COLUMN color TEXT;
   ALTER TABLE contacts ADD COLUMN icon TEXT;
   `,
+  // Deleted messages stay as their VoIP.ms id, so that checking VoIP.ms never brings them
+  // back; delete_remote = 1 while they are still to be deleted at VoIP.ms too.
+  `
+  ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
+  ALTER TABLE messages ADD COLUMN delete_remote INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX messages_delete_remote ON messages(delete_remote) WHERE delete_remote = 1;
+  `,
 ];
 
 /** `version` stops migrations early, to test upgrades from an older schema. */
@@ -488,13 +495,61 @@ export class Repo {
   /** Recomputes the conversation's last message and optionally bumps its unread counter. */
   touchConversation(conversationId: number, unreadDelta = 0): void {
     const last = this.db
-      .prepare('SELECT id, sent_at FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT 1')
+      .prepare('SELECT id, sent_at FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT 1')
       .get(conversationId) as { id: number; sent_at: number } | undefined;
     this.db
       .prepare(
         `UPDATE conversations SET last_message_id = ?, last_message_at = ?, unread_count = unread_count + ? WHERE id = ?`,
       )
       .run(last?.id ?? null, last?.sent_at ?? null, unreadDelta, conversationId);
+  }
+
+  /**
+   * Deletes messages of a conversation (all of them when `ids` is null),
+   * except one still being sent. Those VoIP.ms knows stay as their id, text
+   * and attachments gone, so that its history does not bring them back; the
+   * others go entirely. Returns the deleted ids and the media files to remove.
+   */
+  deleteMessages(conversationId: number, ids: number[] | null, alsoAtVoipMs: boolean): { ids: number[]; files: string[] } {
+    return this.transaction(() => {
+      const rows = (
+        this.db
+          .prepare(`SELECT id FROM messages WHERE conversation_id = ? AND deleted_at IS NULL AND status != 'sending'`)
+          .all(conversationId) as { id: number }[]
+      )
+        .map((r) => r.id)
+        .filter((id) => ids === null || ids.includes(id));
+      if (rows.length === 0) return { ids: [], files: [] };
+      const list = rows.map(() => '?').join(',');
+      const files = (
+        this.db.prepare(`SELECT file_name FROM attachments WHERE message_id IN (${list}) AND file_name IS NOT NULL`).all(...rows) as {
+          file_name: string;
+        }[]
+      ).map((r) => r.file_name);
+      this.db.prepare(`DELETE FROM attachments WHERE message_id IN (${list})`).run(...rows);
+      this.db.prepare(`DELETE FROM messages WHERE id IN (${list}) AND remote_id IS NULL`).run(...rows);
+      this.db
+        .prepare(`UPDATE messages SET deleted_at = ?, delete_remote = ?, body = '', search_text = '' WHERE id IN (${list})`)
+        .run(Date.now(), alsoAtVoipMs ? 1 : 0, ...rows);
+      this.touchConversation(conversationId);
+      if (ids === null) this.db.prepare('UPDATE conversations SET unread_count = 0 WHERE id = ?').run(conversationId);
+      return { ids: rows, files };
+    });
+  }
+
+  /** Deleted messages still to be deleted at VoIP.ms, oldest first. */
+  pendingRemoteDeletes(limit: number): { id: number; kind: MessageKind; remoteId: string }[] {
+    return (
+      this.db.prepare('SELECT id, kind, remote_id FROM messages WHERE delete_remote = 1 ORDER BY id LIMIT ?').all(limit) as {
+        id: number;
+        kind: MessageKind;
+        remote_id: string;
+      }[]
+    ).map((r) => ({ id: r.id, kind: r.kind, remoteId: r.remote_id }));
+  }
+
+  remoteDeleteDone(id: number): void {
+    this.db.prepare('UPDATE messages SET delete_remote = 0 WHERE id = ?').run(id);
   }
 
   /** Returns false when the conversation does not exist. */
@@ -540,11 +595,11 @@ export class Repo {
     );
   }
 
-  findMessageByRemote(kind: MessageKind, remoteId: string): { id: number; carrierStatus: string | null } | null {
-    const row = this.db.prepare('SELECT id, carrier_status FROM messages WHERE kind = ? AND remote_id = ?').get(kind, remoteId) as
-      | { id: number; carrier_status: string | null }
-      | undefined;
-    return row ? { id: row.id, carrierStatus: row.carrier_status } : null;
+  findMessageByRemote(kind: MessageKind, remoteId: string): { id: number; carrierStatus: string | null; deleted: boolean } | null {
+    const row = this.db
+      .prepare('SELECT id, carrier_status, deleted_at FROM messages WHERE kind = ? AND remote_id = ?')
+      .get(kind, remoteId) as { id: number; carrier_status: string | null; deleted_at: number | null } | undefined;
+    return row ? { id: row.id, carrierStatus: row.carrier_status, deleted: row.deleted_at !== null } : null;
   }
 
   updateMessage(
@@ -572,7 +627,9 @@ export class Repo {
   }
 
   getMessageRow(id: number): MessageRow | null {
-    return (this.db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(id) as MessageRow | undefined) ?? null;
+    return (
+      (this.db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ? AND deleted_at IS NULL`).get(id) as MessageRow | undefined) ?? null
+    );
   }
 
   getMessage(id: number): MessageDto | null {
@@ -588,13 +645,14 @@ export class Repo {
     if (before) {
       rows = this.db
         .prepare(
-          `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? AND (sent_at < ? OR (sent_at = ? AND id < ?))
+          `SELECT ${MESSAGE_COLUMNS} FROM messages
+           WHERE conversation_id = ? AND deleted_at IS NULL AND (sent_at < ? OR (sent_at = ? AND id < ?))
            ORDER BY sent_at DESC, id DESC LIMIT ?`,
         )
         .all(conversationId, before.sent_at, before.sent_at, before.id, limit) as MessageRow[];
     } else {
       rows = this.db
-        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? ORDER BY sent_at DESC, id DESC LIMIT ?`)
+        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT ?`)
         .all(conversationId, limit) as MessageRow[];
     }
     rows.reverse();

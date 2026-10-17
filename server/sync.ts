@@ -249,6 +249,8 @@ export class SyncEngine {
         if (!remote.id || !repo.allowsDid(did)) continue;
         const existing = repo.findMessageByRemote(remote.kind, remote.id);
         if (existing) {
+          // Deleted in the portal: it stays deleted.
+          if (existing.deleted) continue;
           if (remote.carrierStatus && remote.carrierStatus !== existing.carrierStatus) {
             repo.updateMessage(existing.id, { carrierStatus: remote.carrierStatus });
             const row = repo.getMessageRow(existing.id);

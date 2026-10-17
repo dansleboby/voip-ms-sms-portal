@@ -153,6 +153,14 @@ export class FakeVoipMsServer {
         // Newest first, like the live API.
         return json(rows.length ? { status: 'success', sms: rows.reverse().map(({ kind: _kind, ...r }) => r) } : { status: 'no_sms' });
       }
+      case 'deleteSMS':
+      case 'deleteMMS': {
+        const kind = method === 'deleteSMS' ? 'sms' : 'mms';
+        const index = this.rows.findIndex((r) => r.kind === kind && r.id === fields.id);
+        if (index < 0) return json({ status: kind === 'sms' ? 'invalid_sms' : 'invalid_mms' });
+        this.rows.splice(index, 1);
+        return json({ status: 'success' });
+      }
       case 'sendSMS':
         return json({ status: 'success', sms: Number(this.push({ direction: 'out', did: fields.did, contact: fields.dst!, message: fields.message! })) });
       case 'sendMMS':

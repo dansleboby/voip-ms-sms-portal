@@ -5,6 +5,7 @@ import {
   Building2,
   Car,
   Dog,
+  EllipsisVertical,
   GraduationCap,
   Heart,
   House,
@@ -158,6 +159,61 @@ export function PhoneInput({
         onChange(formatted);
       }}
     />
+  );
+}
+
+export interface MenuItem {
+  icon: ReactNode;
+  label: string;
+  danger?: boolean;
+  onSelect: () => void;
+}
+
+/** A "⋮" button and the actions it lists; Escape or a tap elsewhere closes them. */
+export function MenuButton({ label, items }: { label: string; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', onKey);
+    ref.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus();
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div className="menu-anchor" ref={ref}>
+      <button className="icon-btn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <EllipsisVertical size={22} />
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className={item.danger ? 'danger' : undefined}
+              onClick={() => {
+                setOpen(false);
+                item.onSelect();
+              }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

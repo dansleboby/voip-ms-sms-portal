@@ -12,7 +12,7 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 - **Pièces jointes.** Photos, vidéos, sons et vCard (3 par message) ; les grosses photos sont redimensionnées dans le navigateur pour respecter la limite de 1,2 Mo de VoIP.ms. Les médias reçus sont téléchargés et conservés localement.
 - **Assistant de configuration.** Il explique comment activer l'API, affiche l'adresse IP exacte à autoriser, teste la connexion, liste vos numéros et importe l'historique.
 - **Notifications push**, même quand l'application est fermée ou le téléphone verrouillé, sur chaque appareil où vous les activez.
-- **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive.
+- **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive. **Suppression** de messages ou de conversations entières, dans le portail seulement ou chez VoIP.ms aussi.
 - **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche qui ignore les accents (« belanger » trouve « Bélanger »), thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
 - **Docker ou hébergement mutualisé.** Un seul conteneur, ou un hébergement web PHP ordinaire (cPanel) avec une tâche cron : pas besoin de Node.js. Voir [Hébergement mutualisé](#hébergement-mutualisé-cpanel).
 
@@ -71,6 +71,10 @@ Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les 
 Le bouton d'archivage, dans l'en-tête d'une conversation, la range (avec *Annuler*) ; l'icône de boîte au-dessus de la liste ouvre les archives. Un nouveau texto, reçu ou envoyé, ramène la conversation dans la liste principale. La recherche de la liste principale fouille aussi les conversations archivées et les signale.
 
 ![Conversations archivées](docs/screenshots/fr/archived.png)
+
+### Suppression
+
+Touchez un message pour afficher son bouton *Supprimer* ; la corbeille dans l'en-tête d'une conversation la supprime au complet. Les textos supprimés quittent le portail pour de bon, sur tous les appareils : les vérifications de VoIP.ms ne les ramènent pas. VoIP.ms en garde une copie dans l'historique de votre compte, sauf si vous cochez *Supprimer aussi chez VoIP.ms*, qui l'efface là aussi, définitivement (le portail s'en charge en arrière-plan, un message à la fois). Un nouveau texto ramène une conversation supprimée, avec ce texto seulement.
 
 ### Notifications push
 

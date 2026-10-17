@@ -31,4 +31,7 @@ interface VoipMsApi
 
     /** @param list<string> $media data URIs or public URLs, at most 3 */
     public function sendMms(string $did, string $dst, string $message, array $media): string;
+
+    /** Removes a message from the account's history. */
+    public function deleteMessage(string $kind, string $id): void;
 }

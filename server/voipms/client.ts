@@ -74,6 +74,8 @@ export interface VoipMsApi {
   sendSms(did: string, dst: string, message: string): Promise<string>;
   /** `media` holds data URIs ("data:image/png;base64,...") or public URLs, at most 3. */
   sendMms(did: string, dst: string, message: string, media: string[]): Promise<string>;
+  /** Removes a message from the account's history. */
+  deleteMessage(kind: RemoteKind, id: string): Promise<void>;
 }
 
 type Params = Record<string, string | number | undefined>;
@@ -202,6 +204,10 @@ export class VoipMsClient implements VoipMsApi {
       smsEnabled: flag(d.sms_enabled),
       mmsAvailable: flag(d.mms_available),
     }));
+  }
+
+  async deleteMessage(kind: RemoteKind, id: string): Promise<void> {
+    await this.call(kind === 'sms' ? 'deleteSMS' : 'deleteMMS', { id });
   }
 
   async enableSms(did: string): Promise<void> {

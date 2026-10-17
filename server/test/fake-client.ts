@@ -14,7 +14,8 @@ export class FakeVoipMs implements VoipMsApi {
   /** Date given to pushed messages without one; defaults to the current Eastern time. */
   defaultDate: string | null = null;
   /** Next error to throw from the matching call. */
-  failNext: Partial<Record<'getIP' | 'getBalance' | 'getMessages' | 'sendSms' | 'sendMms', string>> = {};
+  failNext: Partial<Record<'getIP' | 'getBalance' | 'getMessages' | 'sendSms' | 'sendMms' | 'deleteMessage', string>> = {};
+  deleted: { kind: RemoteKind; id: string }[] = [];
   private nextId = { sms: 1000, mms: 500 };
 
   private maybeFail(method: keyof FakeVoipMs['failNext']): void {
@@ -53,6 +54,12 @@ export class FakeVoipMs implements VoipMsApi {
 
   async getDids(): Promise<DidInfo[]> {
     return this.dids;
+  }
+
+  async deleteMessage(kind: RemoteKind, id: string): Promise<void> {
+    this.maybeFail('deleteMessage');
+    this.messages = this.messages.filter((m) => !(m.kind === kind && m.id === id));
+    this.deleted.push({ kind, id });
   }
 
   async enableSms(did: string): Promise<void> {

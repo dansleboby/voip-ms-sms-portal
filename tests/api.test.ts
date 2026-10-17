@@ -206,6 +206,45 @@ describe.each(backendNames)('%s server', (name) => {
     expect((await client.get('/api/conversations/abc')).status).toBe(400);
   });
 
+  it('deletes messages and conversations for good, at VoIP.ms too when asked', async () => {
+    const LAVAL = '4505550199';
+    const GARAGE = '4505550111';
+    const find = async (name: string) => ((await client.get(`/api/conversations?q=${encodeURIComponent(name)}`)).json as ConversationDto[])[0]!;
+    const thread = async (id: number) => ((await client.get(`/api/conversations/${id}/messages`)).json as MessageDto[]).map((m) => m.body);
+    const importAgain = async () => {
+      await client.post('/api/setup/import', { days: 30 });
+      // The PHP version imports after answering polls.
+      await waitFor(async () => (await poll(), (await client.get('/api/sync/status')).json.importing === null));
+    };
+
+    // The whole demo history, older texts included.
+    await importAgain();
+    const alex = await find('Alex');
+    const [first, ...rest] = (await client.get(`/api/conversations/${alex.id}/messages`)).json as MessageDto[];
+    await poll();
+    expect((await client.request('DELETE', `/api/messages/${first!.id}`)).json).toEqual({ ok: true });
+    const event = await waitFor(async () => (await poll()).find((e) => e.type === 'deleted'));
+    expect(event).toMatchObject({ messageIds: [first!.id], conversation: { id: alex.id } });
+    expect(await thread(alex.id)).toEqual(rest.map((m) => m.body));
+    expect((await client.request('DELETE', `/api/messages/${first!.id}`)).status).toBe(404);
+    expect((await client.request('DELETE', `/api/messages/${rest[0]!.id}?voipms=yes`)).status).toBe(400);
+
+    const garage = await find('Garage');
+    expect((await client.request('DELETE', `/api/conversations/${garage.id}?voipms=1`)).json).toEqual({ ok: true, deleted: 2 });
+    expect(((await client.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).not.toContain(garage.id);
+    expect((await client.get('/api/conversations?q=BELANGER')).json).toEqual([]);
+
+    // Checking VoIP.ms's history again brings neither back.
+    await importAgain();
+    expect(await thread(alex.id)).toEqual(rest.map((m) => m.body));
+    expect(((await client.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).not.toContain(garage.id);
+
+    // A new text brings the conversation back, with that text only.
+    expect((await sendForm({ did: LAVAL, to: GARAGE, body: 'Encore ouvert?' })).status).toBe(202);
+    expect((await find('Garage')).id).toBe(garage.id);
+    expect((await thread(garage.id))[0]).toBe('Encore ouvert?');
+  });
+
   it('keeps contacts, refusing a number already taken unless asked to move it', async () => {
     const created = await client.post('/api/contacts', { name: '  Jean Roy ', phones: ['+1 514 555 1234'], notes: 'Voisin' });
     expect(created).toMatchObject({ status: 201, json: { name: 'Jean Roy', phones: ['5145551234'], notes: 'Voisin' } });

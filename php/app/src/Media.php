@@ -72,6 +72,14 @@ final class Media
     }
 
     /** Downloads the due attachments until $deadline (microtime); one process at a time. */
+    /** @param list<string> $fileNames files of deleted attachments */
+    public function remove(array $fileNames): void
+    {
+        foreach ($fileNames as $name) {
+            @unlink($this->filePath($name));
+        }
+    }
+
     public function drain(float $deadline): void
     {
         $lock = Lock::take($this->lockDir, 'media');
