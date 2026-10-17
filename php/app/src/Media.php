@@ -16,8 +16,8 @@ final class Media
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp', 'image/heic' => 'heic',
         'image/heif' => 'heif', 'image/bmp' => 'bmp', 'image/svg+xml' => 'svg', 'video/mp4' => 'mp4', 'video/3gpp' => '3gp',
         'video/quicktime' => 'mov', 'video/webm' => 'webm', 'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/aac' => 'aac',
-        'audio/amr' => 'amr', 'audio/ogg' => 'ogg', 'audio/wav' => 'wav', 'text/vcard' => 'vcf', 'text/x-vcard' => 'vcf',
-        'text/plain' => 'txt', 'application/pdf' => 'pdf',
+        'audio/amr' => 'amr', 'audio/amr-wb' => 'awb', 'audio/ogg' => 'ogg', 'audio/wav' => 'wav', 'text/vcard' => 'vcf',
+        'text/x-vcard' => 'vcf', 'text/plain' => 'txt', 'application/pdf' => 'pdf',
     ];
     /** Types a browser may show inline from this origin without any risk of running script. */
     private const INLINE_SAFE = '~^(image/(jpeg|png|gif|webp|bmp|heic|heif|avif)|video/[\w.+-]+|audio/[\w.+-]+)$~';

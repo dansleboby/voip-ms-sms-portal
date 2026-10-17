@@ -21,6 +21,7 @@ const EXTENSIONS: Record<string, string> = {
   'audio/mp4': 'm4a',
   'audio/aac': 'aac',
   'audio/amr': 'amr',
+  'audio/amr-wb': 'awb',
   'audio/ogg': 'ogg',
   'audio/wav': 'wav',
   'text/vcard': 'vcf',

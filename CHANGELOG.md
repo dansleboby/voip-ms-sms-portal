@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## Unreleased
+
+- **Voice messages play.** The AMR files most phones send voice messages in played in no desktop browser (the player stayed at 0:00): they are now decoded in the browser. Audio attachments get a player of their own, with the recording's waveform as its progress bar (tap or drag it to move around), the time, and a 1×, 1.5× or 2× speed.
+
 ## 1.5.1 (2026-10-17)
 
 - On phones, opening the keyboard no longer slides the conversation up out of sight: the header stays, the latest messages stay right above the message box, and the box is no longer half under the keyboard. A short conversation now sits right above the message box, like the end of a long one.

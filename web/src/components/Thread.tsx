@@ -21,6 +21,7 @@ import {
   toastError,
   useStore,
 } from '../store';
+import { AudioPlayer } from './AudioPlayer';
 import { Composer } from './Composer';
 import { ContactDialog } from './ContactDialog';
 import { DeleteDialog } from './DeleteDialog';
@@ -320,7 +321,7 @@ function MessageView({
     .join(' ');
   // A tap on the message (not on a link, a picture or a button, nor the end of a text selection) shows its actions.
   const select = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('a, button, img, video, audio') || window.getSelection()?.toString()) return;
+    if ((e.target as HTMLElement).closest('a, button, img, video, .audio-player') || window.getSelection()?.toString()) return;
     onSelect();
   };
   const emoji = m.attachments.length === 0 && isEmojiOnly(m.body);
@@ -414,13 +415,7 @@ function AttachmentView({
       </div>
     );
   }
-  if (mime.startsWith('audio/')) {
-    return (
-      <div className="media">
-        <audio src={a.url} controls preload="metadata" />
-      </div>
-    );
-  }
+  if (mime.startsWith('audio/')) return <AudioPlayer url={a.url} />;
   return (
     <a className="file-chip" href={a.url} download>
       {mime.includes('vcard') ? <FileText size={18} /> : <Download size={18} />}

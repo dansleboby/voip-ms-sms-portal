@@ -954,22 +954,26 @@ textarea.input {
 
 /* Bubbles of a same group hug each other on the sender's side. */
 .msg.in:not(.first) .bubble,
-.msg.in:not(.first) .media {
+.msg.in:not(.first) .media,
+.msg.in:not(.first) .audio-player {
   border-top-left-radius: 6px;
 }
 
 .msg.in:not(.last) .bubble,
-.msg.in:not(.last) .media {
+.msg.in:not(.last) .media,
+.msg.in:not(.last) .audio-player {
   border-bottom-left-radius: 6px;
 }
 
 .msg.out:not(.first) .bubble,
-.msg.out:not(.first) .media {
+.msg.out:not(.first) .media,
+.msg.out:not(.first) .audio-player {
   border-top-right-radius: 6px;
 }
 
 .msg.out:not(.last) .bubble,
-.msg.out:not(.last) .media {
+.msg.out:not(.last) .media,
+.msg.out:not(.last) .audio-player {
   border-bottom-right-radius: 6px;
 }
 
@@ -1053,11 +1057,101 @@ textarea.input {
   }
 }
 
-.media audio {
-  display: block;
-  width: 280px;
+/* Voice messages: a play button, the waveform as the progress bar, the time and the speed. */
+.audio-player {
+  --play-bg: var(--primary);
+  --play-fg: var(--on-primary);
+  --wave-played: var(--primary);
+  --wave-rest: color-mix(in srgb, var(--on-surface) 28%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 290px;
   max-width: 100%;
-  margin: 8px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 20px;
+  background: var(--bubble-in);
+  color: var(--on-surface);
+}
+
+.msg.out .audio-player {
+  --play-bg: var(--on-bubble-out);
+  --play-fg: var(--bubble-out);
+  --wave-played: var(--on-bubble-out);
+  --wave-rest: color-mix(in srgb, var(--on-bubble-out) 32%, transparent);
+  background: var(--bubble-out);
+  color: var(--on-bubble-out);
+}
+
+.audio-play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--play-bg);
+  color: var(--play-fg);
+  cursor: pointer;
+}
+
+.audio-play:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.waveform {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 32px;
+  cursor: pointer;
+  /* A sideways drag moves in the message; an upward one still scrolls the conversation. */
+  touch-action: pan-y;
+}
+
+.waveform:focus-visible {
+  outline: 2px solid var(--wave-played);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.waveform span {
+  flex: 1;
+  min-height: 3px;
+  border-radius: 2px;
+  background: var(--wave-rest);
+}
+
+.waveform span.played {
+  background: var(--wave-played);
+}
+
+.audio-time {
+  flex: none;
+  min-width: 32px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  opacity: 0.85;
+}
+
+.audio-speed {
+  flex: none;
+  min-width: 34px;
+  padding: 3px 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--wave-rest);
+  color: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 
 .file-chip {
