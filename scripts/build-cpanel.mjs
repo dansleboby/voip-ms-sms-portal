@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeFileList } from './package-files.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -37,6 +38,7 @@ fs.writeFileSync(
 `,
 );
 fs.copyFileSync(path.join(root, 'php/INSTALL.txt'), path.join(out, 'INSTALL.txt'));
+writeFileList(out);
 
 const zip = path.join(root, 'dist', `sms-portal-cpanel-${version}.zip`);
 fs.rmSync(zip, { force: true });

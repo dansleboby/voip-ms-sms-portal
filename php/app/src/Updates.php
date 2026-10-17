@@ -209,7 +209,13 @@ final class Updates
 
     private function download(array $package): string
     {
-        $file = $this->workDir . '/package.zip';
+        // Named after its content: PHP keeps the archives PharData opened, by path, for the
+        // life of the process (PHP-FPM workers serve many requests), and would read an
+        // earlier download at the same path instead of this one.
+        foreach ((array) glob($this->workDir . '/package-*.zip') as $old) {
+            @unlink($old);
+        }
+        $file = $this->workDir . '/package-' . $package['sha256'] . '.zip';
         [$status, $bytes] = self::get($package['url'], 120, self::MAX_PACKAGE_BYTES, $this->version);
         if ($status < 200 || $status >= 300 || $bytes === null) {
             throw new HttpError(502, 'download_failed');
@@ -278,7 +284,51 @@ final class Updates
         if ($packaged !== $version || !is_file("$dir/sms-portal/bootstrap.php") || !is_file("$dir/sms-portal-site/index.html") || !is_file("$dir/sms-portal-site/api.php")) {
             throw new HttpError(502, 'invalid_package');
         }
+        if (!self::matchesFileList($dir)) {
+            Log::warn('Update package unpacked with files that do not match its list');
+            throw new HttpError(502, 'invalid_package');
+        }
         return $dir;
+    }
+
+    /**
+     * Every unpacked file is in sms-portal/FILES with the same SHA-256, and
+     * nothing else is there: an unzip can go wrong without saying so
+     * (PharData on PHP 8.1 misreads some zips and writes garbage).
+     */
+    private static function matchesFileList(string $dir): bool
+    {
+        $lines = @file("$dir/sms-portal/FILES", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!$lines) {
+            return false;
+        }
+        $listed = [];
+        foreach ($lines as $line) {
+            if (!preg_match('/^([0-9a-f]{64})  ((?:sms-portal|sms-portal-site)\/.+)$/', $line, $m)) {
+                return false;
+            }
+            $listed[$m[2]] = $m[1];
+        }
+        $unpacked = [];
+        foreach (['sms-portal', 'sms-portal-site'] as $folder) {
+            foreach (self::files("$dir/$folder") as $relative) {
+                if ("$folder/$relative" !== 'sms-portal/FILES') {
+                    $unpacked[] = "$folder/$relative";
+                }
+            }
+        }
+        sort($unpacked);
+        $names = array_keys($listed);
+        sort($names);
+        if ($unpacked !== $names) {
+            return false;
+        }
+        foreach ($listed as $name => $hash) {
+            if (!hash_equals($hash, (string) hash_file('sha256', "$dir/$name"))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Only the package's two folders, and nothing that climbs out of them. */

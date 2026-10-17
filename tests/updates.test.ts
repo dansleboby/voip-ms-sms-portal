@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { backendNames, Client, phpAvailable, startBackend, type Backend } from './backends.js';
+import { writeFileList } from '../scripts/package-files.mjs';
 
 /**
  * New versions: both servers read the release.json of the newest release
@@ -149,14 +150,16 @@ function install(home: string, v: string) {
   return { app, site };
 }
 
-/** The zip of a release, as scripts/build-cpanel.mjs makes it. */
-function packageZip(v: string, extra: (dir: string) => void = () => {}): Buffer {
+/** The zip of a release, as scripts/build-cpanel.mjs makes it; `after` changes it once its file list is written. */
+function packageZip(v: string, extra: (dir: string) => void = () => {}, after: (dir: string) => void = () => {}): Buffer {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'package-'));
   install(dir, v);
   fs.writeFileSync(path.join(dir, 'INSTALL.txt'), 'Install');
   extra(dir);
+  writeFileList(dir);
+  after(dir);
   const zip = path.join(dir, 'package.zip');
-  execFileSync('zip', ['-qr', zip, 'sms-portal', 'sms-portal-site', 'INSTALL.txt'], { cwd: dir });
+  execFileSync('zip', ['-qrX', zip, 'sms-portal', 'sms-portal-site', 'INSTALL.txt'], { cwd: dir });
   const bytes = fs.readFileSync(zip);
   fs.rmSync(dir, { recursive: true, force: true });
   return bytes;
@@ -183,7 +186,8 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
 
     const port = 20000 + Math.floor(Math.random() * 20000);
     // The site's api.php finds sms-portal next to it, as on a host.
-    const options = extractor === 'PharData' ? ['-d', 'disable_classes=ZipArchive'] : [];
+    // Some hosts also print PHP's warnings, as this one will about ZipArchive: responses must stay clean JSON.
+    const options = extractor === 'PharData' ? ['-d', 'disable_classes=ZipArchive', '-d', 'display_errors=1'] : [];
     server = spawn('php', [...options, '-S', `127.0.0.1:${port}`, '-t', site, path.join(site, 'api.php')], {
       env: { ...process.env, APP_PASSWORD: 'hunter2', DEMO_MODE: 'true', UPDATE_MANIFEST_URL: `${releases.url}/release.json`, SMS_PORTAL_DIR: '' },
       stdio: 'ignore',
@@ -228,6 +232,14 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     expect(await client.post('/api/update/install')).toMatchObject({ status: 502, json: { error: 'invalid_package' } });
     expect(fs.existsSync(path.join(home, 'escaped.txt'))).toBe(false);
     expect(fs.existsSync(path.join(app, 'escaped.txt'))).toBe(false);
+  });
+
+  it('refuses a package whose files differ from its list, as an unzip gone wrong leaves them', async () => {
+    releases.release('9.9.9', packageZip('9.9.9', () => {}, (dir) => fs.appendFileSync(path.join(dir, 'sms-portal/src/App.php'), '// corrupted')));
+    expect(await client.post('/api/update/install')).toMatchObject({ status: 502, json: { error: 'invalid_package' } });
+    releases.release('9.9.9', packageZip('9.9.9', () => {}, (dir) => fs.writeFileSync(path.join(dir, 'sms-portal-site/extra.php'), '<?php')));
+    expect(await client.post('/api/update/install')).toMatchObject({ status: 502, json: { error: 'invalid_package' } });
+    expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
   });
 
   it('refuses a package of another version', async () => {

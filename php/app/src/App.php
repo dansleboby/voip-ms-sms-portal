@@ -117,6 +117,10 @@ final class App
     /** What www/api.php runs: one request, start to finish. */
     public static function serve(string $appDir, ?string $siteDir = null): void
     {
+        // Hosts that print PHP's warnings into pages would corrupt the JSON, and send the
+        // headers early with the wrong status; anything printed is dropped by Response::send.
+        @ini_set('display_errors', '0');
+        ob_start();
         $request = Request::fromGlobals();
         try {
             $app = self::boot($appDir, $siteDir);
