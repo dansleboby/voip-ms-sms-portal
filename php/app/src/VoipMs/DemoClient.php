@@ -31,7 +31,7 @@ final class DemoClient implements VoipMsApi
     public const CONTACTS = [
         ['name' => 'Marie Tremblay', 'phones' => ['4385550142']],
         ['name' => 'Alex Martin', 'phones' => ['5145550187']],
-        ['name' => 'Garage Bélanger', 'phones' => ['4505550111']],
+        ['name' => 'Garage Bélanger', 'phones' => ['4505550111'], 'icon' => 'car'],
     ];
 
     public function __construct(private readonly PDO $db, private readonly string $timeZone)
@@ -110,9 +110,35 @@ final class DemoClient implements VoipMsApi
         return 42.5;
     }
 
+    /** Numbers the demo turned SMS on for, kept between requests. */
+    private const ENABLED_KEY = 'demo.smsEnabled';
+
     public function getDids(): array
     {
-        return self::DIDS;
+        $enabled = $this->enabledByDemo();
+        return array_map(
+            static fn (array $d) => in_array($d['did'], $enabled, true) ? ['smsEnabled' => true, 'mmsAvailable' => true] + $d : $d,
+            self::DIDS,
+        );
+    }
+
+    public function enableSms(string $did): void
+    {
+        if (!(array_column(self::DIDS, 'smsAvailable', 'did')[$did] ?? false)) {
+            throw new VoipMsError('invalid_did');
+        }
+        Db::run(
+            $this->db,
+            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            [self::ENABLED_KEY, json_encode(array_values(array_unique([...$this->enabledByDemo(), $did])))],
+        );
+    }
+
+    /** @return list<string> */
+    private function enabledByDemo(): array
+    {
+        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [self::ENABLED_KEY])->fetchColumn();
+        return $stored === false ? [] : json_decode($stored, true);
     }
 
     public function getMessages(string $kind, string $from, string $to, int $limit): array
@@ -140,7 +166,7 @@ final class DemoClient implements VoipMsApi
 
     private function check(string $did): void
     {
-        foreach (self::DIDS as $info) {
+        foreach ($this->getDids() as $info) {
             if ($info['did'] === $did && $info['smsEnabled']) {
                 return;
             }

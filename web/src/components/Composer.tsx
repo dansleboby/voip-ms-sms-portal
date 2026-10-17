@@ -121,6 +121,9 @@ export function Composer({
       items.forEach((i) => sentItems.has(i.id) && i.preview && URL.revokeObjectURL(i.preview));
       setItems((cur) => cur.filter((i) => !sentItems.has(i.id)));
       setBody((cur) => (cur === sentBody ? '' : cur));
+      // Drop the saved draft now: onSent can open the conversation, whose box
+      // would restore it before this one is around to save the emptied text.
+      if (draftKey && prefs.get(draftKey) === sentBody) prefs.set(draftKey, null);
       onSent?.(conversation);
       textarea.current?.focus();
     } catch (err) {

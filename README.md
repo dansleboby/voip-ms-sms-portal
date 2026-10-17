@@ -52,7 +52,7 @@ Type a name or a number: contacts are suggested as you type. With several number
 
 ### Setup wizard
 
-On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Numbers where SMS is not enabled yet are flagged, with where to enable it.
+On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Turning on a number whose SMS is off enables it in your VoIP.ms account; the row says so beforehand.
 
 | Allowing the IP address | Choosing your numbers |
 | --- | --- |
@@ -60,7 +60,7 @@ On first launch, the wizard checks the credentials, shows the IP address VoIP.ms
 
 ### Contacts
 
-Contacts are stored on the server, so every browser sees the same names. Add them by hand or import a `.vcf` file exported from Google Contacts, iCloud or your phone.
+Contacts are stored on the server, so every browser sees the same names. Add them by hand or import a `.vcf` file exported from Google Contacts, iCloud or your phone. Each one can have its own avatar color, and an icon instead of its initials (home, work, family, car…); numbers are formatted as you type them.
 
 | Contact list | Editing a contact |
 | --- | --- |
@@ -120,8 +120,9 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 1. Get `sms-portal-cpanel-<version>.zip`, attached to each [release](https://github.com/dansleboby/voip-ms-sms-portal/releases) (or build it: `npm run build:cpanel`), and extract it in your home folder (cPanel → *File Manager* → *Upload*, then *Extract*). You get two folders side by side: `sms-portal/`, the server with its settings and data, never served, and `sms-portal-site/`, what the browser loads.
 2. Create the subdomain (cPanel → *Domains* → *Create A New Domain*) with `sms-portal-site` as its document root, and make sure it has HTTPS (cPanel → *SSL/TLS Status* → *Run AutoSSL*).
 3. In `sms-portal/`, copy `config.sample.php` to `config.php` and set `APP_PASSWORD`. The other settings are those of the [table below](#configuration), apart from the Docker ones (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
-4. Add the cron job (cPanel → *Cron Jobs*), once per minute: `/usr/local/bin/php /home/you/sms-portal/cron.php`. *Settings* shows the exact line, and when the job last ran.
-5. Open the subdomain, sign in and follow the wizard.
+4. Open the subdomain, sign in and follow the wizard. Its last step gives the cron job to add (cPanel → *Cron Jobs*), once per minute, such as `/usr/local/bin/php /home/you/sms-portal/cron.php`, and sees it start; you can skip it, at the cost of texts and notifications only coming in while the app is open. *Settings* shows the line too, and whether the job runs.
+
+![Wizard step giving the cron job to add](docs/screenshots/en/setup-cron.png)
 
 **Updating.** *Settings* → *Updates* says when a new version is out, with what changed, and installs it in one click: the server downloads the release's zip, checks it against the SHA-256 the release announces, and replaces its own files, keeping the ones it replaces in `sms-portal/data/update/backup/`. `config.php` and `sms-portal/data/` are never touched. On hosts where PHP cannot write to its own files, *Settings* says which ones; extract the new zip over the old folders instead.
 
@@ -148,6 +149,8 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
 | `VAPID_SUBJECT` | project URL | Contact (`mailto:you@example.com` or an `https://` URL) sent to browser push services with each notification. |
+| `ALLOWED_DIDS` | | The only numbers of the account the portal uses, separated by commas (`514 555-0100, 450-555-0199`). The others do not show up anywhere and their texts are not fetched: for accounts with numbers that belong to someone else. On shared hosting, `config.php` also takes a list (`['5145550100', '4505550199']`). |
+| `EXCLUDED_DIDS` | | Numbers of the account the portal leaves alone, in the same form; they win over `ALLOWED_DIDS`. Texts already stored from a number left out stay in the database, hidden: they come back if it is allowed again. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
 | `UPDATE_CHECK` | `true` | Look for new releases (*Settings* → *Updates* reads the newest one's `release.json` on GitHub, at most every 6 hours). `UPDATE_MANIFEST_URL` points a fork at its own releases. |
 | `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |
@@ -156,7 +159,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 1. **API access**: in the VoIP.ms portal, *Main Menu → SOAP & REST/JSON API*: set an **API password** (different from your login password) and click *Enable/Disable API*.
 2. **Allowed IP**: VoIP.ms only answers API calls from whitelisted addresses. The wizard shows the address VoIP.ms sees for your server; add it under *Enable IP Addresses*. For a home connection whose IP changes, VoIP.ms also accepts ranges (`203.0.113.0/24`), wildcards (`203.0.113.*`) and host names (dynamic DNS).
-3. **SMS on your numbers**: *DID Numbers → Manage DID(s)*, edit the number, *Message Service (SMS/MMS)* → enable. By default VoIP.ms limits sending through the API to 100 SMS per day ([messaging@voip.ms](mailto:messaging@voip.ms) can raise it).
+3. **SMS on your numbers**: turning on a number without SMS in the wizard (or in *Settings*) enables it in VoIP.ms, keeping its email and forwarding settings; by hand, it is under *DID Numbers → Manage DID(s)*, edit the number, *Message Service (SMS/MMS)*. By default VoIP.ms limits sending through the API to 100 SMS per day ([messaging@voip.ms](mailto:messaging@voip.ms) can raise it).
 
 ## Security
 
@@ -228,6 +231,8 @@ npm run build:cpanel                          # dist/sms-portal-cpanel-<version>
 ```
 
 If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) to use `HTTPS_PROXY`.
+
+**Screenshots.** `npm run screenshots` takes the ones in this README again (`docs/screenshots/en` and `fr`) from the demo mode, on a fixed date, and lists those whose look changed: run it after changing the interface, and commit what moved. It needs a Chromium for Playwright, once: `npx playwright-core install chromium`. Fonts differ between systems: compare runs made on the same machine.
 
 ### Versions
 

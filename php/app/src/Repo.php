@@ -21,7 +21,7 @@ final class Repo
         SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
                m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
                (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
-               ct.id AS contact_id, ct.name AS contact_name
+               ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
         FROM conversations c
         LEFT JOIN messages m ON m.id = c.last_message_id
         LEFT JOIN contact_phones cp ON cp.phone = c.phone
@@ -30,8 +30,43 @@ final class Repo
 
     private int $depth = 0;
 
-    public function __construct(public readonly PDO $db)
+    /**
+     * @param list<string>|null $allowedDids the only numbers of the account the configuration lets the portal use (null: all of them)
+     * @param list<string> $excludedDids numbers it leaves alone
+     */
+    public function __construct(
+        public readonly PDO $db,
+        private readonly ?array $allowedDids = null,
+        private readonly array $excludedDids = [],
+    ) {
+    }
+
+    /**
+     * Whether the configuration lets the portal use a number. The others are
+     * out of sight everywhere: their texts are not fetched, and those stored
+     * before the number was left out stay in the database, hidden.
+     */
+    public function allowsDid(string $did): bool
     {
+        return ($this->allowedDids === null || in_array($did, $this->allowedDids, true))
+            && !in_array($did, $this->excludedDids, true);
+    }
+
+    /**
+     * The same, as an SQL condition on $column, with its parameters.
+     *
+     * @return array{0: string, 1: list<string>}
+     */
+    private function didScope(string $column): array
+    {
+        $conditions = [];
+        if ($this->allowedDids !== null) {
+            $conditions[] = "$column IN (" . implode(', ', array_fill(0, count($this->allowedDids), '?')) . ')';
+        }
+        if ($this->excludedDids) {
+            $conditions[] = "$column NOT IN (" . implode(', ', array_fill(0, count($this->excludedDids), '?')) . ')';
+        }
+        return [$conditions ? implode(' AND ', $conditions) : '1', [...($this->allowedDids ?? []), ...$this->excludedDids]];
     }
 
     /**
@@ -104,9 +139,11 @@ final class Repo
 
     public function listDids(): array
     {
+        [$scope, $scopeParams] = $this->didScope('d.did');
         $rows = $this->all(
-            'SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
-             FROM dids d ORDER BY d.position, d.did',
+            "SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
+             FROM dids d WHERE $scope ORDER BY d.position, d.did",
+            $scopeParams,
         );
         return array_map(static fn (array $r) => [
             'did' => $r['did'],
@@ -114,6 +151,7 @@ final class Repo
             'color' => $r['color'],
             'visible' => $r['visible'] === 1,
             'smsEnabled' => $r['sms_enabled'] === 1,
+            'smsAvailable' => $r['sms_available'] === 1,
             'mmsAvailable' => $r['mms_available'] === 1,
             'description' => $r['description'],
             'position' => $r['position'],
@@ -142,25 +180,37 @@ final class Repo
         return self::DID_COLORS[count($used) % count(self::DID_COLORS)];
     }
 
-    /** Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color and visibility. */
+    /**
+     * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
+     * and visibility; a number that just got SMS shows up, like a new one.
+     */
     public function upsertDid(array $info): void
     {
         if ($this->one('SELECT did FROM dids WHERE did = ?', [$info['did']])) {
             $this->run(
-                'UPDATE dids SET description = ?, sms_enabled = ?, mms_available = ? WHERE did = ?',
-                [$info['description'], $info['smsEnabled'] ? 1 : 0, $info['mmsAvailable'] ? 1 : 0, $info['did']],
+                'UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
+                   description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?',
+                [
+                    $info['smsEnabled'] ? 1 : 0,
+                    $info['description'],
+                    $info['smsEnabled'] ? 1 : 0,
+                    $info['smsAvailable'] ? 1 : 0,
+                    $info['mmsAvailable'] ? 1 : 0,
+                    $info['did'],
+                ],
             );
             return;
         }
         $position = (int) $this->run('SELECT COUNT(*) FROM dids')->fetchColumn();
         $this->run(
-            'INSERT INTO dids (did, label, color, visible, sms_enabled, mms_available, description, position)
-             VALUES (?, NULL, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
+             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $info['did'],
                 $this->nextDidColor(),
                 $info['smsEnabled'] ? 1 : 0,
                 $info['smsEnabled'] ? 1 : 0,
+                $info['smsAvailable'] ? 1 : 0,
                 $info['mmsAvailable'] ? 1 : 0,
                 $info['description'],
                 $position,
@@ -172,12 +222,15 @@ final class Repo
     public function ensureDid(string $did): void
     {
         if (!$this->one('SELECT did FROM dids WHERE did = ?', [$did])) {
-            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'mmsAvailable' => true]);
+            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true]);
         }
     }
 
     public function updateDid(string $did, array $patch): bool
     {
+        if (!$this->allowsDid($did)) {
+            return false;
+        }
         $sets = [];
         $values = [];
         if (array_key_exists('label', $patch)) {
@@ -224,7 +277,8 @@ final class Repo
 
     public function getConversation(int $id): ?array
     {
-        $row = $this->one(self::CONVERSATION_SELECT . ' WHERE c.id = ?', [$id]);
+        [$scope, $scopeParams] = $this->didScope('c.did');
+        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$id, ...$scopeParams]);
         return $row ? self::conversationDto($row) : null;
     }
 
@@ -234,8 +288,8 @@ final class Repo
      */
     public function listConversations(?string $did = null, ?string $query = null, ?bool $archived = null, int $limit = 500): array
     {
-        $where = ['c.last_message_id IS NOT NULL'];
-        $params = [];
+        [$scope, $params] = $this->didScope('c.did');
+        $where = ['c.last_message_id IS NOT NULL', $scope];
         $q = trim($query ?? '');
         $archived ??= $q !== '' ? null : false;
         if ($archived !== null) {
@@ -487,7 +541,7 @@ final class Repo
 
     public function listContacts(): array
     {
-        $contacts = $this->all('SELECT id, name, notes FROM contacts ORDER BY name COLLATE NOCASE');
+        $contacts = $this->all('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE');
         $byContact = [];
         foreach ($this->all('SELECT phone, contact_id FROM contact_phones ORDER BY rowid') as $p) {
             $byContact[$p['contact_id']][] = $p['phone'];
@@ -518,15 +572,21 @@ final class Repo
         ));
     }
 
-    public function saveContact(?int $id, string $name, ?string $notes, array $phones): int
+    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null): int
     {
-        return $this->transaction(function () use ($id, $name, $notes, $phones): int {
+        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon): int {
             $now = Time::nowMs();
             if ($id) {
-                $this->run('UPDATE contacts SET name = ?, notes = ?, updated_at = ? WHERE id = ?', [$name, $notes, $now, $id]);
+                $this->run(
+                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?',
+                    [$name, $color, $icon, $notes, $now, $id],
+                );
                 $this->run('DELETE FROM contact_phones WHERE contact_id = ?', [$id]);
             } else {
-                $this->run('INSERT INTO contacts (name, notes, created_at, updated_at) VALUES (?, ?, ?, ?)', [$name, $notes, $now, $now]);
+                $this->run(
+                    'INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    [$name, $color, $icon, $notes, $now, $now],
+                );
                 $id = (int) $this->db->lastInsertId();
             }
             $phones = array_values(array_unique($phones));
@@ -595,7 +655,9 @@ final class Repo
             'id' => $row['id'],
             'did' => $row['did'],
             'phone' => $row['phone'],
-            'contact' => $row['contact_id'] !== null ? ['id' => $row['contact_id'], 'name' => $row['contact_name'] ?? ''] : null,
+            'contact' => $row['contact_id'] !== null
+                ? ['id' => $row['contact_id'], 'name' => $row['contact_name'] ?? '', 'color' => $row['contact_color'], 'icon' => $row['contact_icon']]
+                : null,
             'unreadCount' => $row['unread_count'],
             'archived' => $row['archived_at'] !== null,
             'lastMessageAt' => $row['last_message_at'],

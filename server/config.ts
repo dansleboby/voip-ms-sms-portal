@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { normalizePhone } from '../shared/phone.js';
 import type { InstallKind, LiveUpdates } from '../shared/types.js';
 
 /** Every release publishes its release.json; this address always leads to the newest one. */
@@ -39,6 +40,10 @@ export interface Config {
   updateCheck: boolean;
   /** Where the newest release is described (release.json). */
   updateManifestUrl: string;
+  /** The only numbers of the account the portal uses (ALLOWED_DIDS); null for all of them. */
+  allowedDids: string[] | null;
+  /** Numbers of the account the portal leaves alone (EXCLUDED_DIDS). */
+  excludedDids: string[];
   /** "docker" in the image (SMS_PORTAL_INSTALL), "source" otherwise. */
   install: Exclude<InstallKind, 'php'>;
   /** Problems worth logging once the logger exists (e.g. settings that had to be cleaned up). */
@@ -66,6 +71,18 @@ function trustProxy(value: string | undefined): false | string {
   return value!.trim();
 }
 
+/** "514 555-0100, +1 450-555-0199" -> ["5145550100", "4505550199"]; null when empty. */
+function didList(name: string, value: string | undefined): string[] | null {
+  const entries = (value ?? '').split(/[,;\n]/).map((entry) => entry.trim()).filter(Boolean);
+  if (entries.length === 0) return null;
+  const dids = entries.map((entry) => {
+    const did = normalizePhone(entry);
+    if (!/^\d{10}$/.test(did)) throw new ConfigError(`${name}: "${entry}" is not a 10-digit phone number.`);
+    return did;
+  });
+  return [...new Set(dids)];
+}
+
 function bool(value: string | undefined): boolean {
   return value !== undefined && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
@@ -91,6 +108,8 @@ const SETTINGS = [
   'LIVE_UPDATES',
   'UPDATE_CHECK',
   'UPDATE_MANIFEST_URL',
+  'ALLOWED_DIDS',
+  'EXCLUDED_DIDS',
 ];
 
 /**
@@ -180,6 +199,8 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): Config {
     liveUpdates,
     updateCheck: env.UPDATE_CHECK === undefined || env.UPDATE_CHECK.trim() === '' || bool(env.UPDATE_CHECK),
     updateManifestUrl,
+    allowedDids: didList('ALLOWED_DIDS', env.ALLOWED_DIDS),
+    excludedDids: didList('EXCLUDED_DIDS', env.EXCLUDED_DIDS) ?? [],
     install: env.SMS_PORTAL_INSTALL === 'docker' ? 'docker' : 'source',
     warnings,
   };

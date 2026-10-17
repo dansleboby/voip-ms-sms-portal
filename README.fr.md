@@ -52,7 +52,7 @@ Tapez un nom ou un numéro : les contacts sont suggérés au fil de la frappe. A
 
 ### Assistant de configuration
 
-Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Les numéros dont le SMS n'est pas encore activé sont signalés, avec l'endroit où l'activer.
+Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant.
 
 | Autoriser l'adresse IP | Choisir ses numéros |
 | --- | --- |
@@ -60,7 +60,7 @@ Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse I
 
 ### Contacts
 
-Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone.
+Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone. Chacun peut avoir sa couleur d'avatar, et une icône à la place de ses initiales (maison, travail, famille, auto…) ; les numéros se mettent en forme pendant la saisie.
 
 | Liste des contacts | Modifier un contact |
 | --- | --- |
@@ -120,8 +120,9 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 1. Prenez `sms-portal-cpanel-<version>.zip`, joint à chaque [version publiée](https://github.com/dansleboby/voip-ms-sms-portal/releases) (ou construisez-le : `npm run build:cpanel`), et décompressez-le dans votre dossier personnel (cPanel → *Gestionnaire de fichiers* → *Charger*, puis *Extraire*). Vous obtenez deux dossiers côte à côte : `sms-portal/`, le serveur avec ses réglages et ses données, jamais servi, et `sms-portal-site/`, ce que le navigateur charge.
 2. Créez le sous-domaine (cPanel → *Domaines* → *Créer un nouveau domaine*) avec `sms-portal-site` comme racine de document, et vérifiez qu'il est en HTTPS (cPanel → *État SSL/TLS* → *Exécuter AutoSSL*).
 3. Dans `sms-portal/`, copiez `config.sample.php` en `config.php` et réglez `APP_PASSWORD`. Les autres réglages sont ceux du [tableau ci-dessous](#configuration), sauf ceux propres à Docker (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
-4. Ajoutez la tâche cron (cPanel → *Tâches Cron*), chaque minute : `/usr/local/bin/php /home/vous/sms-portal/cron.php`. Les *Réglages* affichent la ligne exacte et sa dernière exécution.
-5. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant.
+4. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant. Sa dernière étape donne la tâche cron à ajouter (cPanel → *Tâches Cron*), chaque minute, par exemple `/usr/local/bin/php /home/vous/sms-portal/cron.php`, et voit quand elle démarre ; vous pouvez la passer, mais les textos et les notifications n'arrivent alors que quand l'application est ouverte. Les *Réglages* affichent aussi la ligne, et si la tâche tourne.
+
+![Étape de l'assistant donnant la tâche cron à ajouter](docs/screenshots/fr/setup-cron.png)
 
 **Mises à jour.** *Réglages* → *Mises à jour* indique quand une nouvelle version sort, avec ce qui change, et l'installe en un clic : le serveur télécharge le zip de la version, le vérifie avec l'empreinte SHA-256 qu'elle annonce et remplace ses propres fichiers, en gardant ceux qu'il remplace dans `sms-portal/data/update/backup/`. `config.php` et `sms-portal/data/` ne sont jamais touchés. Chez les hébergeurs où PHP ne peut pas modifier ses propres fichiers, les *Réglages* indiquent lesquels ; décompressez alors le nouveau zip par-dessus les anciens dossiers.
 
@@ -148,6 +149,8 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 | `SESSION_DAYS` | `30` | Durée d'une connexion. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
 | `VAPID_SUBJECT` | URL du projet | Contact (`mailto:vous@example.com` ou une URL `https://`) transmis aux services push des navigateurs avec chaque notification. |
+| `ALLOWED_DIDS` | | Les seuls numéros du compte qu'utilise le portail, séparés par des virgules (`514 555-0100, 450-555-0199`). Les autres n'apparaissent nulle part et leurs textos ne sont pas récupérés : pour les comptes dont certains numéros appartiennent à quelqu'un d'autre. Sur un hébergement mutualisé, `config.php` accepte aussi une liste (`['5145550100', '4505550199']`). |
+| `EXCLUDED_DIDS` | | Numéros du compte que le portail laisse de côté, sous la même forme ; ils l'emportent sur `ALLOWED_DIDS`. Les textos déjà enregistrés d'un numéro écarté restent dans la base, cachés : ils reviennent s'il est permis de nouveau. |
 | `DEMO_MODE` | `false` | Données fictives au lieu d'un vrai compte. |
 | `UPDATE_CHECK` | `true` | Vérifier s'il y a de nouvelles versions (*Réglages* → *Mises à jour* lit le `release.json` de la plus récente sur GitHub, au plus toutes les 6 heures). `UPDATE_MANIFEST_URL` fait pointer une copie dérivée (fork) vers ses propres versions. |
 | `PUID` / `PGID` | `1000` | Docker seulement : utilisateur/groupe propriétaire de `./data` qui exécute l'application (le conteneur démarre en root uniquement pour corriger le propriétaire du dossier, puis abandonne ces droits). |
@@ -156,7 +159,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 
 1. **Accès API** : dans le portail VoIP.ms, *Main Menu → SOAP & REST/JSON API* : définissez un **mot de passe API** (différent de votre mot de passe de connexion) et cliquez sur *Enable/Disable API*.
 2. **IP autorisée** : VoIP.ms ne répond qu'aux adresses autorisées. L'assistant affiche l'adresse que VoIP.ms voit pour votre serveur ; ajoutez-la dans *Enable IP Addresses*. Pour une connexion résidentielle dont l'IP change, VoIP.ms accepte aussi les plages (`203.0.113.0/24`), les jokers (`203.0.113.*`) et les noms de domaine (DNS dynamique).
-3. **SMS sur vos numéros** : *DID Numbers → Manage DID(s)*, modifiez le numéro, *Message Service (SMS/MMS)* → activer. Par défaut, VoIP.ms limite l'envoi par l'API à 100 SMS par jour ([messaging@voip.ms](mailto:messaging@voip.ms) peut l'augmenter).
+3. **SMS sur vos numéros** : activer dans l'assistant (ou les *Réglages*) un numéro sans SMS les active dans VoIP.ms, en gardant ses réglages de courriel et de renvoi ; à la main, c'est sous *DID Numbers → Manage DID(s)*, modifiez le numéro, *Message Service (SMS/MMS)*. Par défaut, VoIP.ms limite l'envoi par l'API à 100 SMS par jour ([messaging@voip.ms](mailto:messaging@voip.ms) peut l'augmenter).
 
 ## Sécurité
 
@@ -202,6 +205,8 @@ La version PHP, après `npm run build:web` (il faut PHP 8.1+ ; `npm test` la tes
 SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php
 npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
 ```
+
+**Captures d'écran.** `npm run screenshots` refait celles de ce README (`docs/screenshots/en` et `fr`) à partir du mode démo, à une date fixe, et liste celles dont l'apparence a changé : lancez-la après avoir modifié l'interface, puis faites un commit de ce qui a bougé. Il faut un Chromium pour Playwright, une fois : `npx playwright-core install chromium`. Les polices varient d'un système à l'autre : comparez des exécutions faites sur la même machine.
 
 ### Versions
 

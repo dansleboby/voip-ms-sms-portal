@@ -55,6 +55,12 @@ export class FakeVoipMs implements VoipMsApi {
     return this.dids;
   }
 
+  async enableSms(did: string): Promise<void> {
+    const info = this.dids.find((d) => d.did === did);
+    if (!info?.smsAvailable) throw new VoipMsError('invalid_did');
+    info.smsEnabled = true;
+  }
+
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {
     this.maybeFail('getMessages');
     this.queries.push({ kind, query });

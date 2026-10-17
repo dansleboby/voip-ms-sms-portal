@@ -18,6 +18,23 @@ final class RestClient implements VoipMsApi
 {
     /** Spacing between two calls, to stay clear of the per-minute API limit. */
     private const MIN_INTERVAL_US = 250_000;
+    /**
+     * A number's SMS settings as getDIDsInfo reports them => the names setSMS
+     * takes them under: enabling SMS gives them back, so as not to reset them.
+     */
+    private const SMS_SETTINGS = [
+        'sms_email_enabled' => 'email_enabled',
+        'sms_email' => 'email_address',
+        'sms_forward_enabled' => 'sms_forward_enable',
+        'sms_forward' => 'sms_forward',
+        'sms_url_callback_enabled' => 'url_callback_enable',
+        'sms_url_callback' => 'url_callback',
+        'sms_url_callback_retry' => 'url_callback_retry',
+        'smpp_enabled' => 'smpp_enabled',
+        'smpp_url' => 'smpp_url',
+        'smpp_user' => 'smpp_user',
+        'smpp_pass' => 'smpp_pass',
+    ];
     private const TIMEOUT_S = 60;
 
     private float $lastCallAt = 0;
@@ -98,6 +115,27 @@ final class RestClient implements VoipMsApi
             'smsEnabled' => self::flag($d['sms_enabled'] ?? null),
             'mmsAvailable' => self::flag($d['mms_available'] ?? null),
         ], array_values(array_filter($dids, 'is_array')));
+    }
+
+    public function enableSms(string $did): void
+    {
+        $data = $this->call('getDIDsInfo', ['did' => $did]);
+        $info = null;
+        foreach (is_array($data['dids'] ?? null) ? $data['dids'] : [] as $d) {
+            if (is_array($d) && self::str($d['did'] ?? '') === $did) {
+                $info = $d;
+            }
+        }
+        if ($info === null) {
+            throw new VoipMsError('invalid_did');
+        }
+        $params = ['did' => $did, 'enable' => 1];
+        foreach (self::SMS_SETTINGS as $reported => $param) {
+            if (isset($info[$reported])) {
+                $params[$param] = self::str($info[$reported]);
+            }
+        }
+        $this->call('setSMS', $params);
     }
 
     public function getMessages(string $kind, string $from, string $to, int $limit): array

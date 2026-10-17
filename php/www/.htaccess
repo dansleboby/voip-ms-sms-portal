@@ -1,9 +1,20 @@
 # SMS Portal for VoIP.ms: the web root of its subdomain (sms.example.com).
 
-DirectoryIndex index.html
+# Directives that need a module are wrapped in IfModule: on a host without
+# that module, a bare one would put the whole site in error (500).
+
+<IfModule mod_dir.c>
+    DirectoryIndex index.html
+</IfModule>
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # API answers go out uncompressed: compression ("Optimize Website" in cPanel)
+    # would hold each one back until the work that follows it is done. Set here,
+    # once the API's address is rewritten to api.php, rather than with SetEnv,
+    # which needs mod_env.
+    RewriteRule ^api\.php$ - [E=no-gzip:1,L]
 
     # The API.
     RewriteRule ^api/ api.php [L,QSA]
@@ -32,13 +43,9 @@ DirectoryIndex index.html
     AddType application/manifest+json .webmanifest
 </IfModule>
 
-# API answers go out uncompressed: compression ("Optimize Website" in cPanel)
-# would hold each one back until the work that follows it is done.
-<Files "api.php">
-    SetEnv no-gzip 1
-</Files>
-
 # PHP's error log lands next to api.php on many hosts: keep it private.
-<Files "error_log">
-    Require all denied
-</Files>
+<IfModule mod_authz_core.c>
+    <Files "error_log">
+        Require all denied
+    </Files>
+</IfModule>

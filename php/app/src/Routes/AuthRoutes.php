@@ -38,6 +38,7 @@ final class AuthRoutes
                 'pollIdleSeconds' => (int) round($app->config->pollIdleMs / 1000),
                 // A PHP request cannot hold a stream open.
                 'liveUpdates' => 'poll',
+                'didsRestricted' => $app->config->allowedDids !== null || $app->config->excludedDids !== [],
             ]);
         }, public: true);
 

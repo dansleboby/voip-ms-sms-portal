@@ -1,4 +1,5 @@
 import { DAY_MS, epochToZonedDate, epochToZonedDateTime } from '../time.js';
+import type { ContactIcon } from '../../shared/contact.js';
 import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type VoipMsApi } from './client.js';
 
 /**
@@ -42,10 +43,10 @@ const DIDS: DidInfo[] = [
 ];
 
 /** Contacts created locally in demo mode so names show up. */
-export const DEMO_CONTACTS = [
+export const DEMO_CONTACTS: { name: string; phones: string[]; icon?: ContactIcon }[] = [
   { name: 'Marie Tremblay', phones: ['4385550142'] },
   { name: 'Alex Martin', phones: ['5145550187'] },
-  { name: 'Garage Bélanger', phones: ['4505550111'] },
+  { name: 'Garage Bélanger', phones: ['4505550111'], icon: 'car' },
 ];
 
 const SEEDS: Seed[] = [
@@ -67,6 +68,7 @@ interface Stored extends RemoteMessage {
 }
 
 export class DemoVoipMs implements VoipMsApi {
+  private readonly dids = DIDS.map((d) => ({ ...d }));
   private readonly messages: Stored[] = [];
   private nextId = { sms: 900000, mms: 50000 };
 
@@ -101,7 +103,14 @@ export class DemoVoipMs implements VoipMsApi {
   }
 
   async getDids(): Promise<DidInfo[]> {
-    return DIDS;
+    return this.dids.map((d) => ({ ...d }));
+  }
+
+  async enableSms(did: string): Promise<void> {
+    const info = this.dids.find((d) => d.did === did);
+    if (!info?.smsAvailable) throw new VoipMsError('invalid_did');
+    info.smsEnabled = true;
+    info.mmsAvailable = true;
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {
@@ -117,7 +126,7 @@ export class DemoVoipMs implements VoipMsApi {
   }
 
   private check(did: string): void {
-    const info = DIDS.find((d) => d.did === did);
+    const info = this.dids.find((d) => d.did === did);
     if (!info?.smsEnabled) throw new VoipMsError('invalid_did');
   }
 

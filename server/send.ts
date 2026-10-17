@@ -85,7 +85,7 @@ export class MessageSender {
 
   async retry(messageId: number): Promise<MessageDto> {
     const row = this.deps.repo.getMessageRow(messageId);
-    if (!row || row.direction !== 'out') throw new SendError('not_found', 404);
+    if (!row || row.direction !== 'out' || !this.deps.repo.getConversation(row.conversation_id)) throw new SendError('not_found', 404);
     if (row.status !== 'failed') throw new SendError('not_failed', 409);
     if (AMBIGUOUS_ERRORS.has(row.error ?? '')) {
       // VoIP.ms may have accepted the first attempt: look at the history (which

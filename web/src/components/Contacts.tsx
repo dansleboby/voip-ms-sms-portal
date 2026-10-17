@@ -74,7 +74,7 @@ export function Contacts() {
             <div className="card">
               {filtered.map((c) => (
                 <div key={c.id} className="contact-item" role="button" tabIndex={0} onClick={() => setEditing(c)} onKeyDown={(e) => e.key === 'Enter' && setEditing(c)}>
-                  <Avatar name={c.name} seed={c.phones[0] ?? c.name} />
+                  <Avatar name={c.name} seed={c.phones[0] ?? c.name} look={c} />
                   <div className="row-main">
                     <div className="row-title">{c.name}</div>
                     <div className="row-sub">{c.phones.map(formatPhone).join(' · ')}</div>

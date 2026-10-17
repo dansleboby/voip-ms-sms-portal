@@ -1,6 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { loadConfig } from '../server/config.js';
 import { backendNames, Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
 import { browserKeys } from '../server/test/webpush-helpers.js';
 import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent } from '../shared/types.js';
@@ -180,6 +184,16 @@ describe.each(backendNames)('%s server', (name) => {
     expect(await client.post('/api/messages/999999/retry')).toMatchObject({ status: 404, json: { error: 'not_found' } });
   });
 
+  it('turns SMS on for a number in the VoIP.ms account', async () => {
+    const before = ((await client.get('/api/dids')).json as DidDto[]).find((d) => d.did === GATINEAU);
+    expect(before).toMatchObject({ smsEnabled: false, smsAvailable: true, visible: false });
+    expect((await client.post(`/api/dids/${GATINEAU}/enable-sms`)).json).toMatchObject({ did: GATINEAU, smsEnabled: true, visible: true });
+    // Still on once the numbers are read from VoIP.ms again.
+    expect(((await client.get('/api/setup/dids')).json as DidDto[]).find((d) => d.did === GATINEAU)).toMatchObject({ smsEnabled: true });
+    expect((await sendForm({ did: GATINEAU, to: MARIE, body: 'Enfin' })).status).toBe(202);
+    expect((await client.post('/api/dids/5550000000/enable-sms')).status).toBe(404);
+  });
+
   it('archives conversations and marks them read', async () => {
     const [first] = (await client.get('/api/conversations')).json as ConversationDto[];
     const archived = await client.request('PATCH', `/api/conversations/${first!.id}`, { archived: true });
@@ -203,8 +217,20 @@ describe.each(backendNames)('%s server', (name) => {
     // Jean Roy had no other number: he is gone.
     expect(((await client.get('/api/contacts')).json as ContactDto[]).some((c) => c.id === id)).toBe(false);
     expect((await client.post('/api/contacts', { name: 'X', phones: ['123'] })).json).toEqual({ error: 'invalid_phone', phones: ['123'] });
-    const updated = await client.request('PUT', `/api/contacts/${moved.json.id}`, { name: 'Autre nom', phones: ['5145551234', '32665'] });
-    expect(updated.json).toMatchObject({ name: 'Autre nom', phones: ['5145551234', '32665'] });
+    expect(moved.json).toMatchObject({ color: null, icon: null });
+    const updated = await client.request('PUT', `/api/contacts/${moved.json.id}`, {
+      name: 'Autre nom',
+      phones: ['5145551234', '32665'],
+      color: '#e52592',
+      icon: 'briefcase',
+    });
+    expect(updated.json).toMatchObject({ name: 'Autre nom', phones: ['5145551234', '32665'], color: '#e52592', icon: 'briefcase' });
+    // Conversations show the contact's look.
+    const code = ((await client.get('/api/conversations?q=32665')).json as ConversationDto[])[0]!;
+    expect(code.contact).toEqual({ id: moved.json.id, name: 'Autre nom', color: '#e52592', icon: 'briefcase' });
+    for (const look of [{ color: 'pink' }, { icon: 'skull' }]) {
+      expect((await client.request('PUT', `/api/contacts/${moved.json.id}`, { name: 'x', phones: ['32665'], ...look })).status).toBe(400);
+    }
     expect((await client.request('DELETE', `/api/contacts/${moved.json.id}`)).json).toEqual({ ok: true });
     expect((await client.request('DELETE', `/api/contacts/${moved.json.id}`)).status).toBe(404);
 
@@ -263,4 +289,104 @@ describe.each(backendNames)('%s server', (name) => {
     const blocked = await client.post('/api/auth/login', { password: 'hunter2' });
     expect(blocked).toMatchObject({ status: 429, json: { error: 'rate_limited' } });
   });
+});
+
+describe.each(backendNames)('%s server with numbers left out by its settings', (name) => {
+  const LAVAL = '4505550199';
+  const GARAGE = '4505550111';
+  let dataDir: string;
+  let backend: Backend | undefined;
+
+  async function start(env: Record<string, string>): Promise<Client> {
+    await backend?.stop();
+    backend = await startBackend(name, { DATA_DIR: dataDir, ...env });
+    const client = new Client(backend.url);
+    await client.login();
+    return client;
+  }
+
+  /** A tab's poll: the PHP server checks VoIP.ms (or imports history) after answering it. */
+  async function tick(client: Client): Promise<void> {
+    await client.get('/api/events/poll?tab=tab-00000001&visible=1');
+  }
+
+  async function conversations(client: Client, query = ''): Promise<string[]> {
+    return ((await client.get(`/api/conversations${query}`)).json as ConversationDto[]).map((c) => c.phone).sort();
+  }
+
+  beforeAll(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-dids-`));
+  });
+
+  afterAll(async () => {
+    await backend?.stop();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }, 30_000);
+
+  it('never fetches the texts of a number left out', async () => {
+    const client = await start({ ALLOWED_DIDS: '(514) 555-0100' });
+    expect((await client.get('/api/session')).json.didsRestricted).toBe(true);
+    expect(((await client.get('/api/setup/dids')).json as DidDto[]).map((d) => d.did)).toEqual([MONTREAL]);
+    await client.post('/api/setup/complete');
+    await waitFor(async () => (await client.get('/api/sync/status')).json.lastSyncAt);
+    expect(await conversations(client)).toEqual(['4385550142', '5145550187']);
+    const db = new Database(path.join(dataDir, 'portal.db'), { readonly: true });
+    expect(db.prepare('SELECT DISTINCT did FROM conversations UNION SELECT did FROM dids').pluck().all()).toEqual([MONTREAL]);
+    db.close();
+  }, 30_000);
+
+  it('hides what was stored before a number was left out, until it is allowed again', async () => {
+    let client = await start({});
+    expect((await client.get('/api/session')).json.didsRestricted).toBe(false);
+    await client.get('/api/setup/dids');
+    await client.post('/api/setup/import', { days: 7 });
+    await waitFor(async () => {
+      await tick(client);
+      return (await conversations(client)).length === 4;
+    });
+    const garage = ((await client.get(`/api/conversations?did=${LAVAL}`)).json as ConversationDto[]).find((c) => c.phone === GARAGE)!;
+    const failed = (await client.get(`/api/conversations/${garage.id}/messages`)).json as MessageDto[];
+
+    client = await start({ EXCLUDED_DIDS: `450-555-0199, ${GATINEAU}` });
+    expect(((await client.get('/api/dids')).json as DidDto[]).map((d) => d.did)).toEqual([MONTREAL]);
+    expect(((await client.get('/api/setup/dids')).json as DidDto[]).map((d) => d.did)).toEqual([MONTREAL]);
+    expect(await conversations(client)).toEqual(['4385550142', '5145550187']);
+    expect(await conversations(client, `?did=${LAVAL}`)).toEqual([]);
+    expect(await conversations(client, '?q=BELANGER')).toEqual([]);
+    expect((await client.get(`/api/conversations/lookup?did=${LAVAL}&phone=${GARAGE}`)).json).toEqual({ conversation: null });
+    for (const [method, url, body] of [
+      ['GET', `/api/conversations/${garage.id}`],
+      ['GET', `/api/conversations/${garage.id}/messages`],
+      ['PATCH', `/api/conversations/${garage.id}`, { archived: true }],
+      ['POST', `/api/conversations/${garage.id}/read`],
+      ['POST', `/api/messages/${failed[0]!.id}/retry`],
+      ['PATCH', `/api/dids/${LAVAL}`, { label: 'x' }],
+    ] as const) {
+      expect((await client.request(method, url, body)).status, `${method} ${url}`).toBe(404);
+    }
+    const form = new FormData();
+    for (const [k, v] of Object.entries({ did: LAVAL, to: GARAGE, body: 'x' })) form.set(k, v);
+    expect((await client.post('/api/messages', form)).json).toEqual({ error: 'unknown_did' });
+
+    client = await start({ ALLOWED_DIDS: LAVAL });
+    expect(((await client.get('/api/dids')).json as DidDto[]).map((d) => d.did)).toEqual([LAVAL]);
+    expect(await conversations(client)).toEqual(['32665', GARAGE]);
+  }, 30_000);
+
+  it('refuses a setting that is not a list of numbers', async () => {
+    if (name === 'node') {
+      expect(() => loadConfig({ APP_PASSWORD: 'x', EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
+    } else {
+      expect(() => runCron(backend!, { EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
+      // config.php takes a list too.
+      const load = (list: string) => {
+        fs.writeFileSync(path.join(dataDir, 'config.php'), `<?php return ['APP_PASSWORD' => 'x', 'ALLOWED_DIDS' => ${list}];`);
+        const script = `require '${path.resolve('php/app/bootstrap.php')}';
+          try { echo json_encode(SmsPortal\\Config::load('${dataDir}')->allowedDids); } catch (SmsPortal\\ConfigError $e) { echo $e->getMessage(); }`;
+        return spawnSync('php', ['-r', script], { encoding: 'utf8' }).stdout;
+      };
+      expect(load(`['514-555-0100', 4505550199]`)).toBe('["5145550100","4505550199"]');
+      expect(load(`['514-555-0100', 'office']`)).toBe('ALLOWED_DIDS: "office" is not a 10-digit phone number.');
+    }
+  }, 30_000);
 });

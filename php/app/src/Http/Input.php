@@ -19,6 +19,12 @@ final class Input
         return array_key_exists($key, $this->data);
     }
 
+    /** Absent or null. */
+    public function isNull(string $key): bool
+    {
+        return ($this->data[$key] ?? null) === null;
+    }
+
     public function string(string $key, int $min = 0, int $max = PHP_INT_MAX, bool $trim = false): string
     {
         $value = $this->data[$key] ?? null;

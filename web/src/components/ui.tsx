@@ -1,8 +1,27 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { User, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import {
+  Baby,
+  Briefcase,
+  Building2,
+  Car,
+  Dog,
+  GraduationCap,
+  Heart,
+  House,
+  Star,
+  Stethoscope,
+  User,
+  Users,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { avatarColor, formatAgo, formatDateTime, initials } from '../lib/format';
 import { dismissToast, useStore } from '../store';
 import { t } from '../i18n';
+import { formatPhoneInput } from '../../../shared/phone';
+import type { ContactIcon } from '../../../shared/contact';
+import type { ContactRef } from '../../../shared/types';
 
 export function Logo({ size = 40 }: { size?: number }) {
   return (
@@ -19,11 +38,39 @@ export function Logo({ size = 40 }: { size?: number }) {
   );
 }
 
-export function Avatar({ name, seed, size }: { name: string; seed: string; size?: 'lg' }) {
+export const CONTACT_ICON_COMPONENTS: Record<ContactIcon, LucideIcon> = {
+  heart: Heart,
+  star: Star,
+  house: House,
+  users: Users,
+  baby: Baby,
+  dog: Dog,
+  briefcase: Briefcase,
+  building: Building2,
+  car: Car,
+  wrench: Wrench,
+  stethoscope: Stethoscope,
+  'graduation-cap': GraduationCap,
+};
+
+/** Initials on a color the number picks, unless the contact chose its own color or an icon. */
+export function Avatar({
+  name,
+  seed,
+  look,
+  size,
+}: {
+  name: string;
+  seed: string;
+  look?: Pick<ContactRef, 'color' | 'icon'> | null;
+  size?: 'lg';
+}) {
   const letters = initials(name);
+  const Icon = look?.icon ? CONTACT_ICON_COMPONENTS[look.icon] : null;
+  const iconSize = size === 'lg' ? 28 : 22;
   return (
-    <span className={`avatar${size === 'lg' ? ' lg' : ''}`} style={{ background: avatarColor(seed) }} aria-hidden="true">
-      {letters ?? <User size={size === 'lg' ? 28 : 22} />}
+    <span className={`avatar${size === 'lg' ? ' lg' : ''}`} style={{ background: look?.color ?? avatarColor(seed) }} aria-hidden="true">
+      {Icon ? <Icon size={iconSize} /> : (letters ?? <User size={iconSize} />)}
     </span>
   );
 }
@@ -48,9 +95,69 @@ export function Ago({ at }: { at: number }) {
   );
 }
 
-export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} className="switch" onClick={() => onChange(!checked)} />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className="switch"
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    />
+  );
+}
+
+/** Where the caret goes in `text` to come right after its `count`th digit. */
+function afterDigits(text: string, count: number): number {
+  if (count === 0) return 0;
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (/\d/.test(text[i]!) && ++seen === count) return i + 1;
+  }
+  return text.length;
+}
+
+/** A phone number field that formats North American numbers as they are typed: (514) 555-0100. */
+export function PhoneInput({
+  value,
+  onChange,
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & { value: string; onChange: (value: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    // Formatting adds characters: keep the caret after the same digit as before.
+    if (caret.current !== null && ref.current === document.activeElement) ref.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      type="tel"
+      inputMode="tel"
+      autoComplete="tel"
+      value={value}
+      onChange={(e) => {
+        const typed = e.target.value;
+        const formatted = formatPhoneInput(typed);
+        const digitsBefore = typed.slice(0, e.target.selectionStart ?? typed.length).replace(/\D/g, '').length;
+        caret.current = afterDigits(formatted, digitsBefore);
+        onChange(formatted);
+      }}
+    />
   );
 }
 

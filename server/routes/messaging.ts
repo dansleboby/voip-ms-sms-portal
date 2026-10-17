@@ -57,6 +57,26 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     return s.repo.getDid(did)!;
   });
 
+  /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
+  app.post('/api/dids/:did/enable-sms', async (req, reply): Promise<DidDto | void> => {
+    const { did } = z.object({ did: z.string() }).parse(req.params);
+    const current = s.repo.getDid(did);
+    if (!current) return reply.code(404).send({ error: 'not_found' });
+    if (!current.smsAvailable) return reply.code(409).send({ error: 'sms_not_available' });
+    const client = s.client();
+    if (!client) return reply.code(409).send({ error: 'not_configured' });
+    if (!current.smsEnabled) await client.enableSms(did);
+    const info = (await client.getDids()).find((d) => d.did === did);
+    s.repo.transaction(() => {
+      // VoIP.ms accepted it: trust that over a list that may not show it yet.
+      s.repo.upsertDid({ ...current, ...info, smsEnabled: true });
+      s.repo.updateDid(did, { visible: true });
+    });
+    s.events.broadcast({ type: 'dids' });
+    s.events.broadcast({ type: 'reload' });
+    return s.repo.getDid(did)!;
+  });
+
   // ------------------------------------------------------------ conversations
 
   app.get('/api/conversations', async (req): Promise<ConversationDto[]> => {
@@ -84,7 +104,8 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
   app.patch('/api/conversations/:id', async (req, reply): Promise<ConversationDto | void> => {
     const { id } = IdParams.parse(req.params);
     const { archived } = ConversationPatch.parse(req.body);
-    if (!s.repo.setArchived(id, archived)) return reply.code(404).send({ error: 'not_found' });
+    if (!s.repo.getConversation(id)) return reply.code(404).send({ error: 'not_found' });
+    s.repo.setArchived(id, archived);
     const conversation = s.repo.getConversation(id)!;
     s.events.broadcast({ type: 'conversation', conversation });
     s.events.broadcast({ type: 'dids' });

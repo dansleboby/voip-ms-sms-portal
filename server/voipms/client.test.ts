@@ -77,6 +77,36 @@ describe('VoipMsClient', () => {
     ]);
   });
 
+  it('turns SMS on for a number, giving back its other SMS settings', async () => {
+    const info = {
+      did: '5143604702',
+      sms_enabled: '0',
+      sms_email: 'me@example.com',
+      sms_email_enabled: '1',
+      sms_forward_enabled: 0,
+      sms_url_callback: 'https://hook.example/sms',
+      sms_url_callback_enabled: '1',
+      sms_url_callback_retry: '0',
+    };
+    const { impl, calls } = fakeFetch([json({ status: 'success', dids: [info] }), json({ status: 'success' })]);
+    const client = new VoipMsClient(creds, { fetch: impl, minIntervalMs: 0 });
+    await client.enableSms('5143604702');
+    expect(calls[0]!.body.get('method')).toBe('getDIDsInfo');
+    expect(calls[0]!.body.get('did')).toBe('5143604702');
+    const set = Object.fromEntries([...calls[1]!.body.entries()].filter(([k]) => !k.startsWith('api_') && k !== 'content_type'));
+    expect(set).toEqual({
+      method: 'setSMS',
+      did: '5143604702',
+      enable: '1',
+      email_enabled: '1',
+      email_address: 'me@example.com',
+      sms_forward_enable: '0',
+      url_callback_enable: '1',
+      url_callback: 'https://hook.example/sms',
+      url_callback_retry: '0',
+    });
+  });
+
   it('runs calls one after the other', async () => {
     let active = 0;
     let maxActive = 0;

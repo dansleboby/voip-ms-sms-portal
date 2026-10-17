@@ -85,7 +85,7 @@ export function Thread({ id }: { id: number }) {
         <button className="icon-btn mobile-only" aria-label={t('common.back')} onClick={back}>
           <ArrowLeft size={22} />
         </button>
-        <Avatar name={name} seed={conversation.phone} />
+        <Avatar name={name} seed={conversation.phone} look={conversation.contact} />
         <div className="thread-title">
           <h2>{name}</h2>
           <div className="thread-sub">

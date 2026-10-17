@@ -42,6 +42,12 @@ return [
     // Time zone of the dates VoIP.ms returns. Leave as is.
     'VOIPMS_TIMEZONE' => 'America/New_York',
 
+    // The only numbers of the account the portal uses, like ['514 555-0100', '450-555-0199'],
+    // and numbers it must leave alone. The others do not show up anywhere and their
+    // texts are not fetched. Empty: every number of the account.
+    'ALLOWED_DIDS' => [],
+    'EXCLUDED_DIDS' => [],
+
     // Sample data instead of a real VoIP.ms account, to try the interface.
     'DEMO_MODE' => false,
 

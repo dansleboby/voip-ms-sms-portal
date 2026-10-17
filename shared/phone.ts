@@ -26,6 +26,26 @@ export function formatPhone(phone: string): string {
 }
 
 /**
+ * Formats a North American number as it is typed: "5145" -> "(514) 5",
+ * "15145550100" -> "+1 (514) 555-0100". An international number ("+33 ...")
+ * or more than 10 digits comes back as typed. Numbers are stored as digits,
+ * so a short code formatted like the start of a number is stored right.
+ */
+export function formatPhoneInput(input: string): string {
+  const digits = input.replace(/\D/g, '');
+  const international = input.trimStart().startsWith('+') && !digits.startsWith('1');
+  // NANP area codes never start with 1: a leading 1 is the country code.
+  const country = digits.startsWith('1') ? '+1 ' : '';
+  const local = country ? digits.slice(1) : digits;
+  if (international || local.length > 10) return input;
+  if (local.length === 0) return country.trim();
+  if (local.length <= 3) return country + local;
+  const area = `(${local.slice(0, 3)}) `;
+  if (local.length <= 6) return country + area + local.slice(3);
+  return `${country}${area}${local.slice(3, 6)}-${local.slice(6)}`;
+}
+
+/**
  * Digits to look for when searching by (partial) number: drops a leading
  * country code typed as "+1 438…", "1-514…" or a full 11-digit number.
  */

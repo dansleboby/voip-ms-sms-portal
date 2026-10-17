@@ -1,17 +1,35 @@
 import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { api } from '../api';
 import { t } from '../i18n';
-import { toastError } from '../store';
+import { toast, toastError } from '../store';
 import { Switch } from './ui';
 import { formatPhone } from '../../../shared/phone';
 import type { DidDto } from '../../../shared/types';
 
 export const DID_COLORS = ['#1a73e8', '#e8710a', '#188038', '#a142f4', '#d93025', '#007b83', '#c5221f', '#9334e6', '#b06000', '#5f6368'];
 
-/** Label, color and visibility of one number; every change is saved right away. */
+/**
+ * Label, color and visibility of one number; every change is saved right
+ * away. Turning on a number without SMS enables SMS for it in VoIP.ms.
+ */
 export function DidEditor({ did, onChange }: { did: DidDto; onChange?: (did: DidDto) => void }) {
   const [label, setLabel] = useState(did.label ?? '');
+  const [enabling, setEnabling] = useState(false);
   useEffect(() => setLabel(did.label ?? ''), [did.label]);
+  const canEnable = !did.smsEnabled && did.smsAvailable;
+
+  const enableSms = async () => {
+    setEnabling(true);
+    try {
+      onChange?.(await api.enableSms(did.did));
+      toast(t('settings.smsEnabledNow', { number: formatPhone(did.did) }));
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setEnabling(false);
+    }
+  };
 
   const save = async (patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible'>>) => {
     try {
@@ -22,22 +40,38 @@ export function DidEditor({ did, onChange }: { did: DidDto; onChange?: (did: Did
   };
 
   return (
-    <div className={`did-row${did.smsEnabled ? '' : ' disabled'}`}>
+    <div className={`did-row${did.smsEnabled || canEnable ? '' : ' disabled'}`}>
       <span className={`rail-did${did.label ? '' : ' digits'}`} style={{ background: did.color }} aria-hidden="true">
         {(did.label || did.did.slice(0, 3)).slice(0, did.label ? 1 : 3).toUpperCase()}
       </span>
       <div className="row-main">
         <div className="row-title">{formatPhone(did.did)}</div>
         <div className="row-sub">
-          {did.description}
-          {!did.smsEnabled && ` · ${t('settings.smsDisabled')}`}
+          {[did.description, !did.smsEnabled && t(did.smsAvailable ? 'settings.smsDisabled' : 'settings.smsUnavailable')].filter(Boolean).join(' · ')}
         </div>
       </div>
       <Switch
         checked={did.visible}
         label={t('settings.visible')}
-        onChange={(visible) => void save({ visible })}
+        // A number without SMS that is not shown has nothing to offer, unless SMS can be turned on.
+        disabled={enabling || (!did.smsEnabled && !did.smsAvailable && !did.visible)}
+        onChange={(visible) => void (visible && canEnable ? enableSms() : save({ visible }))}
       />
+      {canEnable && (
+        <div className="did-note">
+          {enabling ? (
+            <>
+              <Loader2 size={16} className="spin" /> {t('settings.enablingSms')}
+            </>
+          ) : did.visible ? (
+            <button type="button" className="btn text" onClick={() => void enableSms()}>
+              {t('settings.enableSms')}
+            </button>
+          ) : (
+            t('settings.enableSmsHint')
+          )}
+        </div>
+      )}
       {did.smsEnabled && (
         <>
           <input

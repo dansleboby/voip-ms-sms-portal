@@ -245,7 +245,8 @@ export class SyncEngine {
 
     repo.transaction(() => {
       for (const remote of messages) {
-        if (!remote.id) continue;
+        const did = normalizePhone(remote.did);
+        if (!remote.id || !repo.allowsDid(did)) continue;
         const existing = repo.findMessageByRemote(remote.kind, remote.id);
         if (existing) {
           if (remote.carrierStatus && remote.carrierStatus !== existing.carrierStatus) {
@@ -257,7 +258,6 @@ export class SyncEngine {
           continue;
         }
 
-        const did = normalizePhone(remote.did);
         const phone = normalizePhone(remote.contact);
         if (!did || !phone) continue;
         if (!repo.getDid(did)) {

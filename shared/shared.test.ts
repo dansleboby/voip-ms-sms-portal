@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkOutgoing, pickMessageKind, utf8Length } from './message.js';
-import { formatPhone, isValidNanp, normalizePhone, searchDigits } from './phone.js';
+import { formatPhone, formatPhoneInput, isValidNanp, normalizePhone, searchDigits } from './phone.js';
 import { foldText } from './text.js';
 
 describe('phone', () => {
@@ -29,6 +29,23 @@ describe('phone', () => {
   it('formats 10-digit numbers and leaves the rest alone', () => {
     expect(formatPhone('4506575294')).toBe('(450) 657-5294');
     expect(formatPhone('32665')).toBe('32665');
+  });
+});
+
+describe('formatPhoneInput', () => {
+  it('formats a North American number as it is typed', () => {
+    const typed = '5145550100'.split('').map((_, i, all) => formatPhoneInput(all.slice(0, i + 1).join('')));
+    expect(typed).toEqual(['5', '51', '514', '(514) 5', '(514) 55', '(514) 555', '(514) 555-0', '(514) 555-01', '(514) 555-010', '(514) 555-0100']);
+    expect(formatPhoneInput('514.555.0100')).toBe('(514) 555-0100');
+    expect(formatPhoneInput('(514) 555-01009')).toBe('(514) 555-01009');
+  });
+
+  it('keeps the country code apart, and leaves other countries as typed', () => {
+    expect(formatPhoneInput('1')).toBe('+1');
+    expect(formatPhoneInput('1514')).toBe('+1 514');
+    expect(formatPhoneInput('+1 5145550100')).toBe('+1 (514) 555-0100');
+    expect(formatPhoneInput('+33 6 12 34 56 78')).toBe('+33 6 12 34 56 78');
+    expect(formatPhoneInput('')).toBe('');
   });
 });
 

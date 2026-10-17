@@ -15,6 +15,11 @@ use SmsPortal\VCard;
 /** server/routes/contacts.ts */
 final class ContactRoutes
 {
+    /** shared/contact.ts */
+    private const ICONS = [
+        'heart', 'star', 'house', 'users', 'baby', 'dog', 'briefcase', 'building', 'car', 'wrench', 'stethoscope', 'graduation-cap',
+    ];
+
     public static function register(App $app): void
     {
         $r = $app->router;
@@ -29,6 +34,8 @@ final class ContactRoutes
         $save = static function (?int $id, Request $req) use ($repo, $changed): Response {
             $body = new Input($req->json());
             $name = $body->string('name', 1, 120, trim: true);
+            $color = $body->isNull('color') ? null : $body->matching('color', '/^#[0-9a-fA-F]{6}$/');
+            $icon = $body->isNull('icon') ? null : $body->choice('icon', self::ICONS);
             $notes = $body->nullableString('notes', 2000);
             $phones = array_values(array_unique(array_map([Phone::class, 'normalize'], $body->stringList('phones', 1, 20))));
             $force = $body->has('force') && $body->bool('force');
@@ -41,7 +48,7 @@ final class ContactRoutes
             if ($conflicts && !$force) {
                 throw new HttpError(409, 'phone_taken', ['phones' => $conflicts]);
             }
-            $contactId = $repo->saveContact($id, $name, $notes, $phones);
+            $contactId = $repo->saveContact($id, $name, $notes, $phones, $color, $icon);
             $changed();
             return Response::json($repo->getContact($contactId), $id === null ? 201 : 200);
         };

@@ -9,10 +9,12 @@ import { Composer } from './Composer';
 import { Avatar } from './ui';
 import { formatPhone, isValidNanp, normalizePhone, searchDigits } from '../../../shared/phone';
 import { foldText } from '../../../shared/text';
+import type { ContactDto } from '../../../shared/types';
 
 interface Suggestion {
   name: string;
   phone: string;
+  contact?: ContactDto;
 }
 
 export function NewConversation({ initialPhone }: { initialPhone?: string }) {
@@ -64,12 +66,12 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
       for (const c of contacts) {
         for (const phone of c.phones) {
           if (foldText(c.name).includes(q) || (digits.length >= 3 && phone.includes(digits))) {
-            if (!list.some((s) => s.phone === phone)) list.push({ name: c.name, phone });
+            if (!list.some((s) => s.phone === phone)) list.push({ name: c.name, phone, contact: c });
           }
         }
       }
     } else {
-      for (const c of contacts) for (const phone of c.phones) list.push({ name: c.name, phone });
+      for (const c of contacts) for (const phone of c.phones) list.push({ name: c.name, phone, contact: c });
     }
     return list.slice(0, 50);
   }, [query, contacts]);
@@ -143,7 +145,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
               className={`suggestion${i === active ? ' active' : ''}`}
               onClick={() => setRecipient(s)}
             >
-              <Avatar name={s.name} seed={s.phone} />
+              <Avatar name={s.name} seed={s.phone} look={s.contact} />
               <div>
                 <div>{s.name === formatPhone(s.phone) ? t('new.sendTo', { phone: s.name }) : s.name}</div>
                 {s.name !== formatPhone(s.phone) && <div className="muted">{formatPhone(s.phone)}</div>}

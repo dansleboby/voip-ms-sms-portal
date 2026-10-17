@@ -1,5 +1,6 @@
 /** Shapes exchanged between the server's REST/SSE API and the web client. */
 
+import type { ContactIcon } from './contact.js';
 import type { MessageKind } from './message.js';
 
 export type Direction = 'in' | 'out';
@@ -23,6 +24,8 @@ export interface SessionDto {
   pollActiveSeconds: number;
   pollIdleSeconds: number;
   liveUpdates: LiveUpdates;
+  /** Whether the server's configuration leaves some of the account's numbers out (ALLOWED_DIDS, EXCLUDED_DIDS). */
+  didsRestricted: boolean;
 }
 
 export interface DidDto {
@@ -32,6 +35,8 @@ export interface DidDto {
   color: string;
   visible: boolean;
   smsEnabled: boolean;
+  /** Whether VoIP.ms offers SMS on the number at all; when it does, the portal can turn it on. */
+  smsAvailable: boolean;
   mmsAvailable: boolean;
   /** VoIP.ms description, usually the rate center ("Le Gardeur, QC"). */
   description: string | null;
@@ -65,6 +70,10 @@ export interface MessageDto {
 export interface ContactRef {
   id: number;
   name: string;
+  /** Avatar color chosen for the contact; null for the one its number gives. */
+  color: string | null;
+  /** Icon shown instead of the initials; null for the initials. */
+  icon: ContactIcon | null;
 }
 
 export interface ConversationDto {
@@ -84,9 +93,7 @@ export interface ConversationDto {
   } | null;
 }
 
-export interface ContactDto {
-  id: number;
-  name: string;
+export interface ContactDto extends ContactRef {
   notes: string | null;
   phones: string[];
 }

@@ -9,6 +9,7 @@ import type {
   MessageDto,
   MessageStatus,
 } from '../shared/types.js';
+import type { ContactIcon } from '../shared/contact.js';
 import type { MessageKind } from '../shared/message.js';
 import { searchDigits } from '../shared/phone.js';
 import { foldText } from '../shared/text.js';
@@ -125,6 +126,13 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // Whether VoIP.ms offers SMS on a number at all (toll-free numbers, for one, may not).
+  `ALTER TABLE dids ADD COLUMN sms_available INTEGER NOT NULL DEFAULT 1;`,
+  // A contact's avatar: its color and an icon in place of the initials (null: the defaults).
+  `
+  ALTER TABLE contacts ADD COLUMN color TEXT;
+  ALTER TABLE contacts ADD COLUMN icon TEXT;
+  `,
 ];
 
 /** `version` stops migrations early, to test upgrades from an older schema. */
@@ -159,6 +167,7 @@ interface DidRow {
   color: string;
   visible: number;
   sms_enabled: number;
+  sms_available: number;
   mms_available: number;
   description: string | null;
   position: number;
@@ -179,6 +188,8 @@ interface ConversationRow {
   last_attachments: number | null;
   contact_id: number | null;
   contact_name: string | null;
+  contact_color: string | null;
+  contact_icon: string | null;
 }
 
 interface MessageRow {
@@ -246,15 +257,44 @@ const CONVERSATION_SELECT = `
   SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
          m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
          (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
-         ct.id AS contact_id, ct.name AS contact_name
+         ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
   FROM conversations c
   LEFT JOIN messages m ON m.id = c.last_message_id
   LEFT JOIN contact_phones cp ON cp.phone = c.phone
   LEFT JOIN contacts ct ON ct.id = cp.contact_id
 `;
 
+/** The numbers of the account the configuration lets the portal use (ALLOWED_DIDS, EXCLUDED_DIDS). */
+export interface DidFilter {
+  /** Null: all of them. */
+  allowed: string[] | null;
+  excluded: string[];
+}
+
 export class Repo {
-  constructor(readonly db: DB) {}
+  constructor(
+    readonly db: DB,
+    private readonly didFilter: DidFilter = { allowed: null, excluded: [] },
+  ) {}
+
+  /**
+   * Whether the configuration lets the portal use a number. The others are
+   * out of sight everywhere: their texts are not fetched, and those stored
+   * before the number was left out stay in the database, hidden.
+   */
+  allowsDid(did: string): boolean {
+    const { allowed, excluded } = this.didFilter;
+    return (allowed === null || allowed.includes(did)) && !excluded.includes(did);
+  }
+
+  /** The same, as an SQL condition on `column`, with its parameters. */
+  private didScope(column: string): { sql: string; params: string[] } {
+    const { allowed, excluded } = this.didFilter;
+    const conditions: string[] = [];
+    if (allowed) conditions.push(`${column} IN (${allowed.map(() => '?').join(', ')})`);
+    if (excluded.length) conditions.push(`${column} NOT IN (${excluded.map(() => '?').join(', ')})`);
+    return { sql: conditions.length ? conditions.join(' AND ') : '1', params: [...(allowed ?? []), ...excluded] };
+  }
 
   transaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
@@ -280,18 +320,20 @@ export class Repo {
   // -------------------------------------------------------------------- dids
 
   listDids(): DidDto[] {
+    const scope = this.didScope('d.did');
     const rows = this.db
       .prepare(
         `SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
-         FROM dids d ORDER BY d.position, d.did`,
+         FROM dids d WHERE ${scope.sql} ORDER BY d.position, d.did`,
       )
-      .all() as DidRow[];
+      .all(...scope.params) as DidRow[];
     return rows.map((r) => ({
       did: r.did,
       label: r.label,
       color: r.color,
       visible: r.visible === 1,
       smsEnabled: r.sms_enabled === 1,
+      smsAvailable: r.sms_available === 1,
       mmsAvailable: r.mms_available === 1,
       description: r.description,
       position: r.position,
@@ -308,26 +350,40 @@ export class Repo {
     return DID_COLORS.find((c) => !used.includes(c)) ?? DID_COLORS[used.length % DID_COLORS.length]!;
   }
 
-  /** Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color and visibility. */
-  upsertDid(info: { did: string; description: string | null; smsEnabled: boolean; mmsAvailable: boolean }): void {
+  /**
+   * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
+   * and visibility; a number that just got SMS shows up, like a new one.
+   */
+  upsertDid(info: { did: string; description: string | null; smsEnabled: boolean; smsAvailable: boolean; mmsAvailable: boolean }): void {
     const existing = this.db.prepare('SELECT did FROM dids WHERE did = ?').get(info.did);
     if (existing) {
       this.db
-        .prepare('UPDATE dids SET description = ?, sms_enabled = ?, mms_available = ? WHERE did = ?')
-        .run(info.description, info.smsEnabled ? 1 : 0, info.mmsAvailable ? 1 : 0, info.did);
+        .prepare(
+          `UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
+             description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?`,
+        )
+        .run(
+          info.smsEnabled ? 1 : 0,
+          info.description,
+          info.smsEnabled ? 1 : 0,
+          info.smsAvailable ? 1 : 0,
+          info.mmsAvailable ? 1 : 0,
+          info.did,
+        );
       return;
     }
     const position = (this.db.prepare('SELECT COUNT(*) AS n FROM dids').get() as { n: number }).n;
     this.db
       .prepare(
-        `INSERT INTO dids (did, label, color, visible, sms_enabled, mms_available, description, position)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         info.did,
         this.nextDidColor(),
         info.smsEnabled ? 1 : 0,
         info.smsEnabled ? 1 : 0,
+        info.smsAvailable ? 1 : 0,
         info.mmsAvailable ? 1 : 0,
         info.description,
         position,
@@ -337,10 +393,11 @@ export class Repo {
   /** Makes sure a DID seen in message history exists locally. */
   ensureDid(did: string): void {
     if (this.db.prepare('SELECT did FROM dids WHERE did = ?').get(did)) return;
-    this.upsertDid({ did, description: null, smsEnabled: true, mmsAvailable: true });
+    this.upsertDid({ did, description: null, smsEnabled: true, smsAvailable: true, mmsAvailable: true });
   }
 
   updateDid(did: string, patch: { label?: string | null; color?: string; visible?: boolean; position?: number }): boolean {
+    if (!this.allowsDid(did)) return false;
     const sets: string[] = [];
     const values: unknown[] = [];
     if (patch.label !== undefined) {
@@ -382,7 +439,10 @@ export class Repo {
   }
 
   getConversation(id: number): ConversationDto | null {
-    const row = this.db.prepare(`${CONVERSATION_SELECT} WHERE c.id = ?`).get(id) as ConversationRow | undefined;
+    const scope = this.didScope('c.did');
+    const row = this.db.prepare(`${CONVERSATION_SELECT} WHERE c.id = ? AND ${scope.sql}`).get(id, ...scope.params) as
+      | ConversationRow
+      | undefined;
     return row ? toConversationDto(row) : null;
   }
 
@@ -391,8 +451,9 @@ export class Repo {
    * left out unless asked for; a search looks through both unless told otherwise.
    */
   listConversations(opts: { did?: string; query?: string; archived?: boolean; limit?: number } = {}): ConversationDto[] {
-    const where = ['c.last_message_id IS NOT NULL'];
-    const params: unknown[] = [];
+    const scope = this.didScope('c.did');
+    const where = ['c.last_message_id IS NOT NULL', scope.sql];
+    const params: unknown[] = [...scope.params];
     const q = opts.query?.trim();
     const archived = opts.archived ?? (q ? undefined : false);
     if (archived !== undefined) where.push(archived ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL');
@@ -649,9 +710,11 @@ export class Repo {
   // ---------------------------------------------------------------- contacts
 
   listContacts(): ContactDto[] {
-    const contacts = this.db.prepare('SELECT id, name, notes FROM contacts ORDER BY name COLLATE NOCASE').all() as {
+    const contacts = this.db.prepare('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE').all() as {
       id: number;
       name: string;
+      color: string | null;
+      icon: ContactIcon | null;
       notes: string | null;
     }[];
     const phones = this.db.prepare('SELECT phone, contact_id FROM contact_phones ORDER BY rowid').all() as {
@@ -676,18 +739,28 @@ export class Repo {
     return rows.filter((r) => r.contact_id !== exceptId).map((r) => r.phone);
   }
 
-  saveContact(input: { id?: number; name: string; notes?: string | null; phones: string[] }): number {
+  saveContact(input: {
+    id?: number;
+    name: string;
+    color?: string | null;
+    icon?: ContactIcon | null;
+    notes?: string | null;
+    phones: string[];
+  }): number {
     return this.transaction(() => {
       const now = Date.now();
+      const look = [input.color ?? null, input.icon ?? null];
       let id = input.id;
       if (id) {
-        this.db.prepare('UPDATE contacts SET name = ?, notes = ?, updated_at = ? WHERE id = ?').run(input.name, input.notes ?? null, now, id);
+        this.db
+          .prepare('UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?')
+          .run(input.name, ...look, input.notes ?? null, now, id);
         this.db.prepare('DELETE FROM contact_phones WHERE contact_id = ?').run(id);
       } else {
         id = Number(
           this.db
-            .prepare('INSERT INTO contacts (name, notes, created_at, updated_at) VALUES (?, ?, ?, ?)')
-            .run(input.name, input.notes ?? null, now, now).lastInsertRowid,
+            .prepare('INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(input.name, ...look, input.notes ?? null, now, now).lastInsertRowid,
         );
       }
       const phones = [...new Set(input.phones)];
@@ -757,7 +830,10 @@ function toConversationDto(row: ConversationRow): ConversationDto {
     id: row.id,
     did: row.did,
     phone: row.phone,
-    contact: row.contact_id !== null ? { id: row.contact_id, name: row.contact_name ?? '' } : null,
+    contact:
+      row.contact_id !== null
+        ? { id: row.contact_id, name: row.contact_name ?? '', color: row.contact_color, icon: row.contact_icon as ContactIcon | null }
+        : null,
     unreadCount: row.unread_count,
     archived: row.archived_at !== null,
     lastMessageAt: row.last_message_at,

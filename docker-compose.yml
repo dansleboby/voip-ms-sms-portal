@@ -27,6 +27,9 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Look for new releases on GitHub (Settings > Updates).
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
+      # Optional: the only numbers to use, or numbers to leave alone (comma-separated).
+      ALLOWED_DIDS: ${ALLOWED_DIDS:-}
+      EXCLUDED_DIDS: ${EXCLUDED_DIDS:-}
       # Owner of ./data and user running the app (default 1000:1000).
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}

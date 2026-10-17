@@ -263,7 +263,8 @@ final class Sync
         try {
             $repo->transaction(function () use ($messages, $liveAfter, $repo, &$changed, &$incoming, &$quiet, &$newDid): void {
                 foreach ($messages as $remote) {
-                    if ($remote['id'] === '') {
+                    $did = Phone::normalize($remote['did']);
+                    if ($remote['id'] === '' || !$repo->allowsDid($did)) {
                         continue;
                     }
                     $existing = $repo->findMessageByRemote($remote['kind'], $remote['id']);
@@ -280,7 +281,6 @@ final class Sync
                         continue;
                     }
 
-                    $did = Phone::normalize($remote['did']);
                     $phone = Phone::normalize($remote['contact']);
                     if ($did === '' || $phone === '') {
                         continue;

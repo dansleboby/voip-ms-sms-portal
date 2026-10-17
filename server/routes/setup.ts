@@ -55,7 +55,7 @@ export function registerSetupRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/setup/dids', async (_req, reply): Promise<DidDto[] | void> => {
     const client = s.client();
     if (!client) return reply.code(409).send({ error: 'not_configured' });
-    const dids = await client.getDids();
+    const dids = (await client.getDids()).filter((d) => s.repo.allowsDid(d.did));
     s.repo.transaction(() => {
       for (const d of dids) s.repo.upsertDid(d);
     });
