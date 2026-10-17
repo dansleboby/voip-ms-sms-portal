@@ -100,10 +100,14 @@ L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles d
 git clone https://github.com/dansleboby/voip-ms-sms-portal.git
 cd voip-ms-sms-portal
 cp .env.example .env        # puis définissez APP_PASSWORD
-docker compose up -d --build
+docker compose up -d
 ```
 
 Ouvrez <http://localhost:8080>, connectez-vous avec `APP_PASSWORD` et suivez l'assistant. Les données (base SQLite et médias) sont dans `./data` ; le conteneur rend ce dossier accessible en écriture à l'utilisateur de l'application au démarrage (voir `PUID`/`PGID`).
+
+Compose utilise l'image publiée avec chaque [version](https://github.com/dansleboby/voip-ms-sms-portal/releases) (`ghcr.io/dansleboby/voip-ms-sms-portal`, pour x86 et ARM), et la construit à partir du dossier s'il ne peut pas la télécharger ; `docker compose up -d --build` la construit toujours à partir du code source.
+
+**Mises à jour.** *Réglages* → *Mises à jour* indique quand une nouvelle version sort, avec ce qui change. Ensuite, là où se trouve `docker-compose.yml` : `docker compose pull && docker compose up -d`. Vos données restent dans `./data`. (Un conteneur ne peut pas remplacer sa propre image : celui-ci ne se met donc pas à jour lui-même.)
 
 Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des numéros et des conversations fictifs, avec une réponse automatique, sans envoyer de vrais textos.
 
@@ -119,7 +123,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 4. Ajoutez la tâche cron (cPanel → *Tâches Cron*), chaque minute : `/usr/local/bin/php /home/vous/sms-portal/cron.php`. Les *Réglages* affichent la ligne exacte et sa dernière exécution.
 5. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant.
 
-Pour mettre à jour, décompressez le nouveau zip par-dessus les anciens dossiers : `config.php` et `sms-portal/data/` sont conservés.
+**Mises à jour.** *Réglages* → *Mises à jour* indique quand une nouvelle version sort, avec ce qui change, et l'installe en un clic : le serveur télécharge le zip de la version, le vérifie avec l'empreinte SHA-256 qu'elle annonce et remplace ses propres fichiers, en gardant ceux qu'il remplace dans `sms-portal/data/update/backup/`. `config.php` et `sms-portal/data/` ne sont jamais touchés. Chez les hébergeurs où PHP ne peut pas modifier ses propres fichiers, les *Réglages* indiquent lesquels ; décompressez alors le nouveau zip par-dessus les anciens dossiers.
 
 **Par rapport à Docker :**
 
@@ -145,6 +149,7 @@ Pour mettre à jour, décompressez le nouveau zip par-dessus les anciens dossier
 | `VOIPMS_TIMEZONE` | `America/New_York` | Fuseau des dates renvoyées par VoIP.ms. À laisser tel quel. |
 | `VAPID_SUBJECT` | URL du projet | Contact (`mailto:vous@example.com` ou une URL `https://`) transmis aux services push des navigateurs avec chaque notification. |
 | `DEMO_MODE` | `false` | Données fictives au lieu d'un vrai compte. |
+| `UPDATE_CHECK` | `true` | Vérifier s'il y a de nouvelles versions (*Réglages* → *Mises à jour* lit le `release.json` de la plus récente sur GitHub, au plus toutes les 6 heures). `UPDATE_MANIFEST_URL` fait pointer une copie dérivée (fork) vers ses propres versions. |
 | `PUID` / `PGID` | `1000` | Docker seulement : utilisateur/groupe propriétaire de `./data` qui exécute l'application (le conteneur démarre en root uniquement pour corriger le propriétaire du dossier, puis abandonne ces droits). |
 
 ## Préparer votre compte VoIP.ms
@@ -200,7 +205,12 @@ npm run build:cpanel                          # dist/sms-portal-cpanel-<version>
 
 ### Versions
 
-La version est dans `package.json` et s'affiche au bas des *Réglages* ; les changements sont listés dans [CHANGELOG.md](CHANGELOG.md). Pour en publier une : `npm version <major|minor|patch> --no-git-tag-version`, ajoutez sa section au journal des changements, fusionnez, puis étiquetez le commit de fusion `vX.Y.Z` et joignez le zip de `npm run build:cpanel` à sa version publiée sur GitHub (la CI le garde aussi pour chaque commit, comme artefact `sms-portal-cpanel`). Après une mise à jour, les onglets déjà ouverts proposent de recharger la page.
+La version est dans `package.json` ([gestion sémantique de version](https://semver.org/lang/fr/)) et s'affiche dans les *Réglages* ; les changements vont sous *Unreleased* dans [CHANGELOG.md](CHANGELOG.md) au fur et à mesure. Pour publier une version :
+
+1. `npm run release:prepare -- minor` (ou `major`, `patch`, `X.Y.Z`) : augmente la version dans `package.json` et transforme *Unreleased* en section de la nouvelle version, datée du jour.
+2. Faites un commit, ouvrez une demande de fusion (pull request) et fusionnez-la.
+
+Sur `main`, le workflow *Release* voit une version sans étiquette et la publie : il lance les tests, étiquette `vX.Y.Z`, crée la version sur GitHub avec la section du journal comme notes, y joint le zip cPanel et `release.json` (ce que les serveurs en marche lisent pour proposer la mise à jour), et pousse l'image Docker sur `ghcr.io` (`X.Y.Z`, `X.Y` et `latest`). La première fois, rendez l'image publique : sur GitHub, *Packages* → *voip-ms-sms-portal* → *Package settings* → *Change visibility*. Après une mise à jour, les onglets déjà ouverts proposent de recharger la page.
 
 ## Licence
 

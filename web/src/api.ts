@@ -3,6 +3,7 @@ import type {
   ContactDto,
   ConversationDto,
   DidDto,
+  UpdateStatusDto,
   EventsPollDto,
   MessageDto,
   SessionDto,
@@ -133,5 +134,8 @@ export const api = {
   },
 
   syncStatus: () => request<SyncStatusDto>('GET', '/api/sync/status'),
+
+  updateStatus: (refresh = false) => request<UpdateStatusDto>('GET', `/api/update${refresh ? '?refresh=1' : ''}`),
+  installUpdate: () => request<{ version: string }>('POST', '/api/update/install'),
   syncNow: () => request<SyncStatusDto>('POST', '/api/sync/now'),
 };

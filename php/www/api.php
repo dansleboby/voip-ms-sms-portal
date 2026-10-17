@@ -23,7 +23,7 @@ if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
 foreach ($candidates as $dir) {
     if ($dir !== null && @is_file("$dir/bootstrap.php")) {
         require "$dir/bootstrap.php";
-        SmsPortal\App::serve($dir);
+        SmsPortal\App::serve($dir, __DIR__);
         return;
     }
 }

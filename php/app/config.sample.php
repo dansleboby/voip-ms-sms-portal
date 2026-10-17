@@ -44,4 +44,7 @@ return [
 
     // Sample data instead of a real VoIP.ms account, to try the interface.
     'DEMO_MODE' => false,
+
+    // Look for new versions (Settings > Updates asks GitHub for the newest release).
+    'UPDATE_CHECK' => true,
 ];

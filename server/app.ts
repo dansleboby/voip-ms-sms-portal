@@ -22,6 +22,9 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerContactRoutes } from './routes/contacts.js';
 import { registerMessagingRoutes } from './routes/messaging.js';
 import { registerPushRoutes } from './routes/push.js';
+import { registerUpdateRoutes } from './routes/update.js';
+import { UpdateChecker } from './updates.js';
+import { VERSION } from './version.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
@@ -37,6 +40,7 @@ export interface Services {
   sync: SyncEngine;
   sender: MessageSender;
   push: PushService;
+  updates: UpdateChecker;
   /** Client for the configured credentials, or null. */
   client(): VoipMsApi | null;
   /** Client for arbitrary credentials (used to validate them in the wizard). */
@@ -54,6 +58,8 @@ export interface BuildOptions {
   mediaFetch?: typeof fetch;
   /** fetch used to reach push services (tests). */
   pushFetch?: typeof fetch;
+  /** fetch used to look for new releases (tests). */
+  updateFetch?: typeof fetch;
   logger?: boolean;
 }
 
@@ -151,6 +157,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     sync,
     sender,
     push,
+    updates: new UpdateChecker({
+      repo,
+      version: VERSION,
+      enabled: config.updateCheck,
+      manifestUrl: config.updateManifestUrl,
+      install: config.install,
+      fetch: options.updateFetch,
+    }),
     client,
     clientFor,
     resetClient: () => {
@@ -220,6 +234,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   registerMessagingRoutes(app, services);
   registerContactRoutes(app, services);
   registerPushRoutes(app, services);
+  registerUpdateRoutes(app, services);
 
   if (fs.existsSync(path.join(config.webDir, 'index.html'))) {
     await app.register(fastifyStatic, {
