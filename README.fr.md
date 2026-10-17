@@ -52,7 +52,7 @@ Tapez un nom ou un numéro : les contacts sont suggérés au fil de la frappe. A
 
 ### Assistant de configuration
 
-Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Les numéros dont le SMS n'est pas encore activé sont signalés, avec l'endroit où l'activer.
+Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant.
 
 | Autoriser l'adresse IP | Choisir ses numéros |
 | --- | --- |
@@ -60,7 +60,7 @@ Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse I
 
 ### Contacts
 
-Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone.
+Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone. Chacun peut avoir sa couleur d'avatar, et une icône à la place de ses initiales (maison, travail, famille, auto…) ; les numéros se mettent en forme pendant la saisie.
 
 | Liste des contacts | Modifier un contact |
 | --- | --- |
@@ -120,8 +120,9 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 1. Prenez `sms-portal-cpanel-<version>.zip`, joint à chaque [version publiée](https://github.com/dansleboby/voip-ms-sms-portal/releases) (ou construisez-le : `npm run build:cpanel`), et décompressez-le dans votre dossier personnel (cPanel → *Gestionnaire de fichiers* → *Charger*, puis *Extraire*). Vous obtenez deux dossiers côte à côte : `sms-portal/`, le serveur avec ses réglages et ses données, jamais servi, et `sms-portal-site/`, ce que le navigateur charge.
 2. Créez le sous-domaine (cPanel → *Domaines* → *Créer un nouveau domaine*) avec `sms-portal-site` comme racine de document, et vérifiez qu'il est en HTTPS (cPanel → *État SSL/TLS* → *Exécuter AutoSSL*).
 3. Dans `sms-portal/`, copiez `config.sample.php` en `config.php` et réglez `APP_PASSWORD`. Les autres réglages sont ceux du [tableau ci-dessous](#configuration), sauf ceux propres à Docker (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
-4. Ajoutez la tâche cron (cPanel → *Tâches Cron*), chaque minute : `/usr/local/bin/php /home/vous/sms-portal/cron.php`. Les *Réglages* affichent la ligne exacte et sa dernière exécution.
-5. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant.
+4. Ouvrez le sous-domaine, connectez-vous et suivez l'assistant. Sa dernière étape donne la tâche cron à ajouter (cPanel → *Tâches Cron*), chaque minute, par exemple `/usr/local/bin/php /home/vous/sms-portal/cron.php`, et voit quand elle démarre ; vous pouvez la passer, mais les textos et les notifications n'arrivent alors que quand l'application est ouverte. Les *Réglages* affichent aussi la ligne, et si la tâche tourne.
+
+![Étape de l'assistant donnant la tâche cron à ajouter](docs/screenshots/fr/setup-cron.png)
 
 **Mises à jour.** *Réglages* → *Mises à jour* indique quand une nouvelle version sort, avec ce qui change, et l'installe en un clic : le serveur télécharge le zip de la version, le vérifie avec l'empreinte SHA-256 qu'elle annonce et remplace ses propres fichiers, en gardant ceux qu'il remplace dans `sms-portal/data/update/backup/`. `config.php` et `sms-portal/data/` ne sont jamais touchés. Chez les hébergeurs où PHP ne peut pas modifier ses propres fichiers, les *Réglages* indiquent lesquels ; décompressez alors le nouveau zip par-dessus les anciens dossiers.
 
@@ -204,6 +205,8 @@ La version PHP, après `npm run build:web` (il faut PHP 8.1+ ; `npm test` la tes
 SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php
 npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
 ```
+
+**Captures d'écran.** `npm run screenshots` refait celles de ce README (`docs/screenshots/en` et `fr`) à partir du mode démo, à une date fixe, et liste celles dont l'apparence a changé : lancez-la après avoir modifié l'interface, puis faites un commit de ce qui a bougé. Il faut un Chromium pour Playwright, une fois : `npx playwright-core install chromium`. Les polices varient d'un système à l'autre : comparez des exécutions faites sur la même machine.
 
 ### Versions
 
