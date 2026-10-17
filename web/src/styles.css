@@ -1628,6 +1628,14 @@ textarea.input {
   letter-spacing: 0.02em;
 }
 
+.ip-box code.cron-command {
+  display: block;
+  font-size: 14px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .choice-list {
   display: flex;
   flex-wrap: wrap;
@@ -1686,6 +1694,39 @@ textarea.input {
 .ok-text {
   color: var(--success);
   font-weight: 500;
+}
+
+.cron-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.status-pill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-pill.warn {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+  color: var(--error);
 }
 
 /* ---------------------------------------------------------- dialogs & toasts */

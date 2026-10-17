@@ -4,12 +4,13 @@ import { api, ApiError } from '../api';
 import { errorText, t } from '../i18n';
 import { enableNotifications, notificationsSupported } from '../lib/notify';
 import { loadDids, toastError, useStore } from '../store';
+import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
-import { Logo } from './ui';
+import { Logo, useNow } from './ui';
 import type { ConnectionTestDto, DidDto, SetupStatusDto } from '../../../shared/types';
 
-type Step = 'welcome' | 'api' | 'creds' | 'ip' | 'numbers' | 'history' | 'done';
-const STEPS: Step[] = ['welcome', 'api', 'creds', 'ip', 'numbers', 'history', 'done'];
+type Step = 'welcome' | 'api' | 'creds' | 'ip' | 'numbers' | 'history' | 'cron' | 'done';
+const STEPS: Step[] = ['welcome', 'api', 'creds', 'ip', 'numbers', 'history', 'cron', 'done'];
 const API_PAGE = 'https://voip.ms/m/api.php';
 const HISTORY_CHOICES = [0, 7, 30, 90, 365];
 
@@ -17,13 +18,19 @@ export function Setup({ onDone, pollActive, pollIdle }: { onDone: () => void; po
   const [step, setStep] = useState<Step>('welcome');
   const [status, setStatus] = useState<SetupStatusDto | null>(null);
   const [connection, setConnection] = useState<ConnectionTestDto | null>(null);
+  // The PHP version's cron job, when it is not running yet.
+  const [needsCron, setNeedsCron] = useState(false);
 
   useEffect(() => {
     api.setupStatus().then(setStatus).catch(toastError);
+    api
+      .syncStatus()
+      .then((s) => setNeedsCron(!!s.cron && cronState(s.cron, Date.now()) !== 'ok'))
+      .catch(() => undefined);
   }, []);
 
   const fromEnv = status?.credentialsSource === 'env';
-  const visibleSteps = STEPS.filter((s) => !(s === 'creds' && fromEnv));
+  const visibleSteps = STEPS.filter((s) => !(s === 'creds' && fromEnv) && !(s === 'cron' && !needsCron));
   const index = visibleSteps.indexOf(step);
   const next = () => setStep(visibleSteps[Math.min(index + 1, visibleSteps.length - 1)]!);
   const back = () => setStep(visibleSteps[Math.max(index - 1, 0)]!);
@@ -58,6 +65,7 @@ export function Setup({ onDone, pollActive, pollIdle }: { onDone: () => void; po
         {step === 'ip' && <IpStep initial={connection} fromEnv={fromEnv} username={status?.username ?? null} onBack={back} onNext={next} />}
         {step === 'numbers' && <NumbersStep onBack={back} onNext={next} />}
         {step === 'history' && <HistoryStep onBack={back} onNext={next} />}
+        {step === 'cron' && <CronStep onNext={next} />}
         {step === 'done' && <DoneStep onDone={onDone} pollActive={pollActive} pollIdle={pollIdle} />}
       </div>
     </main>
@@ -368,6 +376,80 @@ function HistoryStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
         <button className="btn" onClick={finish} disabled={busy}>
           {busy && <Loader2 size={18} className="spin" />}
           {t('setup.history.finish')}
+        </button>
+      </Actions>
+    </div>
+  );
+}
+
+/** Shared hosting: the cron job that checks VoIP.ms while the app is closed, with what skipping it costs. */
+function CronStep({ onNext }: { onNext: () => void }) {
+  const [cron, setCron] = useState<CronInfo | null>(null);
+  const [copied, setCopied] = useState(false);
+  const now = useNow();
+  const state = cron ? cronState(cron, now) : 'never';
+
+  useEffect(() => {
+    let stopped = false;
+    const load = () =>
+      api
+        .syncStatus()
+        .then((s) => !stopped && setCron(s.cron ?? null))
+        .catch(() => undefined);
+    void load();
+    // Picks up the first run as soon as it happens.
+    const timer = setInterval(load, 5000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const copy = async () => {
+    if (!cron) return;
+    await navigator.clipboard?.writeText(cron.command).catch(() => undefined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="setup-body">
+      <h2>{t('setup.cron.title')}</h2>
+      <p>{t('setup.cron.intro')}</p>
+      <div className="ip-box">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {t('setup.cron.command')}
+          </div>
+          <code className="cron-command">{cron?.command ?? '…'}</code>
+        </div>
+        <button className="icon-btn" onClick={copy} aria-label={t('common.copy')} disabled={!cron}>
+          {copied ? <Check size={20} /> : <Copy size={20} />}
+        </button>
+      </div>
+      <div role="status">
+        {state === 'ok' && cron ? (
+          <CronStatus cron={cron} />
+        ) : (
+          <span className="cron-status muted">
+            <Loader2 size={16} className="spin" />
+            {t(state === 'late' ? 'setup.cron.lateWaiting' : 'setup.cron.waiting')}
+          </span>
+        )}
+      </div>
+      {state !== 'ok' && (
+        <p className="muted" style={{ fontSize: 13 }}>
+          {t('setup.cron.skipHint')}
+        </p>
+      )}
+      <Actions>
+        {state !== 'ok' && (
+          <button className="btn text" onClick={onNext}>
+            {t('setup.cron.skip')}
+          </button>
+        )}
+        <button className="btn" onClick={onNext} disabled={state !== 'ok'}>
+          {t('common.continue')}
         </button>
       </Actions>
     </div>
