@@ -6,7 +6,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { backendNames, Client, phpAvailable, startBackend, type Backend } from './backends.js';
+import { backendNames, Client, freePort, phpAvailable, startBackend, type Backend } from './backends.js';
 import { writeFileList } from '../scripts/package-files.mjs';
 
 /**
@@ -186,7 +186,8 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     // Unreadable by the web server, as an update made under a strict umask left it before 1.6.1.
     fs.chmodSync(path.join(site, 'index.html'), 0o600);
 
-    const port = 20000 + Math.floor(Math.random() * 20000);
+    // A random one could be a port the other test files' connections hold: php -S would quit at once.
+    const port = await freePort();
     // The site's api.php finds sms-portal next to it, as on a host.
     // Some hosts also print PHP's warnings, as this one will about ZipArchive: responses must stay clean JSON.
     const options = extractor === 'PharData' ? ['-d', 'disable_classes=ZipArchive', '-d', 'display_errors=1'] : [];
@@ -194,15 +195,19 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     const php = ['php', ...options, '-S', `127.0.0.1:${port}`, '-t', site, path.join(site, 'api.php')];
     server = spawn('sh', ['-c', 'umask 077 && exec "$@"', 'sh', ...php], {
       env: { ...process.env, APP_PASSWORD: 'hunter2', DEMO_MODE: 'true', UPDATE_MANIFEST_URL: `${releases.url}/release.json`, SMS_PORTAL_DIR: '' },
-      stdio: 'ignore',
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
+    let output = '';
+    server.stderr?.on('data', (chunk: Buffer) => (output += chunk));
     client = new Client(`http://127.0.0.1:${port}`);
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; ; i++) {
       try {
         if ((await fetch(`${client.base}/api/health`)).ok) break;
       } catch {
-        await new Promise((r) => setTimeout(r, 50));
+        // Not listening yet.
       }
+      if (i > 100) throw new Error(`php -S did not start: ${output.slice(-2000)}`);
+      await new Promise((r) => setTimeout(r, 50));
     }
     await client.login();
   }, 30_000);
