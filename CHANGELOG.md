@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.6.1 (2026-10-21)
+
+- Shared hosting: a document root set on the private `sms-portal` folder, or a site moved inside it, now gets a page saying what to change, in English and French, instead of a bare "Forbidden".
+- Shared hosting: updates installed from *Settings* by this version and later leave the site's files readable by the web server, also on hosts where PHP makes the files it writes private to the account. There, every page answered "Forbidden" after an update until the permissions were set right by hand.
+
 ## 1.6.0 (2026-10-17)
 
 - **Voice messages play.** The AMR files most phones send voice messages in played in no desktop browser (the player stayed at 0:00): they are now decoded in the browser. Audio attachments get a player of their own, with the recording's waveform as its progress bar (tap or drag it to move around), the time, and a 1×, 1.5× or 2× speed.

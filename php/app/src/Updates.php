@@ -375,13 +375,17 @@ final class Updates
         try {
             foreach ($targets as $target => $source) {
                 $dir = dirname($target);
-                if (!is_dir($dir) && !mkdir($dir, 0755, true)) {
+                if (!self::makeDir($dir)) {
                     throw new \RuntimeException("Cannot create $dir");
                 }
                 if (!copy($source, $target . self::STAGED)) {
                     throw new \RuntimeException("Cannot write $target");
                 }
                 $staged[] = $target . self::STAGED;
+                // copy() leaves the mode to PHP's umask: where it is 027 or 077, the web server could
+                // no longer read the site (403 Forbidden on every page). Same mode as the zip gives it,
+                // which also mends files an earlier update left unreadable.
+                @chmod($target . self::STAGED, 0644);
             }
             foreach (array_merge(array_keys($targets), $stale) as $target) {
                 if (is_file($target) && !self::copyTo($target, $backup . '/' . $this->backupName($target))) {
@@ -429,6 +433,20 @@ final class Updates
         return str_starts_with($target, $this->appDir . '/')
             ? 'sms-portal/' . substr($target, strlen($this->appDir) + 1)
             : 'sms-portal-site/' . substr($target, strlen((string) $this->siteDir) + 1);
+    }
+
+    /** Creates a folder of the site or the app, readable by the web server whatever PHP's umask. */
+    private static function makeDir(string $dir): bool
+    {
+        if (is_dir($dir)) {
+            return true;
+        }
+        if (!self::makeDir(dirname($dir)) || (!@mkdir($dir) && !is_dir($dir))) {
+            return false;
+        }
+        // Only the folders made here: the host may keep the existing ones closer on purpose.
+        @chmod($dir, 0755);
+        return true;
     }
 
     private static function copyTo(string $source, string $destination): bool
