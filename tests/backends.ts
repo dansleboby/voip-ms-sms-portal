@@ -30,7 +30,8 @@ export const phpAvailable = spawnSync('php', ['-v']).status === 0;
 /** CI sets REQUIRE_PHP so that a missing PHP fails the run instead of skipping half of it. */
 export const backendNames: Backend['name'][] = phpAvailable || process.env.REQUIRE_PHP ? ['node', 'php'] : ['node'];
 
-function freePort(): Promise<number> {
+/** A port nothing uses right now, picked by the system. */
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.listen(0, '127.0.0.1', () => {

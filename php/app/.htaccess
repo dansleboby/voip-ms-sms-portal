@@ -1,3 +1,8 @@
 # Settings and data: never served, even if this folder ends up in the web root.
 Require all denied
 Deny from all
+
+# A web root set on this folder, or a site put inside it, otherwise only gets
+# "Forbidden" (cPanel's own error page is refused too): say what to change.
+# Accents as HTML entities: Apache sends this page as ISO-8859-1.
+ErrorDocument 403 "<!doctype html><title>SMS Portal</title><h1>403</h1><p>This is the private folder of SMS Portal (<b>sms-portal</b>): browsers never get its files. Set the document root of the subdomain to the <b>sms-portal-site</b> folder, which goes beside this one, not inside it.</p><p>Ce dossier est la partie priv&eacute;e du Portail SMS (<b>sms-portal</b>) : les navigateurs n&rsquo;y ont jamais acc&egrave;s. La racine du sous-domaine doit &ecirc;tre le dossier <b>sms-portal-site</b>, plac&eacute; &agrave; c&ocirc;t&eacute; de celui-ci, pas dedans.</p>"

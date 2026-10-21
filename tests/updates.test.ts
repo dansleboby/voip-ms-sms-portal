@@ -6,7 +6,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { backendNames, Client, phpAvailable, startBackend, type Backend } from './backends.js';
+import { backendNames, Client, freePort, phpAvailable, startBackend, type Backend } from './backends.js';
 import { writeFileList } from '../scripts/package-files.mjs';
 
 /**
@@ -183,22 +183,31 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     fs.writeFileSync(path.join(app, 'src/Obsolete.php'), '<?php');
     fs.mkdirSync(path.join(site, '.well-known/acme-challenge'), { recursive: true });
     fs.writeFileSync(path.join(site, '.well-known/acme-challenge/token'), 'cpanel ssl');
+    // Unreadable by the web server, as an update made under a strict umask left it before 1.6.1.
+    fs.chmodSync(path.join(site, 'index.html'), 0o600);
 
-    const port = 20000 + Math.floor(Math.random() * 20000);
+    // A random one could be a port the other test files' connections hold: php -S would quit at once.
+    const port = await freePort();
     // The site's api.php finds sms-portal next to it, as on a host.
     // Some hosts also print PHP's warnings, as this one will about ZipArchive: responses must stay clean JSON.
     const options = extractor === 'PharData' ? ['-d', 'disable_classes=ZipArchive', '-d', 'display_errors=1'] : [];
-    server = spawn('php', [...options, '-S', `127.0.0.1:${port}`, '-t', site, path.join(site, 'api.php')], {
+    // Under the strictest umask some hosts give PHP: the files it writes must still be readable by the web server.
+    const php = ['php', ...options, '-S', `127.0.0.1:${port}`, '-t', site, path.join(site, 'api.php')];
+    server = spawn('sh', ['-c', 'umask 077 && exec "$@"', 'sh', ...php], {
       env: { ...process.env, APP_PASSWORD: 'hunter2', DEMO_MODE: 'true', UPDATE_MANIFEST_URL: `${releases.url}/release.json`, SMS_PORTAL_DIR: '' },
-      stdio: 'ignore',
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
+    let output = '';
+    server.stderr?.on('data', (chunk: Buffer) => (output += chunk));
     client = new Client(`http://127.0.0.1:${port}`);
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; ; i++) {
       try {
         if ((await fetch(`${client.base}/api/health`)).ok) break;
       } catch {
-        await new Promise((r) => setTimeout(r, 50));
+        // Not listening yet.
       }
+      if (i > 100) throw new Error(`php -S did not start: ${output.slice(-2000)}`);
+      await new Promise((r) => setTimeout(r, 50));
     }
     await client.login();
   }, 30_000);
@@ -255,6 +264,9 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
         fs.writeFileSync(path.join(dir, 'sms-portal/config.php'), "<?php return ['APP_PASSWORD' => 'theirs'];");
         fs.mkdirSync(path.join(dir, 'sms-portal/data'));
         fs.writeFileSync(path.join(dir, 'sms-portal/data/portal.db'), 'not a database');
+        // A folder the previous version did not have.
+        fs.mkdirSync(path.join(dir, 'sms-portal-site/fonts'));
+        fs.writeFileSync(path.join(dir, 'sms-portal-site/fonts/new.woff2'), 'font');
       }),
     );
     const res = await client.post('/api/update/install');
@@ -274,6 +286,13 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     expect(read(path.join(app, 'data/update/backup/sms-portal-site/index.html'))).toContain('1.0.0');
     expect(read(path.join(app, 'data/update/backup/sms-portal/VERSION')).trim()).toBe('1.0.0');
     expect(fs.readdirSync(site).some((f) => f.endsWith('.update-new'))).toBe(false);
+    // Readable by the web server, as extracting the zip by hand would leave them.
+    const mode = (file: string) => (fs.statSync(file).mode & 0o777).toString(8);
+    expect(mode(path.join(site, 'index.html'))).toBe('644');
+    expect(mode(path.join(site, 'assets/app-9.9.9.js'))).toBe('644');
+    expect(mode(path.join(site, 'fonts'))).toBe('755');
+    expect(mode(path.join(site, 'fonts/new.woff2'))).toBe('644');
+    expect(mode(path.join(app, 'src/App.php'))).toBe('644');
 
     expect((await client.get('/api/update')).json).toMatchObject({ current: '9.9.9', available: false });
     expect((await client.post('/api/update/install')).json).toEqual({ error: 'up_to_date' });

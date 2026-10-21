@@ -11,7 +11,8 @@ default in cPanel), and a subdomain, like sms.example.com, with HTTPS.
 
 2. Create the subdomain (cPanel > Domains > Create A New Domain) and set its
    document root to sms-portal-site. Turn on HTTPS for it (cPanel > SSL/TLS
-   Status > Run AutoSSL) if it is not on already.
+   Status > Run AutoSSL) if it is not on already. Keep the two folders side
+   by side, not one inside the other.
 
 3. In sms-portal, copy config.sample.php to config.php and set APP_PASSWORD,
    the password of the web interface.
@@ -46,7 +47,8 @@ en HTTPS.
 
 2. Créez le sous-domaine (cPanel > Domaines > Créer un nouveau domaine) avec
    sms-portal-site comme racine de document. Activez le HTTPS (cPanel > État
-   SSL/TLS > Exécuter AutoSSL) s'il ne l'est pas déjà.
+   SSL/TLS > Exécuter AutoSSL) s'il ne l'est pas déjà. Laissez les deux
+   dossiers côte à côte, sans mettre l'un dans l'autre.
 
 3. Dans sms-portal, copiez config.sample.php en config.php et réglez
    APP_PASSWORD, le mot de passe de l'interface.
