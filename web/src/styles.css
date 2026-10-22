@@ -1804,6 +1804,17 @@ textarea.input {
   max-width: 400px;
 }
 
+.auth-card .auth-problem {
+  align-items: flex-start;
+  margin: 0 0 16px;
+  line-height: 1.45;
+}
+
+.auth-problem a {
+  color: inherit;
+  font-weight: 500;
+}
+
 .setup-card {
   max-width: 620px;
 }

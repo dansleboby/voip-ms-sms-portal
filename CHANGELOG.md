@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.7.1 (2026-10-22)
+
+- **Step-by-step installation guide** for first-time self-hosters, in English ([docs/install.md](docs/install.md)) and French ([docs/install.fr.md](docs/install.fr.md)): what you need and which option to choose, every click on cPanel web hosting or with Docker, the setup wizard, the phone, and what to do when something goes wrong. The READMEs and the `INSTALL.txt` of the cPanel zip link to it.
+- Shared hosting: when the server misses a setup step (no `config.php`, an empty `APP_PASSWORD`, PHP older than 8.1, the `sms-portal` folder not found), the sign-in page now says which, with a link to the guide. It read "Lost connection to the server", and a PHP that was too old gave a blank error.
+
 ## 1.7.0 (2026-10-22)
 
 - **Deleting contacts in bulk.** *Select* on the Contacts page lets you tick contacts, or all of them at once with *Select all* (after a search, all the contacts it found), and delete them together; their conversations stay, under their phone numbers. Before, contacts could only be deleted one at a time.

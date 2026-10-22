@@ -4,6 +4,8 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 
 *[English version](README.md)*
 
+**Première fois que vous hébergez une application?** Le [guide d'installation pas à pas](docs/install.fr.md) part de zéro : ce qu'il vous faut, puis chaque clic, sur un hébergement cPanel ou avec Docker.
+
 ![Conversations sur deux numéros, avec une photo reçue par MMS](docs/screenshots/fr/hero.png)
 
 - **Tous vos numéros au même endroit.** Un menu latéral (des pastilles sur mobile) bascule entre « tous les numéros » et chaque DID. Donnez un nom et une couleur à chaque numéro ; chaque conversation indique à quel numéro elle appartient et les réponses partent toujours de ce numéro.
@@ -102,6 +104,8 @@ L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles d
 
 ## Démarrage rapide (Docker)
 
+Jamais utilisé Docker? Le [guide pas à pas](docs/install.fr.md#2b-installer-avec-docker) part du début.
+
 ```bash
 git clone https://github.com/dansleboby/voip-ms-sms-portal.git
 cd voip-ms-sms-portal
@@ -121,7 +125,7 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 
 La même application fonctionne aussi sur un hébergement web PHP ordinaire, sans Docker ni Node.js : une version PHP du serveur répond à la même API, et une tâche cron vérifie VoIP.ms quand l'application est fermée.
 
-**Il faut** PHP 8.1 ou plus récent avec `pdo_sqlite`, `openssl`, `curl` et `mbstring` (activés par défaut dans cPanel), un sous-domaine en HTTPS et les tâches cron.
+**Il faut** PHP 8.1 ou plus récent avec `pdo_sqlite`, `openssl`, `curl` et `mbstring` (activés par défaut dans cPanel), un sous-domaine en HTTPS et les tâches cron. Les étapes ci-dessous en sont la version courte; le [guide pas à pas](docs/install.fr.md#2a-installer-sur-un-hébergement-cpanel) donne chaque clic.
 
 1. Prenez `sms-portal-cpanel-<version>.zip`, joint à chaque [version publiée](https://github.com/dansleboby/voip-ms-sms-portal/releases) (ou construisez-le : `npm run build:cpanel`), et décompressez-le dans votre dossier personnel (cPanel → *Gestionnaire de fichiers* → *Charger*, puis *Extraire*). Vous obtenez deux dossiers côte à côte : `sms-portal/`, le serveur avec ses réglages et ses données, jamais servi, et `sms-portal-site/`, ce que le navigateur charge.
 2. Créez le sous-domaine (cPanel → *Domaines* → *Créer un nouveau domaine*) avec `sms-portal-site` comme racine de document, et vérifiez qu'il est en HTTPS (cPanel → *État SSL/TLS* → *Exécuter AutoSSL*). Laissez les deux dossiers côte à côte : si chaque page répond *Forbidden*, la racine est `sms-portal` ou un dossier à l'intérieur, ou bien le serveur web ne peut pas lire les fichiers du site (il leur faut les permissions 644, et 755 pour les dossiers).
