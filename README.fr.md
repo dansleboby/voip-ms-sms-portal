@@ -62,6 +62,8 @@ Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse I
 
 Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone. Chacun peut avoir sa couleur d'avatar, et une icône à la place de ses initiales (maison, travail, famille, auto…) ; les numéros se mettent en forme pendant la saisie.
 
+Pour en supprimer plusieurs d'un coup, touchez *Sélectionner*, cochez des contacts ou *Tout sélectionner* (après une recherche : tous ceux qu'elle a trouvés), puis *Supprimer* ; leurs conversations restent. Juste après un import, *Annuler* retire les contacts ajoutés, si le mauvais fichier est passé.
+
 | Liste des contacts | Modifier un contact |
 | --- | --- |
 | ![Liste des contacts](docs/screenshots/fr/contacts.png) | ![Fenêtre de modification d'un contact](docs/screenshots/fr/contact-dialog.png) |

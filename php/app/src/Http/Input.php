@@ -94,6 +94,21 @@ final class Input
         return $value;
     }
 
+    /** @return list<int> positive ids, as JSON numbers */
+    public function idList(string $key, int $min, int $max): array
+    {
+        $value = $this->data[$key] ?? null;
+        if (!is_array($value) || !array_is_list($value) || count($value) < $min || count($value) > $max) {
+            throw new InvalidRequest("$key: expected a list of $min to $max items");
+        }
+        foreach ($value as $item) {
+            if (!is_int($item) || $item <= 0) {
+                throw new InvalidRequest("$key: expected positive whole numbers");
+            }
+        }
+        return $value;
+    }
+
     public function object(string $key): self
     {
         $value = $this->data[$key] ?? null;

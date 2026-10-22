@@ -18,3 +18,6 @@ export const CONTACT_ICONS = [
 ] as const;
 
 export type ContactIcon = (typeof CONTACT_ICONS)[number];
+
+/** Contacts deleted per request (POST /api/contacts/delete): the client sends longer lists in several. */
+export const MAX_DELETE_IDS = 5000;

@@ -667,6 +667,19 @@ final class Repo
         return $this->run('DELETE FROM contacts WHERE id = ?', [$id])->rowCount() > 0;
     }
 
+    /** Deletes the contacts that still exist among $ids; returns how many there were. */
+    public function deleteContacts(array $ids): int
+    {
+        return $this->transaction(function () use ($ids): int {
+            $deleted = 0;
+            // In slices: the SQLite of older hosts takes at most 999 parameters.
+            foreach (array_chunk($ids, 500) as $slice) {
+                $deleted += $this->run('DELETE FROM contacts WHERE id IN (' . self::placeholders($slice) . ')', $slice)->rowCount();
+            }
+            return $deleted;
+        });
+    }
+
     // ------------------------------------------------------- push subscriptions
 
     public function listPushSubscriptions(): array

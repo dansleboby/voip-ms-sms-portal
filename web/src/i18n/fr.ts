@@ -156,6 +156,13 @@ export const fr = {
   'contacts.message': 'Écrire',
   'contacts.edit': 'Modifier le contact',
   'contacts.deleteConfirm': 'Supprimer {name}? Les conversations restent intactes.',
+  'contacts.select': 'Sélectionner',
+  'contacts.selected': '{count} sélectionné(s)',
+  'contacts.selectAll': 'Tout sélectionner',
+  'contacts.selectNone': 'Tout désélectionner',
+  'contacts.deleteManyTitle': 'Supprimer {count} contact(s)?',
+  'contacts.deleteManyBody': 'Leurs conversations restent, sous leur numéro de téléphone. Les contacts supprimés ne peuvent pas être récupérés.',
+  'contacts.deletedMany': '{count} contact(s) supprimé(s).',
   'contacts.phoneTaken': 'Ces numéros appartiennent déjà à un autre contact : {phones}. Les déplacer vers celui-ci?',
   'contacts.invalidPhone': 'Numéro invalide : {phones}',
 

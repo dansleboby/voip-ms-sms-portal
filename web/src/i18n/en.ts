@@ -158,6 +158,13 @@ export const en: Record<MessageKey, string> = {
   'contacts.message': 'Message',
   'contacts.edit': 'Edit contact',
   'contacts.deleteConfirm': 'Delete {name}? Conversations are kept.',
+  'contacts.select': 'Select',
+  'contacts.selected': '{count} selected',
+  'contacts.selectAll': 'Select all',
+  'contacts.selectNone': 'Select none',
+  'contacts.deleteManyTitle': 'Delete {count} contact(s)?',
+  'contacts.deleteManyBody': 'Their conversations stay, under their phone numbers. Deleted contacts cannot be brought back.',
+  'contacts.deletedMany': '{count} contact(s) deleted.',
   'contacts.phoneTaken': 'These numbers already belong to another contact: {phones}. Move them to this one?',
   'contacts.invalidPhone': 'Invalid number: {phones}',
 

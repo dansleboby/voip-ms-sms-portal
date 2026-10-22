@@ -1767,6 +1767,20 @@ textarea.input {
   background: color-mix(in srgb, var(--on-surface) 4%, transparent);
 }
 
+.contact-item.selected {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+/* Shows the row's state; the row itself is the checkbox. */
+.contact-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+  pointer-events: none;
+}
+
 /* ------------------------------------------------------------ setup & login */
 
 .center-screen {

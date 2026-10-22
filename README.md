@@ -62,6 +62,8 @@ On first launch, the wizard checks the credentials, shows the IP address VoIP.ms
 
 Contacts are stored on the server, so every browser sees the same names. Add them by hand or import a `.vcf` file exported from Google Contacts, iCloud or your phone. Each one can have its own avatar color, and an icon instead of its initials (home, work, family, car…); numbers are formatted as you type them.
 
+To delete many at once, tap *Select*, tick contacts or *Select all* (after a search, all the contacts it found), then *Delete*; their conversations stay. Right after an import, *Undo* removes the contacts it added, if the wrong file went in.
+
 | Contact list | Editing a contact |
 | --- | --- |
 | ![Contact list](docs/screenshots/en/contacts.png) | ![Contact editing dialog](docs/screenshots/en/contact-dialog.png) |

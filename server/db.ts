@@ -855,6 +855,19 @@ export class Repo {
     return this.db.prepare('DELETE FROM contacts WHERE id = ?').run(id).changes > 0;
   }
 
+  /** Deletes the contacts that still exist among `ids`; returns how many there were. */
+  deleteContacts(ids: number[]): number {
+    return this.transaction(() => {
+      let deleted = 0;
+      // In slices: SQLite builds older than 3.32 take at most 999 parameters.
+      for (let i = 0; i < ids.length; i += 500) {
+        const slice = ids.slice(i, i + 500);
+        deleted += this.db.prepare(`DELETE FROM contacts WHERE id IN (${slice.map(() => '?').join(',')})`).run(...slice).changes;
+      }
+      return deleted;
+    });
+  }
+
   // ------------------------------------------------------- push subscriptions
 
   listPushSubscriptions(): PushSubscriptionRow[] {
