@@ -1,6 +1,10 @@
 SMS Portal for VoIP.ms: installing on shared hosting (cPanel)
 =============================================================
 
+First time? The step-by-step guide gives every click, what you should
+see, and what to do when something goes wrong:
+https://github.com/dansleboby/voip-ms-sms-portal/blob/main/docs/install.md
+
 Needs PHP 8.1 or later with pdo_sqlite, openssl, curl and mbstring (all on by
 default in cPanel), and a subdomain, like sms.example.com, with HTTPS.
 
@@ -35,6 +39,10 @@ More: https://github.com/dansleboby/voip-ms-sms-portal#shared-hosting-cpanel
 
 Installation sur un hébergement mutualisé (cPanel)
 ==================================================
+
+Première fois? Le guide pas à pas donne chaque clic, ce que vous devez
+voir et quoi faire en cas de problème :
+https://github.com/dansleboby/voip-ms-sms-portal/blob/main/docs/install.fr.md
 
 Il faut PHP 8.1 ou plus récent avec pdo_sqlite, openssl, curl et mbstring
 (activés par défaut dans cPanel), et un sous-domaine, comme sms.exemple.com,

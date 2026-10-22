@@ -25,6 +25,9 @@ export const fr = {
   'login.wrong': 'Mot de passe incorrect.',
   'login.rateLimited': 'Trop de tentatives. Réessayez dans une minute.',
   'login.hint': 'Le mot de passe est celui défini dans la variable APP_PASSWORD.',
+  'login.setupProblem': 'Le serveur n’est pas encore prêt :',
+  'login.serverError': 'Le serveur a répondu par l’erreur {status} au lieu du portail.',
+  'login.guide': 'Guide d’installation pas à pas',
 
   'nav.all': 'Tous les numéros',
   'nav.allShort': 'Tous',

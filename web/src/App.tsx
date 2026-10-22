@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { setUnauthorizedHandler } from './api';
+import { configProblem, setUnauthorizedHandler } from './api';
 import { useLang } from './i18n';
 import { refreshPush, serviceWorker } from './lib/push';
 import { navigate, useRoute } from './lib/router';
@@ -14,13 +14,15 @@ export function App() {
   const route = useRoute();
   const session = useStore((s) => s.session);
   const [booted, setBooted] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     // Displays notifications on mobile browsers and opens conversations from them.
     void serviceWorker();
     setUnauthorizedHandler(() => void loadSession().catch(() => undefined));
     loadSession()
-      .catch(() => undefined)
+      // A server that is not set up yet says why: the sign-in page shows it.
+      .catch((err: unknown) => setProblem(configProblem(err)))
       .finally(() => setBooted(true));
   }, []);
 
@@ -44,7 +46,7 @@ export function App() {
   if (!session?.authenticated) {
     return (
       <>
-        <Login onSuccess={() => void loadSession()} />
+        <Login problem={problem} onSuccess={() => void loadSession()} />
         <Toasts />
       </>
     );

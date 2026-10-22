@@ -27,6 +27,9 @@ export const en: Record<MessageKey, string> = {
   'login.wrong': 'Wrong password.',
   'login.rateLimited': 'Too many attempts. Try again in a minute.',
   'login.hint': 'Use the password set in the APP_PASSWORD variable.',
+  'login.setupProblem': 'The server is not ready yet:',
+  'login.serverError': 'The server answered with error {status} instead of the portal.',
+  'login.guide': 'Step-by-step installation guide',
 
   'nav.all': 'All numbers',
   'nav.allShort': 'All',

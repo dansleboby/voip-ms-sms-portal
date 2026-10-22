@@ -21,6 +21,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server's own words about a setup problem (PHP too old, config.php
+ * missing, data folder not writable…), when that is what went wrong.
+ */
+export function configProblem(err: unknown): string | null {
+  return err instanceof ApiError && err.code === 'config_error' && typeof err.body.message === 'string' ? err.body.message : null;
+}
+
 /** Called when the server says the session is gone. */
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(handler: () => void): void {
