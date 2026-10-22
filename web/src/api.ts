@@ -116,7 +116,9 @@ export const api = {
   updateContact: (id: number, c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>
     request<ContactDto>('PUT', `/api/contacts/${id}`, c),
   deleteContact: (id: number) => request<{ ok: true }>('DELETE', `/api/contacts/${id}`),
-  importContacts: (vcard: string) => request<{ imported: number; skipped: number }>('POST', '/api/contacts/import', { vcard }),
+  /** At most MAX_DELETE_IDS (shared/contact.ts) per request. */
+  deleteContacts: (ids: number[]) => request<{ deleted: number }>('POST', '/api/contacts/delete', { ids }),
+  importContacts: (vcard: string) => request<{ imported: number; skipped: number; ids: number[] }>('POST', '/api/contacts/import', { vcard }),
 
   pushKey: () => request<{ publicKey: string }>('GET', '/api/push/key'),
   savePushSubscription: (subscription: object) => request<{ ok: true }>('POST', '/api/push/subscriptions', subscription),

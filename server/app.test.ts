@@ -623,7 +623,9 @@ describe('contacts', () => {
       'END:VCARD',
     ].join('\r\n');
     const res = await app.inject({ method: 'POST', url: '/api/contacts/import', headers: { cookie }, payload: { vcard } });
-    expect(res.json()).toEqual({ imported: 2, skipped: 0 });
+    // With the new contacts' ids, for Undo.
+    const ids = services.repo.listContacts().map((c) => c.id);
+    expect(res.json()).toEqual({ imported: 2, skipped: 0, ids: expect.arrayContaining(ids) });
     expect(services.repo.listContacts()).toEqual([
       expect.objectContaining({ name: 'Garage Bélanger', phones: ['4505550111'] }),
       expect.objectContaining({ name: 'Marie Tremblay', phones: ['4385550142'] }),

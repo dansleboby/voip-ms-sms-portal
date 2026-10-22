@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Services } from '../app.js';
 import { parseVCards } from '../vcard.js';
-import { CONTACT_ICONS } from '../../shared/contact.js';
+import { CONTACT_ICONS, MAX_DELETE_IDS } from '../../shared/contact.js';
 import { isValidNanp, normalizePhone } from '../../shared/phone.js';
 import type { ContactDto } from '../../shared/types.js';
 
@@ -22,6 +22,7 @@ const ContactBody = z.object({
 
 const IdParams = z.object({ id: z.coerce.number().int().positive() });
 const ImportBody = z.object({ vcard: z.string().max(10 * 1024 * 1024) });
+const DeleteBody = z.object({ ids: z.array(z.number().int().positive()).min(1).max(MAX_DELETE_IDS) });
 
 export function registerContactRoutes(app: FastifyInstance, s: Services): void {
   const changed = () => {
@@ -63,10 +64,21 @@ export function registerContactRoutes(app: FastifyInstance, s: Services): void {
     return { ok: true };
   });
 
-  /** Imports a .vcf file; numbers already assigned to a contact are left alone. */
+  /** Deletes several contacts at once (a whole list imported by mistake); their conversations stay. */
+  app.post('/api/contacts/delete', async (req) => {
+    const { ids } = DeleteBody.parse(req.body);
+    const deleted = s.repo.deleteContacts([...new Set(ids)]);
+    if (deleted) changed();
+    return { deleted };
+  });
+
+  /**
+   * Imports a .vcf file; numbers already assigned to a contact are left alone.
+   * Returns the new contacts' ids, so that the import can be undone.
+   */
   app.post('/api/contacts/import', { bodyLimit: 12 * 1024 * 1024 }, async (req) => {
     const { vcard } = ImportBody.parse(req.body);
-    let imported = 0;
+    const ids: number[] = [];
     let skipped = 0;
     s.repo.transaction(() => {
       for (const contact of parseVCards(vcard)) {
@@ -75,11 +87,10 @@ export function registerContactRoutes(app: FastifyInstance, s: Services): void {
           skipped++;
           continue;
         }
-        s.repo.saveContact({ name: contact.name, phones: free });
-        imported++;
+        ids.push(s.repo.saveContact({ name: contact.name, phones: free }));
       }
     });
-    if (imported) changed();
-    return { imported, skipped };
+    if (ids.length) changed();
+    return { imported: ids.length, skipped, ids };
   });
 }

@@ -20,6 +20,9 @@ final class ContactRoutes
         'heart', 'star', 'house', 'users', 'baby', 'dog', 'briefcase', 'building', 'car', 'wrench', 'stethoscope', 'graduation-cap',
     ];
 
+    /** shared/contact.ts: the client sends longer lists in several requests. */
+    private const MAX_DELETE_IDS = 5000;
+
     public static function register(App $app): void
     {
         $r = $app->router;
@@ -73,26 +76,38 @@ final class ContactRoutes
             return Response::json(['ok' => true]);
         });
 
-        /** Imports a .vcf file; numbers already given to a contact are left alone. */
+        /** Deletes several contacts at once (a whole list imported by mistake); their conversations stay. */
+        $r->add('POST', '/api/contacts/delete', function (Request $req) use ($repo, $changed): Response {
+            $ids = array_values(array_unique((new Input($req->json()))->idList('ids', 1, self::MAX_DELETE_IDS)));
+            $deleted = $repo->deleteContacts($ids);
+            if ($deleted) {
+                $changed();
+            }
+            return Response::json(['deleted' => $deleted]);
+        });
+
+        /**
+         * Imports a .vcf file; numbers already given to a contact are left alone.
+         * Returns the new contacts' ids, so that the import can be undone.
+         */
         $r->add('POST', '/api/contacts/import', function (Request $req) use ($repo, $changed): Response {
             $vcard = (new Input($req->json()))->string('vcard', 0, 10 * 1024 * 1024);
-            $imported = 0;
+            $ids = [];
             $skipped = 0;
-            $repo->transaction(function () use ($repo, $vcard, &$imported, &$skipped): void {
+            $repo->transaction(function () use ($repo, $vcard, &$ids, &$skipped): void {
                 foreach (VCard::parse($vcard) as $contact) {
                     $free = array_values(array_filter($contact['phones'], static fn (string $p) => !$repo->conflictingPhones([$p], null)));
                     if (!$free) {
                         $skipped++;
                         continue;
                     }
-                    $repo->saveContact(null, $contact['name'], null, $free);
-                    $imported++;
+                    $ids[] = $repo->saveContact(null, $contact['name'], null, $free);
                 }
             });
-            if ($imported) {
+            if ($ids) {
                 $changed();
             }
-            return Response::json(['imported' => $imported, 'skipped' => $skipped]);
+            return Response::json(['imported' => count($ids), 'skipped' => $skipped, 'ids' => $ids]);
         });
     }
 }

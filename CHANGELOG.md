@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.7.0 (2026-10-22)
+
+- **Deleting contacts in bulk.** *Select* on the Contacts page lets you tick contacts, or all of them at once with *Select all* (after a search, all the contacts it found), and delete them together; their conversations stay, under their phone numbers. Before, contacts could only be deleted one at a time.
+- Right after a vCard import, the message offers *Undo*, which removes the contacts the import added: the wrong file is no longer 500 contacts to delete by hand.
+
 ## 1.6.1 (2026-10-21)
 
 - Shared hosting: a document root set on the private `sms-portal` folder, or a site moved inside it, now gets a page saying what to change, in English and French, instead of a bare "Forbidden".

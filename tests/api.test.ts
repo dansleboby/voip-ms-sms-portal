@@ -277,7 +277,31 @@ describe.each(backendNames)('%s server', (name) => {
       'BEGIN:VCARD', 'FN:Nouvelle Personne', 'TEL:819-555-0177', 'END:VCARD',
       'BEGIN:VCARD', 'FN:Déjà là', `TEL:${MARIE}`, 'END:VCARD',
     ].join('\r\n');
-    expect((await client.post('/api/contacts/import', { vcard })).json).toEqual({ imported: 1, skipped: 1 });
+    expect((await client.post('/api/contacts/import', { vcard })).json).toEqual({ imported: 1, skipped: 1, ids: [expect.any(Number)] });
+  });
+
+  it('deletes contacts in bulk, such as a list imported by mistake, keeping their conversations', async () => {
+    const vcard = ['Un', 'Deux', 'Trois'].map((name, i) => `BEGIN:VCARD\r\nFN:Lot ${name}\r\nTEL:873-555-010${i}\r\nEND:VCARD`).join('\r\n');
+    const imported = (await client.post('/api/contacts/import', { vcard })).json as { imported: number; ids: number[] };
+    expect(imported.imported).toBe(3);
+    const names = async () => ((await client.get('/api/contacts')).json as ContactDto[]).map((c) => c.name).filter((n) => n.startsWith('Lot '));
+    expect(await names()).toEqual(['Lot Deux', 'Lot Trois', 'Lot Un']);
+    expect((await sendForm({ did: MONTREAL, to: '8735550100', body: 'Bonjour' })).status).toBe(202);
+
+    // Ids that are gone, or listed twice, are not counted.
+    const [first, ...rest] = imported.ids;
+    expect((await client.post('/api/contacts/delete', { ids: [first, first, 999_999] })).json).toEqual({ deleted: 1 });
+    expect((await client.post('/api/contacts/delete', { ids: rest })).json).toEqual({ deleted: 2 });
+    expect(await names()).toEqual([]);
+    expect((await client.post('/api/contacts/delete', { ids: rest })).json).toEqual({ deleted: 0 });
+    // The conversation stays, under its number.
+    const kept = ((await client.get('/api/conversations?q=8735550100')).json as ConversationDto[])[0]!;
+    expect(kept).toMatchObject({ phone: '8735550100', contact: null });
+
+    for (const ids of [[], [0], ['12'], [1.5], Array.from({ length: 5001 }, (_, i) => i + 1)]) {
+      expect((await client.post('/api/contacts/delete', { ids })).status).toBe(400);
+    }
+    expect((await client.post('/api/contacts/delete', {})).status).toBe(400);
   });
 
   it('takes push subscriptions', async () => {

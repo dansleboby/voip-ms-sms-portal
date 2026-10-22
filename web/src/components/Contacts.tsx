@@ -1,19 +1,34 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowLeft, MessageSquarePlus, Search, Upload, UserPlus } from 'lucide-react';
+import { ArrowLeft, ListChecks, Loader2, MessageSquarePlus, Search, SquareCheckBig, SquareMinus, Trash2, Upload, UserPlus, X } from 'lucide-react';
 import { api } from '../api';
 import { t } from '../i18n';
 import { navigate } from '../lib/router';
 import { loadContacts, loadConversations, toast, toastError, useStore } from '../store';
 import { ContactDialog } from './ContactDialog';
-import { Avatar } from './ui';
+import { Avatar, Dialog } from './ui';
+import { MAX_DELETE_IDS } from '../../../shared/contact';
 import { formatPhone, searchDigits } from '../../../shared/phone';
 import { foldText } from '../../../shared/text';
 import type { ContactDto } from '../../../shared/types';
+
+/** Deletes any number of contacts, MAX_DELETE_IDS per request; resolves with how many were deleted. */
+async function deleteContacts(ids: number[]): Promise<number> {
+  let deleted = 0;
+  for (let i = 0; i < ids.length; i += MAX_DELETE_IDS) {
+    deleted += (await api.deleteContacts(ids.slice(i, i + MAX_DELETE_IDS))).deleted;
+  }
+  await Promise.all([loadContacts(), loadConversations()]);
+  return deleted;
+}
 
 export function Contacts() {
   const contacts = useStore((s) => s.contacts);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<ContactDto | 'new' | null>(null);
+  /** Ids ticked in selection mode; null outside of it. */
+  const [selection, setSelection] = useState<Set<number> | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
@@ -23,43 +38,119 @@ export function Contacts() {
     return contacts.filter((c) => foldText(c.name).includes(q) || (digits.length >= 3 && c.phones.some((p) => p.includes(digits))));
   }, [contacts, query]);
 
+  // Contacts deleted meanwhile (on another device) drop out of the selection.
+  const chosen = useMemo(() => (selection ? contacts.filter((c) => selection.has(c.id)).map((c) => c.id) : []), [contacts, selection]);
+  // "Select all" takes what the search shows: search, then select all, deletes just those.
+  const allShownChosen = selection !== null && filtered.length > 0 && filtered.every((c) => selection.has(c.id));
+
+  const toggle = (id: number) =>
+    setSelection((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAllShown = () =>
+    setSelection((s) => {
+      const next = new Set(s);
+      for (const c of filtered) {
+        if (allShownChosen) next.delete(c.id);
+        else next.add(c.id);
+      }
+      return next;
+    });
+
+  const removeChosen = async () => {
+    setDeleting(true);
+    try {
+      const deleted = await deleteContacts(chosen);
+      toast(t('contacts.deletedMany', { count: deleted }));
+      setSelection(null);
+      setConfirming(false);
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const importFile = async (file: File) => {
     try {
       const result = await api.importContacts(await file.text());
-      toast(t('contacts.imported', result));
       await Promise.all([loadContacts(), loadConversations()]);
+      // The wrong file is easy to pick: the contacts it added can go again in one tap.
+      const undo = async () => {
+        try {
+          toast(t('contacts.deletedMany', { count: await deleteContacts(result.ids) }));
+        } catch (err) {
+          toastError(err);
+        }
+      };
+      toast(t('contacts.imported', { imported: result.imported, skipped: result.skipped }), 'info', result.ids.length ? { label: t('common.undo'), run: () => void undo() } : undefined);
     } catch (err) {
       toastError(err);
     }
   };
 
+  const header = selection ? (
+    <header className="page-header">
+      <button className="icon-btn" aria-label={t('common.cancel')} title={t('common.cancel')} onClick={() => setSelection(null)}>
+        <X size={22} />
+      </button>
+      <h2>{t('contacts.selected', { count: chosen.length })}</h2>
+      <button
+        className="btn text"
+        onClick={toggleAllShown}
+        disabled={filtered.length === 0}
+        aria-label={t(allShownChosen ? 'contacts.selectNone' : 'contacts.selectAll')}
+        title={t(allShownChosen ? 'contacts.selectNone' : 'contacts.selectAll')}
+      >
+        {allShownChosen ? <SquareMinus size={18} /> : <SquareCheckBig size={18} />}
+        <span className="desktop-only">{t(allShownChosen ? 'contacts.selectNone' : 'contacts.selectAll')}</span>
+      </button>
+      <button className="btn danger" onClick={() => setConfirming(true)} disabled={chosen.length === 0} aria-label={t('common.delete')} title={t('common.delete')}>
+        <Trash2 size={18} />
+        <span className="desktop-only">{t('common.delete')}</span>
+      </button>
+    </header>
+  ) : (
+    <header className="page-header">
+      <button className="icon-btn mobile-only" aria-label={t('common.back')} onClick={() => navigate({ name: 'home' })}>
+        <ArrowLeft size={22} />
+      </button>
+      <h2>{t('contacts.title')}</h2>
+      {contacts.length > 0 && (
+        <button className="btn text" onClick={() => setSelection(new Set())} aria-label={t('contacts.select')} title={t('contacts.select')}>
+          <ListChecks size={18} />
+          <span className="desktop-only">{t('contacts.select')}</span>
+        </button>
+      )}
+      <button className="btn text" onClick={() => fileInput.current?.click()}>
+        <Upload size={18} />
+        <span className="desktop-only">{t('contacts.import')}</span>
+      </button>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".vcf,text/vcard,text/x-vcard"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void importFile(file);
+          e.target.value = '';
+        }}
+      />
+      <button className="btn tonal" onClick={() => setEditing('new')}>
+        <UserPlus size={18} />
+        <span className="desktop-only">{t('contacts.new')}</span>
+      </button>
+    </header>
+  );
+
   return (
     <>
-      <header className="page-header">
-        <button className="icon-btn mobile-only" aria-label={t('common.back')} onClick={() => navigate({ name: 'home' })}>
-          <ArrowLeft size={22} />
-        </button>
-        <h2>{t('contacts.title')}</h2>
-        <button className="btn text" onClick={() => fileInput.current?.click()}>
-          <Upload size={18} />
-          <span className="desktop-only">{t('contacts.import')}</span>
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".vcf,text/vcard,text/x-vcard"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void importFile(file);
-            e.target.value = '';
-          }}
-        />
-        <button className="btn tonal" onClick={() => setEditing('new')}>
-          <UserPlus size={18} />
-          <span className="desktop-only">{t('contacts.new')}</span>
-        </button>
-      </header>
+      {header}
       <div className="page">
         <div className="page-inner">
           <label className="search">
@@ -72,31 +163,66 @@ export function Contacts() {
             </p>
           ) : (
             <div className="card">
-              {filtered.map((c) => (
-                <div key={c.id} className="contact-item" role="button" tabIndex={0} onClick={() => setEditing(c)} onKeyDown={(e) => e.key === 'Enter' && setEditing(c)}>
-                  <Avatar name={c.name} seed={c.phones[0] ?? c.name} look={c} />
-                  <div className="row-main">
-                    <div className="row-title">{c.name}</div>
-                    <div className="row-sub">{c.phones.map(formatPhone).join(' · ')}</div>
-                  </div>
-                  <button
-                    className="icon-btn"
-                    aria-label={t('contacts.message')}
-                    title={t('contacts.message')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate({ name: 'new', phone: c.phones[0] });
+              {filtered.map((c) => {
+                const ticked = selection?.has(c.id) ?? false;
+                const activate = () => (selection ? toggle(c.id) : setEditing(c));
+                return (
+                  <div
+                    key={c.id}
+                    className={ticked ? 'contact-item selected' : 'contact-item'}
+                    role={selection ? 'checkbox' : 'button'}
+                    aria-checked={selection ? ticked : undefined}
+                    tabIndex={0}
+                    onClick={activate}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || (selection && e.key === ' ')) {
+                        e.preventDefault();
+                        activate();
+                      }
                     }}
                   >
-                    <MessageSquarePlus size={20} />
-                  </button>
-                </div>
-              ))}
+                    {selection && <input type="checkbox" className="contact-check" checked={ticked} readOnly tabIndex={-1} aria-hidden="true" />}
+                    <Avatar name={c.name} seed={c.phones[0] ?? c.name} look={c} />
+                    <div className="row-main">
+                      <div className="row-title">{c.name}</div>
+                      <div className="row-sub">{c.phones.map(formatPhone).join(' · ')}</div>
+                    </div>
+                    {!selection && (
+                      <button
+                        className="icon-btn"
+                        aria-label={t('contacts.message')}
+                        title={t('contacts.message')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate({ name: 'new', phone: c.phones[0] });
+                        }}
+                      >
+                        <MessageSquarePlus size={20} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       </div>
       {editing && <ContactDialog contact={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {confirming && (
+        <Dialog title={t('contacts.deleteManyTitle', { count: chosen.length })} onClose={() => !deleting && setConfirming(false)}>
+          <p className="dialog-text">{t('contacts.deleteManyBody')}</p>
+          <div className="dialog-actions">
+            <span className="spacer" />
+            <button type="button" className="btn text" onClick={() => setConfirming(false)} disabled={deleting}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn danger-filled" onClick={() => void removeChosen()} disabled={deleting}>
+              {deleting && <Loader2 size={18} className="spin" />}
+              {t('common.delete')}
+            </button>
+          </div>
+        </Dialog>
+      )}
     </>
   );
 }
