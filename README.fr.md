@@ -94,6 +94,8 @@ Par défaut, le portail interroge VoIP.ms à intervalles réguliers, ce qui fonc
 - Un appel de VoIP.ms ne fait que déclencher une vérification immédiate de VoIP.ms : un appel qui ne viendrait pas de VoIP.ms ne peut donc pas ajouter de faux texto. Son adresse contient tout de même un secret.
 - Une vérification a encore lieu toutes les 15 minutes : VoIP.ms n'appelle que pour les textos que reçoivent vos numéros, pas pour ceux envoyés depuis d'autres applications, et un appel peut se perdre pendant un arrêt du serveur.
 
+![Étape de l'assistant pour choisir la réception des textos, webhook activé](docs/screenshots/fr/setup-receiving.png)
+
 ### Réglages
 
 Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, synchronisez maintenant ou importez l'historique plus ancien, testez la connexion à VoIP.ms et choisissez les notifications, le thème et la langue.

@@ -86,6 +86,8 @@ async function startServer(): Promise<{ url: string; stop: () => void }> {
       HOST: '127.0.0.1',
       PORT: String(port),
       LOG_LEVEL: 'error',
+      // The address VoIP.ms would call back: the wizard can then show the webhook turned on.
+      PUBLIC_URL: 'https://sms.example.com',
       // No check of the account while shooting: nothing should move.
       POLL_INTERVAL_ACTIVE: '3600',
       POLL_INTERVAL_IDLE: '3600',
@@ -186,6 +188,11 @@ async function newContext(browser: Browser, lang: Language, mobile = false, from
   await context.addInitScript({ content: FAKE_PUSH });
   // The made-up subscription would not pass the server's checks.
   await context.route('**/api/push/subscriptions', (route) => route.fulfill({ json: { ok: true } }));
+  // The server checks hourly so that nothing moves; pages show the default pace, as readers have it.
+  await context.route('**/api/session', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), pollActiveSeconds: 10, pollIdleSeconds: 60 } });
+  });
   return context;
 }
 
@@ -225,8 +232,11 @@ async function shoot(browser: Browser, lang: Language): Promise<Shooter> {
     await s.save('setup-numbers', shot(card));
 
     await button('common.continue').click();
-    // Receiving texts: regular checks, as a demo on a local address has no webhook to offer.
-    await card.locator('.receiving .choice').first().waitFor();
+    // Receiving texts: the webhook turned on, with Laval still calling the demo's CRM.
+    await card.locator('.receiving input[type=radio]').nth(1).click();
+    await card.locator('.receiving-number').first().waitFor();
+    await settle(page);
+    await s.save('setup-receiving', shot(card));
     await button('common.continue').click();
     await button('setup.history.finish').click();
     await page.getByText(s.t('setup.cron.title')).waitFor();

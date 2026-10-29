@@ -94,6 +94,8 @@ By default the portal checks VoIP.ms on a schedule, which works anywhere, even o
 - A call from VoIP.ms only makes the portal check VoIP.ms right away, so a call that does not come from VoIP.ms cannot bring in a fake text. Its address holds a secret all the same.
 - A check still runs every 15 minutes: VoIP.ms only calls for texts your numbers receive, not for those sent from other apps, and a call can be missed while the server is down.
 
+![Wizard step choosing how texts are received, with the webhook on](docs/screenshots/en/setup-receiving.png)
+
 ### Settings
 
 Rename or recolor numbers, turn off the ones you do not use, sync now or import older history, test the VoIP.ms connection, and choose notifications, theme and language.
