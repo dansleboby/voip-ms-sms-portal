@@ -34,6 +34,7 @@ final class App
     public readonly RemoteDeletions $deletions;
     public readonly Push $push;
     public readonly Updates $updates;
+    public readonly Webhook $webhook;
     public readonly Router $router;
     public readonly string $version;
 
@@ -71,6 +72,17 @@ final class App
         );
         $this->media = new Media("$dataDir/media", $dataDir, $this->repo, $this->events);
         $this->push = new Push($this->repo, $this->events, $config->vapidSubject, fn () => $this->credentials->fingerprint('push-subscriptions'));
+        // A call from VoIP.ms checks it after the answer, once a check already running is done,
+        // then fetches the pictures of the MMS it found, as the Docker version does right away.
+        $this->webhook = new Webhook(
+            $this->repo,
+            fn () => $this->client(),
+            $config->publicOrigin,
+            fn () => $this->defer(function (): void {
+                $this->sync->syncRecent(wait: true);
+                $this->media->drain(microtime(true) + self::BACKGROUND_BUDGET_S);
+            }),
+        );
         $this->sync = new Sync(
             repo: $this->repo,
             events: $this->events,
@@ -82,6 +94,7 @@ final class App
             lockDir: $dataDir,
             onIncoming: fn (array $items) => $this->push->notifyIncoming($items),
             cronCommand: self::cronCommand($config->appDir),
+            webhook: $this->webhook,
         );
         $this->sender = new Sender($this->repo, $this->events, $this->media, $this->sync, fn () => $this->client(), $dataDir, fn (callable $work) => $this->defer($work));
         $this->deletions = new RemoteDeletions($this->repo, fn () => $this->client(), $dataDir);
@@ -109,6 +122,7 @@ final class App
         Routes\ContactRoutes::register($this);
         Routes\PushRoutes::register($this);
         Routes\UpdateRoutes::register($this);
+        Routes\WebhookRoutes::register($this);
     }
 
     public static function boot(string $appDir, ?string $siteDir = null): self
@@ -180,14 +194,15 @@ final class App
     }
 
     /**
-     * After a tab's poll: the check of VoIP.ms when due, then queued history
-     * and media downloads, for a limited time.
+     * After a tab's poll: the check of VoIP.ms when due ($opening: the tab's
+     * first poll, which checks even while VoIP.ms announces texts), then queued
+     * history and media downloads, for a limited time.
      */
-    public function background(bool $active): void
+    public function background(bool $active, bool $opening = false): void
     {
-        $this->defer(function () use ($active): void {
+        $this->defer(function () use ($active, $opening): void {
             $deadline = microtime(true) + self::BACKGROUND_BUDGET_S;
-            if ($this->sync->isDue($active)) {
+            if ($this->sync->isDue($active, $opening)) {
                 $this->sync->syncRecent();
             }
             $this->sync->continueImport($deadline);

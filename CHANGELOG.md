@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 1.8.0 (2026-10-29)
+
+- **Texts announced by VoIP.ms.** Instead of checking VoIP.ms on a schedule, the portal can have VoIP.ms call it as soon as one of your numbers receives a text: choose *Instantly, through a VoIP.ms webhook* in the setup wizard or in *Settings* → *Receiving texts*. It needs an address VoIP.ms can reach over HTTPS: shared hosting always has one; with Docker, set `PUBLIC_URL`. The portal sets each number's "SMS/MMS URL Callback" at VoIP.ms itself, keeping the number's other settings. A number that already sends its texts to another address keeps it unless you choose *Replace*, and gets it back when you go back to regular checks. A check still runs every 15 minutes, for texts sent from other apps and calls missed while the server was down. On shared hosting, texts no longer wait for the cron job.
+
 ## 1.7.1 (2026-10-22)
 
 - **Step-by-step installation guide** for first-time self-hosters, in English ([docs/install.md](docs/install.md)) and French ([docs/install.fr.md](docs/install.fr.md)): what you need and which option to choose, every click on cPanel web hosting or with Docker, the setup wizard, the phone, and what to do when something goes wrong. The READMEs and the `INSTALL.txt` of the cPanel zip link to it.

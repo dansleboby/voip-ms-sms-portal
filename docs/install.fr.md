@@ -125,13 +125,19 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
    3. De retour dans l'assistant, cliquez sur **Vérifier l’accès**. VoIP.ms peut prendre une minute à appliquer le changement.
    4. Quand l'assistant affiche « Connexion réussie », cliquez sur **Continuer**.
 5. **Vos numéros** : donnez à chacun un nom et une couleur si vous voulez. Un numéro dont les SMS sont désactivés peut être activé ici. Cliquez sur **Continuer**.
-6. **Historique** : choisissez combien de vos anciens textos récupérer, puis cliquez sur **Terminer**.
-7. **cPanel seulement, Vérifications en arrière-plan.** L'assistant affiche une commande comme `/usr/local/bin/php /home/vous/sms-portal/cron.php`. C'est elle qui récupère les nouveaux textos, et envoie les notifications, quand le portail est fermé.
+6. **Réception des textos** : comment le portail apprend qu'un texto est arrivé.
+   - Sur cPanel, ou avec Docker en HTTPS : choisissez **Instantanée, par webhook VoIP.ms**. Le portail règle lui-même vos numéros chez VoIP.ms, et les textos apparaissent alors en quelques secondes.
+   - Si un numéro envoie déjà ses textos ailleurs (une autre application), c'est indiqué : cliquez sur **Remplacer** pour qu'il appelle plutôt le portail. Revenir à la vérification régulière lui rend son ancien réglage.
+   - Avec Docker à la maison, sans adresse HTTPS, gardez **Vérification régulière**.
+
+   Cliquez sur **Continuer**.
+7. **Historique** : choisissez combien de vos anciens textos récupérer, puis cliquez sur **Terminer**.
+8. **cPanel seulement, Vérifications en arrière-plan.** L'assistant affiche une commande comme `/usr/local/bin/php /home/vous/sms-portal/cron.php`. C'est elle qui récupère les nouveaux textos, et envoie les notifications, quand le portail est fermé. Avec le webhook, elle tourne quand même, comme filet de sécurité, et télécharge les images des MMS.
    1. Copiez la commande.
    2. Dans cPanel, ouvrez **Tâches Cron** (*Cron Jobs*). Sous **Ajouter une nouvelle tâche Cron** (*Add New Cron Job*), dans **Paramètres communs** (*Common Settings*), choisissez **Une fois par minute (\* \* \* \* \*)** (*Once Per Minute*).
    3. Collez la commande dans **Commande** (*Command*) et cliquez sur **Ajouter une nouvelle tâche Cron**.
    4. De retour dans l'assistant, attendez qu'il voie la première exécution, dans la minute.
-8. Cliquez sur **Ouvrir mes messages**. C'est prêt!
+9. Cliquez sur **Ouvrir mes messages**. C'est prêt!
 
 ## 4. Sur votre téléphone
 
@@ -150,7 +156,7 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
 | « **Courriel ou mot de passe API incorrect.** » dans l'assistant | Utilisez le mot de passe API de l'étape 1, pas votre mot de passe de connexion à VoIP.ms, et le courriel avec lequel vous vous connectez à VoIP.ms. Au besoin, enregistrez un nouveau mot de passe API sur la page de VoIP.ms et tapez-le de nouveau. |
 | « **Cette adresse IP n’est pas autorisée dans VoIP.ms.** » | L'adresse affichée par l'assistant n'est pas encore enregistrée dans **Enable IP Addresses** : collez-la, cliquez sur **Save IP Addresses**, attendez une minute, puis cliquez de nouveau sur **Vérifier l’accès**. |
 | « **L’API n’est pas activée dans votre compte VoIP.ms.** » | Cliquez sur **Enable/Disable API** sur la page API de VoIP.ms (étape 1, point 3). |
-| Les nouveaux textos n'arrivent que quand le portail est ouvert (cPanel) | La tâche cron manque ou s'est arrêtée. Les **Réglages** l'indiquent par une pastille rouge et donnent la commande à ajouter dans cPanel → **Tâches Cron** (étape 3, point 7). |
+| Les nouveaux textos n'arrivent que quand le portail est ouvert (cPanel) | La tâche cron manque ou s'est arrêtée. Les **Réglages** l'indiquent par une pastille rouge et donnent la commande à ajouter dans cPanel → **Tâches Cron** (étape 3, point 8). Ou activez le webhook (étape 3, point 6), qui fait arriver les textos sans l'attendre. |
 | Pas de notifications sur le téléphone | L'adresse doit commencer par `https://`. Sur iPhone, ouvrez le portail depuis son icône de l'écran d'accueil. Activez ensuite les notifications dans les **Réglages**, et essayez **Envoyer une notification test**. |
 | Docker : la page ne s'ouvre pas | Dans le dossier, `docker compose ps` indique s'il tourne, et `docker compose logs` pourquoi il ne tourne pas. |
 

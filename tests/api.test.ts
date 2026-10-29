@@ -453,3 +453,92 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
     }
   }, 30_000);
 });
+
+describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) => {
+  const LAVAL = '4505550199';
+  const GATINEAU = '8195550123';
+  /** Laval's callback in the demo account, to another system. */
+  const CRM = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
+  let backend: Backend;
+  let client: Client;
+
+  beforeAll(async () => {
+    backend = await startBackend(name, { PUBLIC_URL: 'https://sms.example.com' });
+    client = new Client(backend.url);
+    await client.login();
+    await client.get('/api/setup/dids');
+    await client.post('/api/setup/complete');
+  }, 30_000);
+
+  afterAll(async () => {
+    await backend?.stop();
+  });
+
+  const states = (status: { numbers: { did: string; state: string }[] }) => Object.fromEntries(status.numbers.map((n) => [n.did, n.state]));
+
+  it('needs a session to change anything', async () => {
+    const stranger = new Client(backend.url);
+    expect((await stranger.get('/api/webhook')).status).toBe(401);
+    expect((await stranger.post('/api/webhook/enable', {})).status).toBe(401);
+    expect((await stranger.post('/api/webhook/disable')).status).toBe(401);
+  });
+
+  it('points the numbers at the portal, leaving another callback alone unless asked', async () => {
+    const before = (await client.get('/api/webhook')).json;
+    expect(before).toMatchObject({ enabled: false, url: null, complete: false, publicUrl: 'https://sms.example.com', safetyMinutes: 15 });
+    expect(states(before)).toEqual({ [MONTREAL]: 'none', [LAVAL]: 'other', [GATINEAU]: 'sms_off' });
+
+    const enabled = (await client.post('/api/webhook/enable', {})).json;
+    expect(enabled.url).toMatch(/^https:\/\/sms\.example\.com\/api\/voipms\/callback\/[\w-]{32}$/);
+    expect(enabled).toMatchObject({ enabled: true, complete: false });
+    expect(states(enabled)).toEqual({ [MONTREAL]: 'ours', [LAVAL]: 'other', [GATINEAU]: 'sms_off' });
+    expect(enabled.numbers.find((n: { did: string }) => n.did === LAVAL)).toMatchObject({ otherUrl: CRM, error: null });
+    expect((await client.post('/api/webhook/enable', { replace: ['450'] })).status).toBe(400);
+
+    const replaced = (await client.post('/api/webhook/enable', { replace: [LAVAL] })).json;
+    expect(replaced).toMatchObject({ enabled: true, complete: true, url: enabled.url });
+    expect(states(replaced)).toEqual({ [MONTREAL]: 'ours', [LAVAL]: 'ours', [GATINEAU]: 'sms_off' });
+    expect((await client.get('/api/sync/status')).json.webhook).toEqual({ lastCallAt: null, complete: true });
+  });
+
+  it('answers VoIP.ms "ok" without a session, only at the secret address', async () => {
+    const { url } = (await client.get('/api/webhook')).json as { url: string };
+    const path = new URL(url).pathname;
+    const stranger = new Client(backend.url);
+    expect((await stranger.get('/api/voipms/callback/not-the-secret')).status).toBe(404);
+    const call = await stranger.get(`${path}?to=${MONTREAL}&from=4385550142&message=Allo&id=1`);
+    expect(call.status).toBe(200);
+    expect(call.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect(call.json).toBe('ok');
+    const webhook = (await client.get('/api/sync/status')).json.webhook;
+    expect(webhook.lastCallAt).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('turns SMS on for a number with the callback already set', async () => {
+    expect((await client.post(`/api/dids/${GATINEAU}/enable-sms`)).json).toMatchObject({ smsEnabled: true });
+    expect(states((await client.get('/api/webhook')).json)[GATINEAU]).toBe('ours');
+  });
+
+  it('gives the numbers back their own callback when turned off', async () => {
+    const off = (await client.post('/api/webhook/disable')).json;
+    expect(off).toMatchObject({ enabled: false, url: null, complete: false });
+    expect(states(off)).toEqual({ [MONTREAL]: 'none', [LAVAL]: 'other', [GATINEAU]: 'none' });
+    expect(off.numbers.find((n: { did: string }) => n.did === LAVAL).otherUrl).toBe(CRM);
+    expect((await client.get('/api/sync/status')).json.webhook).toBeNull();
+  });
+});
+
+describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name) => {
+  it('refuses: VoIP.ms could not reach it, and the secret would travel in clear', async () => {
+    const backend = await startBackend(name);
+    try {
+      const client = new Client(backend.url);
+      await client.login();
+      await client.post('/api/setup/complete');
+      expect(await client.post('/api/webhook/enable', {}, { origin: backend.url })).toMatchObject({ status: 400, json: { error: 'webhook_needs_https' } });
+      expect((await client.get('/api/webhook')).json).toMatchObject({ enabled: false, publicUrl: null });
+    } finally {
+      await backend.stop();
+    }
+  }, 30_000);
+});

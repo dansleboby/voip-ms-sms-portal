@@ -114,6 +114,9 @@ final class RestClient implements VoipMsApi
             'smsAvailable' => self::flag($d['sms_available'] ?? null),
             'smsEnabled' => self::flag($d['sms_enabled'] ?? null),
             'mmsAvailable' => self::flag($d['mms_available'] ?? null),
+            'callback' => self::flag($d['sms_url_callback_enabled'] ?? null) && self::str($d['sms_url_callback'] ?? '') !== ''
+                ? ['url' => self::str($d['sms_url_callback']), 'retry' => self::flag($d['sms_url_callback_retry'] ?? null)]
+                : null,
         ], array_values(array_filter($dids, 'is_array')));
     }
 
@@ -122,7 +125,21 @@ final class RestClient implements VoipMsApi
         $this->call($kind === 'sms' ? 'deleteSMS' : 'deleteMMS', ['id' => $id]);
     }
 
-    public function enableSms(string $did): void
+    public function enableSms(string $did, ?array $callback = null): void
+    {
+        $this->setSms($did, true, $callback === null ? [] : self::callbackParams($callback));
+    }
+
+    public function setCallback(string $did, ?array $callback): void
+    {
+        $this->setSms($did, false, self::callbackParams($callback));
+    }
+
+    /**
+     * setSMS takes every SMS setting of a number at once: the current ones are
+     * given back, with $changes on top, so that nothing else is reset.
+     */
+    private function setSms(string $did, bool $enable, array $changes): void
     {
         $data = $this->call('getDIDsInfo', ['did' => $did]);
         $info = null;
@@ -134,13 +151,24 @@ final class RestClient implements VoipMsApi
         if ($info === null) {
             throw new VoipMsError('invalid_did');
         }
+        if (!$enable && !self::flag($info['sms_enabled'] ?? null)) {
+            throw new VoipMsError('sms_disabled');
+        }
         $params = ['did' => $did, 'enable' => 1];
         foreach (self::SMS_SETTINGS as $reported => $param) {
             if (isset($info[$reported])) {
                 $params[$param] = self::str($info[$reported]);
             }
         }
-        $this->call('setSMS', $params);
+        $this->call('setSMS', $changes + $params);
+    }
+
+    /** @param ?array{url: string, retry: bool} $callback */
+    private static function callbackParams(?array $callback): array
+    {
+        return $callback !== null
+            ? ['url_callback_enable' => 1, 'url_callback' => $callback['url'], 'url_callback_retry' => $callback['retry'] ? 1 : 0]
+            : ['url_callback_enable' => 0, 'url_callback' => '', 'url_callback_retry' => 0];
     }
 
     public function getMessages(string $kind, string $from, string $to, int $limit): array

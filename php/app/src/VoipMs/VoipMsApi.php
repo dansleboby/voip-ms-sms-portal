@@ -17,11 +17,29 @@ interface VoipMsApi
 
     public function getBalance(): float;
 
-    /** @return list<array{did: string, description: ?string, smsAvailable: bool, smsEnabled: bool, mmsAvailable: bool}> */
+    /**
+     * "callback": where VoIP.ms sends a GET for each text the number receives
+     * (its "SMS/MMS URL Callback"); "retry": VoIP.ms calls again every 30
+     * minutes until it gets "ok".
+     *
+     * @return list<array{did: string, description: ?string, smsAvailable: bool, smsEnabled: bool, mmsAvailable: bool, callback: ?array{url: string, retry: bool}}>
+     */
     public function getDids(): array;
 
-    /** Turns SMS on for one of the account's numbers, keeping its other SMS settings. */
-    public function enableSms(string $did): void;
+    /**
+     * Turns SMS on for one of the account's numbers, keeping its other SMS
+     * settings; with $callback, points its URL callback there in the same call.
+     *
+     * @param ?array{url: string, retry: bool} $callback
+     */
+    public function enableSms(string $did, ?array $callback = null): void;
+
+    /**
+     * Points the URL callback of a number with SMS on at $callback, or turns it off; nothing else changes.
+     *
+     * @param ?array{url: string, retry: bool} $callback
+     */
+    public function setCallback(string $did, ?array $callback): void;
 
     /** Messages between two calendar dates, inclusive ("YYYY-MM-DD", VoIP.ms's time zone). */
     public function getMessages(string $kind, string $from, string $to, int $limit): array;

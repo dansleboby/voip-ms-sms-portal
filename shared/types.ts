@@ -113,6 +113,42 @@ export interface SyncStatusDto {
    * to schedule.
    */
   cron?: { lastRunAt: number | null; command: string };
+  /** Texts announced by VoIP.ms's URL callback (null: VoIP.ms is checked on a schedule only). */
+  webhook: WebhookSummaryDto | null;
+}
+
+export interface WebhookSummaryDto {
+  /** Last call from VoIP.ms. */
+  lastCallAt: number | null;
+  /** Every number with SMS on calls back: checks are then down to the safety net. */
+  complete: boolean;
+}
+
+/** A number's SMS URL callback at VoIP.ms, as the portal sees it. */
+export interface WebhookNumberDto {
+  did: string;
+  /**
+   * ours: calls this portal. other: calls another address, left alone unless
+   * replaced. none: no callback. sms_off: SMS is off, nothing to call back.
+   */
+  state: 'ours' | 'other' | 'none' | 'sms_off';
+  /** The other address, to decide whether to replace it. */
+  otherUrl: string | null;
+  /** Why VoIP.ms refused the last change (sms_wait_message: try again in a minute). */
+  error: string | null;
+}
+
+export interface WebhookStatusDto {
+  enabled: boolean;
+  /** The address VoIP.ms calls (it holds the secret). */
+  url: string | null;
+  lastCallAt: number | null;
+  complete: boolean;
+  /** PUBLIC_URL's origin, used for the address when set; otherwise the browser's. */
+  publicUrl: string | null;
+  /** Minutes between the checks that still run, for callbacks VoIP.ms never made and texts sent from other apps. */
+  safetyMinutes: number;
+  numbers: WebhookNumberDto[];
 }
 
 export interface SetupStatusDto {

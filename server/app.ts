@@ -27,6 +27,8 @@ import { registerUpdateRoutes } from './routes/update.js';
 import { UpdateChecker } from './updates.js';
 import { VERSION } from './version.js';
 import { registerSetupRoutes } from './routes/setup.js';
+import { registerWebhookRoutes } from './routes/webhook.js';
+import { WebhookReceiver } from './webhook.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
 const SETUP_COMPLETED_KEY = 'setup.completed';
@@ -43,6 +45,7 @@ export interface Services {
   deletions: RemoteDeletions;
   push: PushService;
   updates: UpdateChecker;
+  webhook: WebhookReceiver;
   /** Client for the configured credentials, or null. */
   client(): VoipMsApi | null;
   /** Client for arbitrary credentials (used to validate them in the wizard). */
@@ -130,6 +133,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     fetch: options.pushFetch,
   });
 
+  // Its calls trigger the sync engine, built next with it to know when to slow down.
+  let syncRef: SyncEngine | null = null;
+  const webhook = new WebhookReceiver({
+    repo,
+    getClient: client,
+    publicOrigin: config.publicOrigin,
+    onCall: () => syncRef?.trigger(),
+  });
   const sync = new SyncEngine({
     repo,
     events,
@@ -141,7 +152,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     pollIdleMs: config.pollIdleMs,
     log,
     onIncoming: (items) => push.notifyIncoming(items),
+    webhook,
   });
+  syncRef = sync;
   const sender = new MessageSender({ repo, events, media, sync, getClient: client, log });
   const deletions = new RemoteDeletions({ repo, getClient: client, log });
   // Deletions at VoIP.ms left over from before a restart.
@@ -163,6 +176,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     sender,
     deletions,
     push,
+    webhook,
     updates: new UpdateChecker({
       repo,
       version: VERSION,
@@ -200,7 +214,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     return payload;
   });
 
-  const publicRoutes = new Set(['/api/health', '/api/session', '/api/auth/login', '/api/auth/logout']);
+  const publicRoutes = new Set(['/api/health', '/api/session', '/api/auth/login', '/api/auth/logout', '/api/voipms/callback/:token']);
   app.addHook('onRequest', async (req, reply) => {
     // Decide on the route the router matched, never on the raw URL: "/%61pi/..." or an
     // absolute-form request line would otherwise reach /api handlers unauthenticated.
@@ -237,6 +251,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   registerAuthRoutes(app, services);
   registerSetupRoutes(app, services);
+  registerWebhookRoutes(app, services);
   registerMessagingRoutes(app, services);
   registerContactRoutes(app, services);
   registerPushRoutes(app, services);

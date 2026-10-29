@@ -9,7 +9,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 ![Conversations from two numbers, with a picture received by MMS](docs/screenshots/en/hero.png)
 
 - **All your numbers in one place.** A side rail (filter chips on mobile) switches between "all numbers" and each DID. Give every number a name and a color to recognize it at a glance; each conversation shows which of your numbers it belongs to and replies always leave from that number.
-- **Incoming texts without exposing anything to the Internet.** The server polls VoIP.ms: every 10 s while the app is open in a browser, every 60 s otherwise. Messages received while the server was down are fetched when it comes back.
+- **Incoming texts, checked or announced.** The server polls VoIP.ms (every 10 s while the app is open in a browser, every 60 s otherwise), which needs nothing exposed to the Internet; or, when the portal is reachable over HTTPS, VoIP.ms calls it as soon as a text comes in. Messages received while the server was down are fetched when it comes back.
 - **SMS or MMS, automatically.** VoIP.ms counts its 160-character SMS limit in *bytes* (an accented letter counts for 2, an emoji for 4). The message box shows the count and switches to MMS when needed, or when you attach a file.
 - **Attachments.** Send pictures, videos, audio clips and vCards (up to 3 per message); large photos are resized in the browser to fit VoIP.ms's 1.2 MB limit. Received media is downloaded and kept locally. Voice messages, including the AMR files phones send them in, play in a player that shows their waveform.
 - **Setup wizard.** It walks you through enabling the API, shows the exact IP address to whitelist, tests the connection, lists your numbers and imports your history.
@@ -54,7 +54,7 @@ Type a name or a number: contacts are suggested as you type. With several number
 
 ### Setup wizard
 
-On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Turning on a number whose SMS is off enables it in your VoIP.ms account; the row says so beforehand.
+On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Turning on a number whose SMS is off enables it in your VoIP.ms account; the row says so beforehand. It then asks how new texts should reach the portal (see [Receiving texts](#receiving-texts)).
 
 | Allowing the IP address | Choosing your numbers |
 | --- | --- |
@@ -85,6 +85,16 @@ Tap a message to show its *Delete* button; the bin in a conversation's header de
 Turn them on in Settings, on each device: phone, computer, tablet. They arrive even when no tab is open, and skip the device where the app is already on screen. Once the app is installed, its icon also shows the number of unread texts (iPhone, iPad, Windows, macOS; Android shows a dot). See [Setting up push notifications](#setting-up-push-notifications) for what they need.
 
 ![Push notification settings](docs/screenshots/en/push.png)
+
+### Receiving texts
+
+By default the portal checks VoIP.ms on a schedule, which works anywhere, even on a home network with nothing open to the Internet. When the portal is reachable over HTTPS (shared hosting always is; with Docker, set `PUBLIC_URL`), choose *Instantly, through a VoIP.ms webhook* in the wizard or in *Settings* → *Receiving texts*: the portal sets each number's "SMS/MMS URL Callback" at VoIP.ms itself, and VoIP.ms then calls the portal as soon as one of your numbers receives a text.
+
+- A number that already sends its texts to another address (a CRM, another app) keeps it unless you choose *Replace*; going back to regular checks gives it back.
+- A call from VoIP.ms only makes the portal check VoIP.ms right away, so a call that does not come from VoIP.ms cannot bring in a fake text. Its address holds a secret all the same.
+- A check still runs every 15 minutes: VoIP.ms only calls for texts your numbers receive, not for those sent from other apps, and a call can be missed while the server is down.
+
+![Wizard step choosing how texts are received, with the webhook on](docs/screenshots/en/setup-receiving.png)
 
 ### Settings
 
@@ -139,7 +149,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 **Compared with Docker:**
 
 - Open tabs ask for updates every 3 s instead of keeping a connection open: a reply or a send's outcome can take a few seconds to show.
-- While the app is closed, the cron job checks VoIP.ms: new texts and push notifications can come up to a minute late, more on hosts that only allow cron jobs every 5 or 15 minutes.
+- While the app is closed, the cron job checks VoIP.ms: new texts and push notifications can come up to a minute late, more on hosts that only allow cron jobs every 5 or 15 minutes. With the [webhook](#receiving-texts) on, they come right away.
 - The IP address to allow in VoIP.ms is the server's, shared with the other sites it hosts: the API password does all the protecting. If the host moves your account to another server, sync stops until the new address is allowed; *Settings* → *Test connection* shows it.
 - Moving from Docker: copy `data/portal.db` and `data/media/` into `sms-portal/data/`. Everything carries over except the VoIP.ms API password, which the wizard asks for again (the two versions derive their encryption key differently), and push notifications, to turn on again on each device.
 
@@ -151,7 +161,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | VoIP.ms account email and API password. Optional: otherwise they are entered in the wizard and stored encrypted with a key derived from `APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
-| `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. |
+| `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. Also the address VoIP.ms calls when texts are announced by webhook. |
 | `LIVE_UPDATES` | `stream` | How open tabs receive new texts and changes. `stream` keeps one connection open per tab (Server-Sent Events); `poll` has each tab ask every 3 s instead, for proxies or hosts that cannot pass a stream through. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` in Docker, `sms-portal/data` on shared hosting) | Database and media location. |
@@ -215,7 +225,7 @@ location / {
 
 ## How it works
 
-- **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread.
+- **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread. With the webhook on, a call from VoIP.ms (`/api/voipms/callback/<secret>`) only starts a check; what it says is never stored, since nothing proves it comes from VoIP.ms.
 - **Media.** VoIP.ms media links are public and can answer 404 for a while after a message is sent, so downloads are retried with backoff for about 6 hours (and on demand from the conversation).
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
 - **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using Node's crypto, without a third-party library.

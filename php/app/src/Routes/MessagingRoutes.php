@@ -83,7 +83,8 @@ final class MessagingRoutes
             }
             $client = $app->client() ?? throw new HttpError(409, 'not_configured');
             if (!$current['smsEnabled']) {
-                $client->enableSms($did);
+                // With webhooks on, the number calls back from the start.
+                $client->enableSms($did, $app->webhook->callbackForNewNumber());
             }
             $info = [];
             foreach ($client->getDids() as $d) {
@@ -255,7 +256,7 @@ final class MessagingRoutes
             if ($after === null || $result['reset']) {
                 array_unshift($result['events'], ['type' => 'sync', 'status' => $app->sync->status()]);
             }
-            $app->background(active: true);
+            $app->background(active: true, opening: $after === null);
             return Response::json($result);
         });
     }

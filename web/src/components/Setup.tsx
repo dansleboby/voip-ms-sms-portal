@@ -6,11 +6,12 @@ import { enableNotifications, notificationsSupported } from '../lib/notify';
 import { loadDids, toastError, useStore } from '../store';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
+import { ReceivingPanel } from './Receiving';
 import { Logo, useNow } from './ui';
 import type { ConnectionTestDto, DidDto, SetupStatusDto } from '../../../shared/types';
 
-type Step = 'welcome' | 'api' | 'creds' | 'ip' | 'numbers' | 'history' | 'cron' | 'done';
-const STEPS: Step[] = ['welcome', 'api', 'creds', 'ip', 'numbers', 'history', 'cron', 'done'];
+type Step = 'welcome' | 'api' | 'creds' | 'ip' | 'numbers' | 'receiving' | 'history' | 'cron' | 'done';
+const STEPS: Step[] = ['welcome', 'api', 'creds', 'ip', 'numbers', 'receiving', 'history', 'cron', 'done'];
 const API_PAGE = 'https://voip.ms/m/api.php';
 const HISTORY_CHOICES = [0, 7, 30, 90, 365];
 
@@ -64,6 +65,7 @@ export function Setup({ onDone, pollActive, pollIdle }: { onDone: () => void; po
         )}
         {step === 'ip' && <IpStep initial={connection} fromEnv={fromEnv} username={status?.username ?? null} onBack={back} onNext={next} />}
         {step === 'numbers' && <NumbersStep onBack={back} onNext={next} />}
+        {step === 'receiving' && <ReceivingStep onBack={back} onNext={next} pollActive={pollActive} pollIdle={pollIdle} />}
         {step === 'history' && <HistoryStep onBack={back} onNext={next} />}
         {step === 'cron' && <CronStep onNext={next} />}
         {step === 'done' && <DoneStep onDone={onDone} pollActive={pollActive} pollIdle={pollIdle} />}
@@ -326,6 +328,21 @@ function NumbersStep({ onNext, onBack }: { onNext: () => void; onBack: () => voi
           {t('setup.numbers.refresh')}
         </button>
         <button className="btn" onClick={onNext} disabled={dids === null}>
+          {t('common.continue')}
+        </button>
+      </Actions>
+    </div>
+  );
+}
+
+function ReceivingStep({ onNext, onBack, pollActive, pollIdle }: { onNext: () => void; onBack: () => void; pollActive: number; pollIdle: number }) {
+  return (
+    <div className="setup-body">
+      <h2>{t('receiving.title')}</h2>
+      <p>{t('receiving.intro')}</p>
+      <ReceivingPanel pollActive={pollActive} pollIdle={pollIdle} />
+      <Actions onBack={onBack}>
+        <button className="btn" onClick={onNext}>
           {t('common.continue')}
         </button>
       </Actions>

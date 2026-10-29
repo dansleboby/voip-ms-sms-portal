@@ -153,8 +153,12 @@ export async function loadArchived(): Promise<void> {
   setState((s) => ({ archived, archivedLoaded: true, known: remember(s.known, archived) }));
 }
 
+export async function loadSync(): Promise<void> {
+  setState({ sync: await api.syncStatus() });
+}
+
 export async function loadAll(): Promise<void> {
-  await Promise.all([loadDids(), loadContacts(), loadConversations(), api.syncStatus().then((sync) => setState({ sync }))]);
+  await Promise.all([loadDids(), loadContacts(), loadConversations(), loadSync()]);
 }
 
 function debounce(fn: () => Promise<void>, ms: number): () => void {

@@ -4,8 +4,9 @@ import type { Logger } from './logger.js';
 import type { MediaStore } from './media.js';
 import { DAY_MS, epochToZonedDate, zonedToEpoch } from './time.js';
 import { VoipMsError, type RemoteKind, type RemoteMessage, type VoipMsApi } from './voipms/client.js';
+import { SAFETY_INTERVAL_MS } from './webhook.js';
 import { normalizePhone } from '../shared/phone.js';
-import type { SyncStatusDto } from '../shared/types.js';
+import type { SyncStatusDto, WebhookSummaryDto } from '../shared/types.js';
 
 const LAST_SUCCESS_KEY = 'sync.lastSuccessAt';
 const LAST_CHECK_KEY = 'sync.lastCheckAt';
@@ -36,6 +37,8 @@ export interface SyncDeps {
   now?: () => number;
   /** Called once per batch with the new incoming texts (not history), e.g. to send push notifications. */
   onIncoming?: (messages: { messageId: number; conversationId: number }[]) => void;
+  /** VoIP.ms announcing texts (server/webhook.ts): with every number covered, checks become a safety net. */
+  webhook?: { complete(): boolean; summary(): WebhookSummaryDto | null };
 }
 
 /** Serializes work that must not interleave (a poll and the bookkeeping of a send). */
@@ -60,6 +63,8 @@ export class SyncEngine {
   private readonly now: () => number;
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
+  /** A sync was asked for while one was running: run another right after. */
+  private again = false;
   private stopped = true;
   private active = false;
   private consecutiveErrors = 0;
@@ -81,6 +86,7 @@ export class SyncEngine {
       lastCheckAt: checked ? Number(checked) : null,
       lastError: this.lastError,
       importing: this.importing,
+      webhook: this.deps.webhook?.summary() ?? null,
     };
   }
 
@@ -119,6 +125,8 @@ export class SyncEngine {
       const base = this.active ? this.deps.pollActiveMs : this.deps.pollIdleMs;
       return Math.min(base * 2 ** (this.consecutiveErrors - 1), MAX_ERROR_BACKOFF_MS);
     }
+    // VoIP.ms says when a text comes in; an opening tab still checks at once (setActive).
+    if (this.deps.webhook?.complete()) return SAFETY_INTERVAL_MS;
     return this.active ? this.deps.pollActiveMs : this.deps.pollIdleMs;
   }
 
@@ -130,13 +138,18 @@ export class SyncEngine {
   }
 
   private async tick(): Promise<void> {
-    if (this.ticking) return;
+    if (this.ticking) {
+      // A text VoIP.ms announced now may have come in after the running check asked for the list.
+      this.again = true;
+      return;
+    }
     this.ticking = true;
     try {
       await this.syncRecent();
     } finally {
       this.ticking = false;
-      this.schedule(this.interval());
+      this.schedule(this.again ? 0 : this.interval());
+      this.again = false;
     }
   }
 

@@ -36,6 +36,14 @@ export interface DidInfo {
   smsAvailable: boolean;
   smsEnabled: boolean;
   mmsAvailable: boolean;
+  /** Where VoIP.ms sends a GET for each text the number receives (its "SMS/MMS URL Callback"). */
+  callback: SmsCallback | null;
+}
+
+/** A number's SMS URL callback; `retry`: VoIP.ms calls again every 30 minutes until it gets "ok". */
+export interface SmsCallback {
+  url: string;
+  retry: boolean;
 }
 
 export type RemoteKind = 'sms' | 'mms';
@@ -69,8 +77,13 @@ export interface VoipMsApi {
   getIP(): Promise<string>;
   getBalance(): Promise<number>;
   getDids(): Promise<DidInfo[]>;
-  /** Turns SMS on for one of the account's numbers, keeping its other SMS settings. */
-  enableSms(did: string): Promise<void>;
+  /**
+   * Turns SMS on for one of the account's numbers, keeping its other SMS
+   * settings; with `callback`, points its URL callback there in the same call.
+   */
+  enableSms(did: string, callback?: SmsCallback): Promise<void>;
+  /** Points the URL callback of a number with SMS on at `callback`, or turns it off; nothing else changes. */
+  setCallback(did: string, callback: SmsCallback | null): Promise<void>;
   getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]>;
   sendSms(did: string, dst: string, message: string): Promise<string>;
   /** `media` holds data URIs ("data:image/png;base64,...") or public URLs, at most 3. */
@@ -108,6 +121,12 @@ const SMS_SETTINGS: [reported: string, param: string][] = [
   ['smpp_user', 'smpp_user'],
   ['smpp_pass', 'smpp_pass'],
 ];
+
+function callbackParams(callback: SmsCallback | null): Params {
+  return callback
+    ? { url_callback_enable: 1, url_callback: callback.url, url_callback_retry: callback.retry ? 1 : 0 }
+    : { url_callback_enable: 0, url_callback: '', url_callback_retry: 0 };
+}
 
 function flag(value: unknown): boolean {
   return value === 1 || value === '1' || value === true;
@@ -204,6 +223,7 @@ export class VoipMsClient implements VoipMsApi {
       smsAvailable: flag(d.sms_available),
       smsEnabled: flag(d.sms_enabled),
       mmsAvailable: flag(d.mms_available),
+      callback: flag(d.sms_url_callback_enabled) && str(d.sms_url_callback) ? { url: str(d.sms_url_callback), retry: flag(d.sms_url_callback_retry) } : null,
     }));
   }
 
@@ -211,15 +231,28 @@ export class VoipMsClient implements VoipMsApi {
     await this.call(kind === 'sms' ? 'deleteSMS' : 'deleteMMS', { id });
   }
 
-  async enableSms(did: string): Promise<void> {
+  async enableSms(did: string, callback?: SmsCallback): Promise<void> {
+    await this.setSms(did, true, callback === undefined ? {} : callbackParams(callback));
+  }
+
+  async setCallback(did: string, callback: SmsCallback | null): Promise<void> {
+    await this.setSms(did, false, callbackParams(callback));
+  }
+
+  /**
+   * setSMS takes every SMS setting of a number at once: the current ones are
+   * given back, with `changes` on top, so that nothing else is reset.
+   */
+  private async setSms(did: string, enable: boolean, changes: Params): Promise<void> {
     const data = await this.call('getDIDsInfo', { did });
     const info = (Array.isArray(data.dids) ? (data.dids as Json[]) : []).find((d) => str(d.did) === did);
     if (!info) throw new VoipMsError('invalid_did');
+    if (!enable && !flag(info.sms_enabled)) throw new VoipMsError('sms_disabled');
     const params: Params = { did, enable: 1 };
     for (const [reported, param] of SMS_SETTINGS) {
       if (info[reported] !== undefined && info[reported] !== null) params[param] = str(info[reported]);
     }
-    await this.call('setSMS', params);
+    await this.call('setSMS', { ...params, ...changes });
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {

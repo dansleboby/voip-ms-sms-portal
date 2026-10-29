@@ -12,9 +12,11 @@ import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
+import { ReceivingPanel } from './Receiving';
 import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
 import type { ConnectionTestDto } from '../../../shared/types';
+import { WEBHOOK_SAFETY_MINUTES } from '../../../shared/webhook';
 
 const IMPORT_CHOICES = [30, 90, 365, 730];
 
@@ -303,8 +305,18 @@ export function Settings() {
           </section>
 
           <section className="section">
+            <h3>{t('receiving.title')}</h3>
+            <p>{t('receiving.intro')}</p>
+            <ReceivingPanel pollActive={session?.pollActiveSeconds ?? 10} pollIdle={session?.pollIdleSeconds ?? 60} />
+          </section>
+
+          <section className="section">
             <h3>{t('settings.sync')}</h3>
-            <p>{t('settings.syncMode', { active: session?.pollActiveSeconds ?? 10, idle: session?.pollIdleSeconds ?? 60 })}</p>
+            <p>
+              {sync?.webhook?.complete
+                ? t('settings.syncWebhook', { minutes: WEBHOOK_SAFETY_MINUTES })
+                : t('settings.syncMode', { active: session?.pollActiveSeconds ?? 10, idle: session?.pollIdleSeconds ?? 60 })}
+            </p>
             <div className="card">
               <div className="row">
                 <div className="row-main">

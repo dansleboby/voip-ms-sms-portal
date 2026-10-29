@@ -69,11 +69,28 @@ describe('VoipMsClient', () => {
 
   it('parses DIDs with mixed string/number flags', async () => {
     const { impl } = fakeFetch([
-      json({ status: 'success', dids: [{ did: '4506575294', description: 'Le Gardeur, QC', sms_available: 1, sms_enabled: '1', mms_available: 1 }] }),
+      json({
+        status: 'success',
+        dids: [
+          { did: '4506575294', description: 'Le Gardeur, QC', sms_available: 1, sms_enabled: '1', mms_available: 1 },
+          // A callback switched off keeps its address at VoIP.ms: it is not one.
+          { did: '5143604702', sms_url_callback_enabled: '0', sms_url_callback: 'https://old.example/sms' },
+          { did: '4385550100', sms_enabled: 1, sms_url_callback_enabled: 1, sms_url_callback: 'https://hook.example/sms?to={TO}', sms_url_callback_retry: '1' },
+        ],
+      }),
     ]);
     const client = new VoipMsClient(creds, { fetch: impl, minIntervalMs: 0 });
     expect(await client.getDids()).toEqual([
-      { did: '4506575294', description: 'Le Gardeur, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true },
+      { did: '4506575294', description: 'Le Gardeur, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
+      { did: '5143604702', description: null, smsAvailable: false, smsEnabled: false, mmsAvailable: false, callback: null },
+      {
+        did: '4385550100',
+        description: null,
+        smsAvailable: false,
+        smsEnabled: true,
+        mmsAvailable: false,
+        callback: { url: 'https://hook.example/sms?to={TO}', retry: true },
+      },
     ]);
   });
 
@@ -105,6 +122,39 @@ describe('VoipMsClient', () => {
       url_callback: 'https://hook.example/sms',
       url_callback_retry: '0',
     });
+  });
+
+  it('points a URL callback elsewhere, or turns it off, keeping the other SMS settings', async () => {
+    const info = { did: '5143604702', sms_enabled: '1', sms_email: 'me@example.com', sms_email_enabled: '1', sms_url_callback: 'https://crm.example/sms', sms_url_callback_enabled: '1' };
+    const params = (call: { body: FormData }) =>
+      Object.fromEntries([...call.body.entries()].filter(([k]) => !k.startsWith('api_') && k !== 'content_type'));
+    const { impl, calls } = fakeFetch([
+      json({ status: 'success', dids: [info] }),
+      json({ status: 'success' }),
+      json({ status: 'success', dids: [info] }),
+      json({ status: 'success' }),
+    ]);
+    const client = new VoipMsClient(creds, { fetch: impl, minIntervalMs: 0 });
+    await client.setCallback('5143604702', { url: 'https://sms.example.com/api/voipms/callback/s3cret', retry: true });
+    expect(params(calls[1]!)).toEqual({
+      method: 'setSMS',
+      did: '5143604702',
+      enable: '1',
+      email_enabled: '1',
+      email_address: 'me@example.com',
+      url_callback_enable: '1',
+      url_callback: 'https://sms.example.com/api/voipms/callback/s3cret',
+      url_callback_retry: '1',
+    });
+    await client.setCallback('5143604702', null);
+    expect(params(calls[3]!)).toMatchObject({ method: 'setSMS', enable: '1', email_enabled: '1', url_callback_enable: '0', url_callback: '', url_callback_retry: '0' });
+  });
+
+  it('refuses to set a callback on a number whose SMS is off, rather than turn SMS on', async () => {
+    const { impl, calls } = fakeFetch([json({ status: 'success', dids: [{ did: '5143604702', sms_enabled: '0' }] })]);
+    const client = new VoipMsClient(creds, { fetch: impl, minIntervalMs: 0 });
+    await expect(client.setCallback('5143604702', null)).rejects.toMatchObject({ code: 'sms_disabled' });
+    expect(calls).toHaveLength(1);
   });
 
   it('runs calls one after the other', async () => {
