@@ -850,3 +850,105 @@ describe('texts announced by VoIP.ms', () => {
     expect(services.repo.getSetting('webhook.lastCallAt')).toBeNull();
   });
 });
+
+describe('several VoIP.ms accounts', () => {
+  /** The second account, as VoIP.ms would show it: its own number and history. */
+  let other: FakeVoipMs;
+  const OTHER_DID = '4185550142';
+
+  beforeEach(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-test-'));
+    client = new FakeVoipMs();
+    other = new FakeVoipMs();
+    other.dids = [{ did: OTHER_DID, description: 'Québec, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null }];
+    const config = loadConfig({
+      APP_PASSWORD: 'hunter2',
+      DATA_DIR: dataDir,
+      WEB_DIR: path.join(dataDir, 'none'),
+      VOIPMS_API_USERNAME: 'me@example.com',
+      VOIPMS_API_PASSWORD: 'x',
+      PUBLIC_URL: 'https://sms.example.com',
+    });
+    ({ app, services } = await buildApp(config, { clientFactory: (creds) => (creds.username === 'b@example.com' ? other : client), logger: false, pushFetch, mediaFetch }));
+    await login();
+    await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+    await app.inject({ method: 'POST', url: '/api/setup/complete', headers: { cookie } });
+  });
+
+  const inject = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, payload, headers: { cookie } });
+  const addOther = () => inject('POST', '/api/accounts', { label: 'Boulangerie', username: 'b@example.com', password: 'secret' });
+
+  it('adds an account with its own numbers, once', async () => {
+    expect((await inject('GET', '/api/accounts')).json()).toEqual([{ id: 1, label: null, username: 'me@example.com', credentialsSource: 'env', numbers: 2 }]);
+    const added = await addOther();
+    expect(added.statusCode).toBe(201);
+    expect(added.json()).toMatchObject({
+      account: { id: 2, label: 'Boulangerie', username: 'b@example.com', credentialsSource: 'db', numbers: 1 },
+      connection: { status: 'success' },
+    });
+    expect((await addOther()).json()).toEqual({ error: 'account_exists' });
+    expect((await inject('POST', '/api/accounts', { username: 'ME@example.com', password: 'x' })).json()).toEqual({ error: 'account_exists' });
+    expect((await inject('GET', '/api/dids')).json().map((d: DidDto) => [d.did, d.accountId])).toEqual([
+      ['4506575294', 1],
+      ['5143604702', 1],
+      [OTHER_DID, 2],
+    ]);
+    expect((await inject('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json()).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
+    expect((await inject('PATCH', '/api/accounts/9', { label: 'x' })).statusCode).toBe(404);
+    // Its credentials are kept encrypted, like the first account's.
+    expect(services.credentials.get(2)).toEqual({ username: 'b@example.com', password: 'secret' });
+    expect(services.repo.getSetting('account.2.voipms.credentials')).not.toContain('secret');
+  });
+
+  it('checks each account for its own numbers only', async () => {
+    await addOther();
+    await services.sync.syncRecent();
+    // The same VoIP.ms id as a text of the first account: stored apart all the same.
+    other.push({ id: '1000', did: OTHER_DID, contact: '4185550177', direction: 'in', body: 'Les pains sont prêts?' });
+    // A number of the first account showing up in the second one's history stays the first one's.
+    other.push({ did: '4506575294', contact: '4185550188', direction: 'in', body: 'Pas pour ce compte' });
+    client.push({ id: '1000', direction: 'in', body: 'Pour le premier compte' });
+    await services.sync.syncRecent();
+    const conversations = services.repo.listConversations({});
+    expect(conversations.map((c) => [c.did, c.phone]).sort()).toEqual([
+      ['4185550142', '4185550177'],
+      ['4506575294', '4383980707'],
+    ]);
+    expect(other.queries.length).toBeGreaterThan(0);
+  });
+
+  it('sends and deletes through the account a number belongs to', async () => {
+    await addOther();
+    const sent = await app.inject({ method: 'POST', url: '/api/messages', ...multipart({ did: OTHER_DID, to: '4185550177', body: 'Merci!' }) });
+    expect(sent.statusCode).toBe(202);
+    await waitFor(() => other.sent.length === 1);
+    expect(other.sent).toEqual([{ kind: 'sms', did: OTHER_DID, dst: '4185550177', message: 'Merci!', media: [] }]);
+    expect(client.sent).toEqual([]);
+    await waitFor(() => services.repo.getMessage(sent.json().message.id)?.status === 'sent');
+
+    const { conversation } = sent.json();
+    expect((await inject('DELETE', `/api/conversations/${conversation.id}?voipms=1`)).statusCode).toBe(200);
+    await waitFor(() => other.deleted.length === 1);
+    expect(other.deleted).toHaveLength(1);
+    expect(client.deleted).toEqual([]);
+  });
+
+  it('checks the account whose secret VoIP.ms calls with', async () => {
+    await addOther();
+    services.sync.start();
+    await vi.waitFor(() => expect(services.repo.getSetting('account.2.sync.lastSuccessAt')).not.toBeNull());
+    const second = services.accounts.get(2)!;
+    const status = await second.webhook.enable('https://sms.example.com', []);
+    expect(status).toMatchObject({ enabled: true, complete: true });
+    // Each account has its own secret, so its own address.
+    expect(status.url).not.toBe((await services.accounts.primary().webhook.enable('https://sms.example.com', [])).url);
+
+    const text = other.push({ did: OTHER_DID, contact: '4185550177', direction: 'in', body: 'Annoncé par VoIP.ms' });
+    const queries = client.queries.length;
+    expect((await app.inject({ url: new URL(status.url!).pathname })).body).toBe('ok');
+    // Stored under the account: two accounts' VoIP.ms ids can never clash.
+    await vi.waitFor(() => expect(services.repo.findMessageByRemote('sms', `2:${text.id}`)).not.toBeNull());
+    // The first account was not checked for it.
+    expect(client.queries.length).toBe(queries);
+  });
+});

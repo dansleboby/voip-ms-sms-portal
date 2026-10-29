@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Auth } from './auth.js';
-import { openDatabase, Repo } from './db.js';
+import { accountKey, openDatabase, Repo } from './db.js';
 import { CredentialStore } from './secrets.js';
 
 describe('Auth', () => {
@@ -52,6 +52,21 @@ describe('CredentialStore', () => {
 });
 
 describe('database migrations', () => {
+  it('puts the numbers of a 1.x database under the first VoIP.ms account, keeping its settings', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mig-')), 'portal.db');
+    // The schema of 1.8, the last one with a single account.
+    const old = openDatabase(file, 10);
+    old.prepare("INSERT INTO dids (did, color) VALUES ('4506575294', '#1a73e8')").run();
+    old.prepare("INSERT INTO settings (key, value) VALUES ('sync.lastSuccessAt', '1700000000000')").run();
+    old.close();
+    const repo = new Repo(openDatabase(file));
+    expect(repo.listAccounts()).toEqual([{ id: 1, label: null, numbers: 1 }]);
+    expect(repo.listDids()).toEqual([expect.objectContaining({ did: '4506575294', accountId: 1 })]);
+    // The first account reads the keys 1.x wrote, so going back to 1.x still finds them.
+    expect(repo.getSetting(accountKey(1, 'sync.lastSuccessAt'))).toBe('1700000000000');
+    expect(accountKey(2, 'sync.lastSuccessAt')).toBe('account.2.sync.lastSuccessAt');
+  });
+
   it('unescapes quotes in bodies stored by earlier versions', async () => {
     const fs = await import('node:fs');
     const os = await import('node:os');

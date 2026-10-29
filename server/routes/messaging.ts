@@ -77,14 +77,15 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
     const current = s.repo.getDid(did);
     if (!current) return reply.code(404).send({ error: 'not_found' });
     if (!current.smsAvailable) return reply.code(409).send({ error: 'sms_not_available' });
-    const client = s.client();
-    if (!client) return reply.code(409).send({ error: 'not_configured' });
+    const account = s.accounts.forDid(did);
+    const client = account?.client();
+    if (!account || !client) return reply.code(409).send({ error: 'not_configured' });
     // With webhooks on, the number calls back from the start.
-    if (!current.smsEnabled) await client.enableSms(did, s.webhook.callbackForNewNumber());
+    if (!current.smsEnabled) await client.enableSms(did, account.webhook.callbackForNewNumber());
     const info = (await client.getDids()).find((d) => d.did === did);
     s.repo.transaction(() => {
       // VoIP.ms accepted it: trust that over a list that may not show it yet.
-      s.repo.upsertDid({ ...current, ...info, smsEnabled: true });
+      s.repo.upsertDid({ ...current, ...info, smsEnabled: true }, account.id);
       s.repo.updateDid(did, { visible: true });
     });
     s.events.broadcast({ type: 'dids' });

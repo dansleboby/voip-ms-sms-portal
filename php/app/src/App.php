@@ -29,17 +29,15 @@ final class App
     public readonly Auth $auth;
     public readonly Credentials $credentials;
     public readonly Media $media;
-    public readonly Sync $sync;
+    /** The VoIP.ms accounts, each checked on its own. */
+    public readonly Accounts $accounts;
     public readonly Sender $sender;
     public readonly RemoteDeletions $deletions;
     public readonly Push $push;
     public readonly Updates $updates;
-    public readonly Webhook $webhook;
     public readonly Router $router;
     public readonly string $version;
 
-    private ?VoipMsApi $client = null;
-    private bool $clientLoaded = false;
     /** @var list<callable> */
     private array $deferred = [];
 
@@ -72,32 +70,22 @@ final class App
         );
         $this->media = new Media("$dataDir/media", $dataDir, $this->repo, $this->events);
         $this->push = new Push($this->repo, $this->events, $config->vapidSubject, fn () => $this->credentials->fingerprint('push-subscriptions'));
-        // A call from VoIP.ms checks it after the answer, once a check already running is done,
-        // then fetches the pictures of the MMS it found, as the Docker version does right away.
-        $this->webhook = new Webhook(
+        $this->accounts = new Accounts(
             $this->repo,
-            fn () => $this->client(),
-            $config->publicOrigin,
-            fn () => $this->defer(function (): void {
-                $this->sync->syncRecent(wait: true);
-                $this->media->drain(microtime(true) + self::BACKGROUND_BUDGET_S);
-            }),
+            $this->events,
+            $this->credentials,
+            fn (array $credentials, int $accountId) => $this->clientFor($credentials, $accountId),
+            fn (Account $account) => $this->buildAccount($account, $config, $dataDir),
         );
-        $this->sync = new Sync(
-            repo: $this->repo,
-            events: $this->events,
-            getClient: fn () => $this->client(),
-            isEnabled: fn () => $this->isSetupCompleted() && $this->credentials->present(),
-            timeZone: $config->voipmsTimezone,
-            pollActiveMs: $config->pollActiveMs,
-            pollIdleMs: $config->pollIdleMs,
-            lockDir: $dataDir,
-            onIncoming: fn (array $items) => $this->push->notifyIncoming($items),
-            cronCommand: self::cronCommand($config->appDir),
-            webhook: $this->webhook,
+        $this->sender = new Sender(
+            $this->repo,
+            $this->events,
+            $this->media,
+            fn (string $did) => $this->accounts->forDid($did),
+            $dataDir,
+            fn (callable $work) => $this->defer($work),
         );
-        $this->sender = new Sender($this->repo, $this->events, $this->media, $this->sync, fn () => $this->client(), $dataDir, fn (callable $work) => $this->defer($work));
-        $this->deletions = new RemoteDeletions($this->repo, fn () => $this->client(), $dataDir);
+        $this->deletions = new RemoteDeletions($this->repo, fn (string $did) => $this->accounts->forDid($did)?->client(), $dataDir);
         $this->updates = new Updates(
             repo: $this->repo,
             version: $this->version,
@@ -123,6 +111,7 @@ final class App
         Routes\PushRoutes::register($this);
         Routes\UpdateRoutes::register($this);
         Routes\WebhookRoutes::register($this);
+        Routes\AccountRoutes::register($this);
     }
 
     public static function boot(string $appDir, ?string $siteDir = null): self
@@ -150,30 +139,57 @@ final class App
 
     // -------------------------------------------------------------- VoIP.ms
 
-    /** Client for the configured credentials, or null. */
-    public function client(): ?VoipMsApi
+    /** An account's checks of VoIP.ms, and VoIP.ms calling back for its numbers. */
+    private function buildAccount(Account $account, Config $config, string $dataDir): array
     {
-        if (!$this->clientLoaded) {
-            $credentials = $this->credentials->get();
-            $this->client = $credentials ? $this->clientFor($credentials) : null;
-            $this->clientLoaded = true;
-        }
-        return $this->client;
+        // A call from VoIP.ms checks the account after the answer, once a check already running is
+        // done, then fetches the pictures of the MMS it found, as the Docker version does right away.
+        $webhook = new Webhook(
+            $this->repo,
+            fn () => $account->client(),
+            $config->publicOrigin,
+            fn () => $this->defer(function () use ($account): void {
+                $account->sync->syncRecent(wait: true);
+                $this->media->drain(microtime(true) + self::BACKGROUND_BUDGET_S);
+            }),
+            $account->id,
+        );
+        $sync = new Sync(
+            repo: $this->repo,
+            events: $this->events,
+            getClient: fn () => $account->client(),
+            isEnabled: fn () => $this->isSetupCompleted() && $this->credentials->present($account->id),
+            timeZone: $config->voipmsTimezone,
+            pollActiveMs: $config->pollActiveMs,
+            pollIdleMs: $config->pollIdleMs,
+            lockDir: $dataDir,
+            onIncoming: fn (array $items) => $this->push->notifyIncoming($items),
+            cronCommand: self::cronCommand($config->appDir),
+            webhook: $webhook,
+            accountId: $account->id,
+            publish: fn () => $this->accounts->publishStatus(),
+        );
+        return [$sync, $webhook];
     }
 
-    /** Client for any credentials (the wizard checks them before saving). */
-    public function clientFor(array $credentials): VoipMsApi
+    /** Client for the first account's credentials (the one the wizard sets up), or null. */
+    public function client(): ?VoipMsApi
+    {
+        return $this->accounts->primary()->client();
+    }
+
+    /** Client for any credentials (checked before they are saved); the demo has one sample account per id. */
+    public function clientFor(array $credentials, int $accountId = Repo::PRIMARY_ACCOUNT): VoipMsApi
     {
         if ($this->config->demo) {
-            return new DemoClient($this->repo->db, $this->config->voipmsTimezone);
+            return new DemoClient($this->repo->db, $this->config->voipmsTimezone, $accountId);
         }
         return new RestClient($credentials['username'], $credentials['password'], $this->config->voipmsApiUrl);
     }
 
     public function resetClient(): void
     {
-        $this->clientLoaded = false;
-        $this->client = null;
+        $this->accounts->primary()->resetClient();
     }
 
     public function isSetupCompleted(): bool
@@ -202,10 +218,14 @@ final class App
     {
         $this->defer(function () use ($active, $opening): void {
             $deadline = microtime(true) + self::BACKGROUND_BUDGET_S;
-            if ($this->sync->isDue($active, $opening)) {
-                $this->sync->syncRecent();
+            foreach ($this->accounts->all() as $account) {
+                if ($account->sync->isDue($active, $opening)) {
+                    $account->sync->syncRecent();
+                }
             }
-            $this->sync->continueImport($deadline);
+            foreach ($this->accounts->all() as $account) {
+                $account->sync->continueImport($deadline);
+            }
             $this->media->drain($deadline);
             $this->deletions->drain($deadline);
         });

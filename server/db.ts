@@ -147,7 +147,45 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
     const update = db.prepare(`UPDATE messages SET body = '', search_text = '' WHERE id = ?`);
     for (const row of rows) if (isBlank(row.body)) update.run(row.id);
   },
+  // Several VoIP.ms accounts. The first one is the account set up so far: it keeps the
+  // settings keys it had (accountKey), so that going back to a 1.x version still works.
+  `
+  CREATE TABLE voipms_accounts (
+    id         INTEGER PRIMARY KEY,
+    label      TEXT,
+    created_at INTEGER NOT NULL
+  );
+  INSERT INTO voipms_accounts (id, label, created_at) VALUES (1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+  ALTER TABLE dids ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
+
+/** The account set up first: the only one of a 1.x install, and the one the setup wizard is about. */
+export const PRIMARY_ACCOUNT = 1;
+
+/**
+ * The settings key of something each VoIP.ms account has (credentials,
+ * sync state, webhook): the first account keeps the plain keys of 1.x.
+ */
+export function accountKey(accountId: number, key: string): string {
+  return accountId === PRIMARY_ACCOUNT ? key : `account.${accountId}.${key}`;
+}
+
+/**
+ * A VoIP.ms message id as stored. Ids are unique per kind in the whole
+ * table, and nothing says VoIP.ms never gives the same one to two accounts:
+ * those of the accounts after the first carry the account ("2:1234"). The
+ * first account's stay as 1.x stored them.
+ */
+export function storedRemoteId(accountId: number, id: string): string {
+  return accountId === PRIMARY_ACCOUNT ? id : `${accountId}:${id}`;
+}
+
+/** The id VoIP.ms knows a stored message by. */
+export function voipmsId(stored: string): string {
+  const colon = stored.indexOf(':');
+  return colon < 0 ? stored : stored.slice(colon + 1);
+}
 
 /** `version` stops migrations early, to test upgrades from an older schema. */
 export function openDatabase(file: string, version = MIGRATIONS.length): DB {
@@ -186,6 +224,7 @@ interface DidRow {
   description: string | null;
   position: number;
   unread: number | null;
+  account_id: number;
 }
 
 interface ConversationRow {
@@ -352,6 +391,7 @@ export class Repo {
       description: r.description,
       position: r.position,
       unreadCount: r.unread ?? 0,
+      accountId: r.account_id,
     }));
   }
 
@@ -367,9 +407,14 @@ export class Repo {
   /**
    * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
    * and visibility; a number that just got SMS shows up, like a new one.
+   * A number already known under another account stays with it (false).
    */
-  upsertDid(info: { did: string; description: string | null; smsEnabled: boolean; smsAvailable: boolean; mmsAvailable: boolean }): void {
-    const existing = this.db.prepare('SELECT did FROM dids WHERE did = ?').get(info.did);
+  upsertDid(
+    info: { did: string; description: string | null; smsEnabled: boolean; smsAvailable: boolean; mmsAvailable: boolean },
+    accountId = PRIMARY_ACCOUNT,
+  ): boolean {
+    const existing = this.db.prepare('SELECT account_id FROM dids WHERE did = ?').get(info.did) as { account_id: number } | undefined;
+    if (existing && existing.account_id !== accountId) return false;
     if (existing) {
       this.db
         .prepare(
@@ -384,13 +429,13 @@ export class Repo {
           info.mmsAvailable ? 1 : 0,
           info.did,
         );
-      return;
+      return true;
     }
     const position = (this.db.prepare('SELECT COUNT(*) AS n FROM dids').get() as { n: number }).n;
     this.db
       .prepare(
-        `INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position, account_id)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         info.did,
@@ -401,13 +446,42 @@ export class Repo {
         info.mmsAvailable ? 1 : 0,
         info.description,
         position,
+        accountId,
       );
+    return true;
   }
 
   /** Makes sure a DID seen in message history exists locally. */
-  ensureDid(did: string): void {
+  ensureDid(did: string, accountId = PRIMARY_ACCOUNT): void {
     if (this.db.prepare('SELECT did FROM dids WHERE did = ?').get(did)) return;
-    this.upsertDid({ did, description: null, smsEnabled: true, smsAvailable: true, mmsAvailable: true });
+    this.upsertDid({ did, description: null, smsEnabled: true, smsAvailable: true, mmsAvailable: true }, accountId);
+  }
+
+  /** The account a number belongs to, or null for a number not seen yet. */
+  accountOfDid(did: string): number | null {
+    const row = this.db.prepare('SELECT account_id FROM dids WHERE did = ?').get(did) as { account_id: number } | undefined;
+    return row?.account_id ?? null;
+  }
+
+  // ---------------------------------------------------------------- accounts
+
+  listAccounts(): { id: number; label: string | null; numbers: number }[] {
+    return this.db
+      .prepare(
+        `SELECT a.id, a.label, (SELECT COUNT(*) FROM dids d WHERE d.account_id = a.id) AS numbers
+         FROM voipms_accounts a ORDER BY a.id`,
+      )
+      .all() as { id: number; label: string | null; numbers: number }[];
+  }
+
+  createAccount(label: string | null): number {
+    return Number(
+      this.db.prepare('INSERT INTO voipms_accounts (label, created_at) VALUES (?, ?)').run(label?.trim() || null, Date.now()).lastInsertRowid,
+    );
+  }
+
+  updateAccount(id: number, label: string | null): boolean {
+    return this.db.prepare('UPDATE voipms_accounts SET label = ? WHERE id = ?').run(label?.trim() || null, id).changes > 0;
   }
 
   updateDid(did: string, patch: { label?: string | null; color?: string; visible?: boolean; position?: number }): boolean {
@@ -545,14 +619,15 @@ export class Repo {
   }
 
   /** Deleted messages still to be deleted at VoIP.ms, oldest first. */
-  pendingRemoteDeletes(limit: number): { id: number; kind: MessageKind; remoteId: string }[] {
+  pendingRemoteDeletes(limit: number): { id: number; kind: MessageKind; remoteId: string; did: string }[] {
     return (
-      this.db.prepare('SELECT id, kind, remote_id FROM messages WHERE delete_remote = 1 ORDER BY id LIMIT ?').all(limit) as {
-        id: number;
-        kind: MessageKind;
-        remote_id: string;
-      }[]
-    ).map((r) => ({ id: r.id, kind: r.kind, remoteId: r.remote_id }));
+      this.db
+        .prepare(
+          `SELECT m.id, m.kind, m.remote_id, c.did FROM messages m JOIN conversations c ON c.id = m.conversation_id
+           WHERE m.delete_remote = 1 ORDER BY m.id LIMIT ?`,
+        )
+        .all(limit) as { id: number; kind: MessageKind; remote_id: string; did: string }[]
+    ).map((r) => ({ id: r.id, kind: r.kind, remoteId: r.remote_id, did: r.did }));
   }
 
   remoteDeleteDone(id: number): void {

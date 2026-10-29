@@ -1,4 +1,4 @@
-import type { Repo } from './db.js';
+import { voipmsId, type Repo } from './db.js';
 import type { Logger } from './logger.js';
 import { VoipMsError, type VoipMsApi } from './voipms/client.js';
 
@@ -18,7 +18,8 @@ export class RemoteDeletions {
   private stopped = false;
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly deps: { repo: Repo; getClient: () => VoipMsApi | null; log: Logger }) {}
+  /** `clientForDid`: the client of the account the message's number belongs to. */
+  constructor(private readonly deps: { repo: Repo; clientForDid: (did: string) => VoipMsApi | null; log: Logger }) {}
 
   /** Processes the pending deletions; safe to call often. */
   kick(): void {
@@ -54,9 +55,9 @@ export class RemoteDeletions {
       if (batch.length === 0) return;
       for (const message of batch) {
         try {
-          const client = this.deps.getClient();
+          const client = this.deps.clientForDid(message.did);
           if (!client) throw new VoipMsError('not_configured');
-          await client.deleteMessage(message.kind, message.remoteId);
+          await client.deleteMessage(message.kind, voipmsId(message.remoteId));
         } catch (err) {
           const code = err instanceof VoipMsError ? err.code : 'internal_error';
           if (PASSING.has(code)) return this.retryLater();

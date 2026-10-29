@@ -81,10 +81,11 @@ final class MessagingRoutes
             if (!$current['smsAvailable']) {
                 throw new HttpError(409, 'sms_not_available');
             }
-            $client = $app->client() ?? throw new HttpError(409, 'not_configured');
+            $account = $app->accounts->forDid($did);
+            $client = $account?->client() ?? throw new HttpError(409, 'not_configured');
             if (!$current['smsEnabled']) {
                 // With webhooks on, the number calls back from the start.
-                $client->enableSms($did, $app->webhook->callbackForNewNumber());
+                $client->enableSms($did, $account->webhook->callbackForNewNumber());
             }
             $info = [];
             foreach ($client->getDids() as $d) {
@@ -92,9 +93,9 @@ final class MessagingRoutes
                     $info = $d;
                 }
             }
-            $repo->transaction(function () use ($repo, $did, $current, $info): void {
+            $repo->transaction(function () use ($repo, $did, $current, $info, $account): void {
                 // VoIP.ms accepted it: trust that over a list that may not show it yet.
-                $repo->upsertDid(['smsEnabled' => true] + $info + $current);
+                $repo->upsertDid(['smsEnabled' => true] + $info + $current, $account->id);
                 $repo->updateDid($did, ['visible' => true]);
             });
             $events->broadcast(['type' => 'dids']);
@@ -230,11 +231,15 @@ final class MessagingRoutes
 
         // ------------------------------------------------------------------- sync
 
-        $r->add('GET', '/api/sync/status', fn () => Response::json($app->sync->status()));
+        $r->add('GET', '/api/sync/status', fn () => Response::json($app->accounts->status()));
 
         $r->add('POST', '/api/sync/now', function () use ($app): Response {
-            $app->defer(fn () => $app->sync->syncRecent());
-            return Response::json($app->sync->status());
+            $app->defer(function () use ($app): void {
+                foreach ($app->accounts->all() as $account) {
+                    $account->sync->syncRecent();
+                }
+            });
+            return Response::json($app->accounts->status());
         });
 
         /** A tab reports being shown or hidden, so push notifications skip the device it is on screen on. */
@@ -254,7 +259,7 @@ final class MessagingRoutes
             $result = $events->poll($after, $tab, $device, $visible);
             // Like the stream's first frame: a tab starting over learns the sync state.
             if ($after === null || $result['reset']) {
-                array_unshift($result['events'], ['type' => 'sync', 'status' => $app->sync->status()]);
+                array_unshift($result['events'], ['type' => 'sync', 'status' => $app->accounts->status()]);
             }
             $app->background(active: true, opening: $after === null);
             return Response::json($result);

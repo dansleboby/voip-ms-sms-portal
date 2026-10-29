@@ -42,6 +42,8 @@ export interface DidDto {
   description: string | null;
   position: number;
   unreadCount: number;
+  /** The VoIP.ms account the number belongs to (1: the one set up first). */
+  accountId: number;
 }
 
 export interface AttachmentDto {
@@ -149,6 +151,16 @@ export interface WebhookStatusDto {
   /** Minutes between the checks that still run, for callbacks VoIP.ms never made and texts sent from other apps. */
   safetyMinutes: number;
   numbers: WebhookNumberDto[];
+}
+
+/** A VoIP.ms account the portal uses; the first one (id 1) is the one the setup wizard sets up. */
+export interface AccountDto {
+  id: number;
+  label: string | null;
+  /** The account's email at VoIP.ms; null when its credentials cannot be read (APP_PASSWORD changed). */
+  username: string | null;
+  credentialsSource: CredentialsSource;
+  numbers: number;
 }
 
 export interface SetupStatusDto {

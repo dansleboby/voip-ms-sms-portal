@@ -8,7 +8,8 @@ import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
 import { Auth, SESSION_COOKIE } from './auth.js';
 import { ConfigError, type Config } from './config.js';
-import { openDatabase, Repo } from './db.js';
+import { openDatabase, PRIMARY_ACCOUNT, Repo } from './db.js';
+import { Accounts } from './accounts.js';
 import { EventHub } from './events.js';
 import type { Logger } from './logger.js';
 import { MediaStore } from './media.js';
@@ -16,7 +17,6 @@ import { PushService } from './push.js';
 import { CredentialStore } from './secrets.js';
 import { RemoteDeletions } from './deletions.js';
 import { MessageSender, SendError } from './send.js';
-import { SyncEngine } from './sync.js';
 import { VoipMsClient, VoipMsError, type VoipMsApi, type VoipMsCredentials } from './voipms/client.js';
 import { DEMO_CONTACTS, DemoVoipMs } from './voipms/demo.js';
 import { registerAuthRoutes } from './routes/auth.js';
@@ -28,7 +28,8 @@ import { UpdateChecker } from './updates.js';
 import { VERSION } from './version.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { registerWebhookRoutes } from './routes/webhook.js';
-import { WebhookReceiver } from './webhook.js';
+import { registerAccountRoutes } from './routes/accounts.js';
+import type { WebhookReceiver } from './webhook.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
 const SETUP_COMPLETED_KEY = 'setup.completed';
@@ -40,17 +41,21 @@ export interface Services {
   media: MediaStore;
   credentials: CredentialStore;
   auth: Auth;
-  sync: SyncEngine;
+  /** The VoIP.ms accounts, each checked on its own. */
+  accounts: Accounts;
+  /** Their checks, started, triggered and reported together. */
+  sync: Accounts;
   sender: MessageSender;
   deletions: RemoteDeletions;
   push: PushService;
   updates: UpdateChecker;
+  /** The first account's, the one the setup wizard and Settings show. */
   webhook: WebhookReceiver;
-  /** Client for the configured credentials, or null. */
+  /** Client for the first account's credentials, or null. */
   client(): VoipMsApi | null;
   /** Client for arbitrary credentials (used to validate them in the wizard). */
-  clientFor(credentials: VoipMsCredentials): VoipMsApi;
-  /** Drops the cached client after credentials change. */
+  clientFor(credentials: VoipMsCredentials, accountId?: number): VoipMsApi;
+  /** Drops the first account's cached client after its credentials change. */
   resetClient(): void;
   isSetupCompleted(): boolean;
   setSetupCompleted(done: boolean): void;
@@ -58,7 +63,7 @@ export interface Services {
 
 export interface BuildOptions {
   /** Replaces the real VoIP.ms client (tests). */
-  clientFactory?: (credentials: VoipMsCredentials) => VoipMsApi;
+  clientFactory?: (credentials: VoipMsCredentials, accountId: number) => VoipMsApi;
   /** fetch used to download media (tests). */
   mediaFetch?: typeof fetch;
   /** fetch used to reach push services (tests). */
@@ -101,15 +106,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     config.demo ? { username: 'demo@example.com', password: 'demo' } : config.voipmsEnv,
   );
 
-  const demoClient = config.demo ? new DemoVoipMs(config.voipmsTimezone) : null;
-  const clientFor = (creds: VoipMsCredentials): VoipMsApi =>
-    demoClient ?? options.clientFactory?.(creds) ?? new VoipMsClient(creds);
-  let cachedClient: VoipMsApi | null = null;
-  const client = (): VoipMsApi | null => {
-    if (cachedClient) return cachedClient;
-    const creds = credentials.get();
-    cachedClient = creds ? clientFor(creds) : null;
-    return cachedClient;
+  // The demo has one sample account per id, kept for the life of the server.
+  const demoClients = new Map<number, DemoVoipMs>();
+  const clientFor = (creds: VoipMsCredentials, accountId = PRIMARY_ACCOUNT): VoipMsApi => {
+    if (config.demo) {
+      if (!demoClients.has(accountId)) demoClients.set(accountId, new DemoVoipMs(config.voipmsTimezone, accountId));
+      return demoClients.get(accountId)!;
+    }
+    return options.clientFactory?.(creds, accountId) ?? new VoipMsClient(creds);
   };
   const isSetupCompleted = () => repo.getSetting(SETUP_COMPLETED_KEY) === '1';
 
@@ -133,33 +137,25 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     fetch: options.pushFetch,
   });
 
-  // Its calls trigger the sync engine, built next with it to know when to slow down.
-  let syncRef: SyncEngine | null = null;
-  const webhook = new WebhookReceiver({
-    repo,
-    getClient: client,
-    publicOrigin: config.publicOrigin,
-    onCall: () => syncRef?.trigger(),
-  });
-  const sync = new SyncEngine({
+  const accounts = new Accounts({
     repo,
     events,
     media,
-    getClient: client,
-    isEnabled: isSetupCompleted,
+    credentials,
+    clientFor,
+    isSetupCompleted,
     timeZone: config.voipmsTimezone,
     pollActiveMs: config.pollActiveMs,
     pollIdleMs: config.pollIdleMs,
+    publicOrigin: config.publicOrigin,
     log,
     onIncoming: (items) => push.notifyIncoming(items),
-    webhook,
   });
-  syncRef = sync;
-  const sender = new MessageSender({ repo, events, media, sync, getClient: client, log });
-  const deletions = new RemoteDeletions({ repo, getClient: client, log });
+  const sender = new MessageSender({ repo, events, media, accountForDid: (did) => accounts.forDid(did), log });
+  const deletions = new RemoteDeletions({ repo, clientForDid: (did) => accounts.forDid(did)?.client() ?? null, log });
   // Deletions at VoIP.ms left over from before a restart.
   deletions.kick();
-  events.onClientCountChange((count) => sync.setActive(count > 0));
+  events.onClientCountChange((count) => accounts.setActive(count > 0));
 
   if (config.demo && repo.listContacts().length === 0) {
     for (const c of DEMO_CONTACTS) repo.saveContact(c);
@@ -172,11 +168,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     media,
     credentials,
     auth,
-    sync,
+    accounts,
+    sync: accounts,
     sender,
     deletions,
     push,
-    webhook,
+    webhook: accounts.primary().webhook,
     updates: new UpdateChecker({
       repo,
       version: VERSION,
@@ -185,11 +182,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       install: config.install,
       fetch: options.updateFetch,
     }),
-    client,
+    client: () => accounts.primary().client(),
     clientFor,
-    resetClient: () => {
-      cachedClient = null;
-    },
+    resetClient: () => accounts.primary().resetClient(),
     isSetupCompleted,
     setSetupCompleted: (done) => repo.setSetting(SETUP_COMPLETED_KEY, done ? '1' : '0'),
   };
@@ -252,6 +247,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   registerAuthRoutes(app, services);
   registerSetupRoutes(app, services);
   registerWebhookRoutes(app, services);
+  registerAccountRoutes(app, services);
   registerMessagingRoutes(app, services);
   registerContactRoutes(app, services);
   registerPushRoutes(app, services);
@@ -278,7 +274,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // Live update streams never end on their own, and Fastify waits for open
   // requests before onClose: end them first, or shutting down hangs.
   app.addHook('preClose', async () => {
-    sync.stop();
+    accounts.stop();
     events.close();
   });
   app.addHook('onClose', async () => {

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { Repo } from './db.js';
+import { accountKey, PRIMARY_ACCOUNT, type Repo } from './db.js';
 import { VoipMsError, type SmsCallback, type VoipMsApi } from './voipms/client.js';
 import { normalizePhone } from '../shared/phone.js';
 import type { WebhookNumberDto, WebhookStatusDto, WebhookSummaryDto } from '../shared/types.js';
@@ -29,6 +29,8 @@ export class WebhookError extends Error {
 }
 
 export interface WebhookDeps {
+  /** Each VoIP.ms account has its own secret and state (server/accounts.ts). */
+  accountId?: number;
   repo: Repo;
   getClient: () => VoipMsApi | null;
   /** PUBLIC_URL's origin: the callback's address when set. */
@@ -47,22 +49,37 @@ export interface WebhookDeps {
  */
 export class WebhookReceiver {
   private readonly now: () => number;
+  private readonly accountId: number;
 
   constructor(private readonly deps: WebhookDeps) {
     this.now = deps.now ?? Date.now;
+    this.accountId = deps.accountId ?? PRIMARY_ACCOUNT;
   }
 
   private get repo(): Repo {
     return this.deps.repo;
   }
 
+  /** This account's setting. */
+  private get(key: string): string | null {
+    return this.repo.getSetting(accountKey(this.accountId, key));
+  }
+
+  private set(key: string, value: string): void {
+    this.repo.setSetting(accountKey(this.accountId, key), value);
+  }
+
+  private delete(key: string): void {
+    this.repo.deleteSetting(accountKey(this.accountId, key));
+  }
+
   enabled(): boolean {
-    return this.repo.getSetting(ENABLED_KEY) === '1';
+    return this.get(ENABLED_KEY) === '1';
   }
 
   /** Every number with SMS on calls back: checks can slow down to the safety net. */
   complete(): boolean {
-    return this.enabled() && this.repo.getSetting(COMPLETE_KEY) === '1';
+    return this.enabled() && this.get(COMPLETE_KEY) === '1';
   }
 
   summary(): WebhookSummaryDto | null {
@@ -72,15 +89,15 @@ export class WebhookReceiver {
 
   /** The callback for a number whose SMS is turned on while webhooks are on. */
   callbackForNewNumber(): SmsCallback | undefined {
-    const url = this.repo.getSetting(URL_KEY);
+    const url = this.get(URL_KEY);
     return this.enabled() && url ? { url, retry: true } : undefined;
   }
 
   /** A call to the callback address: true when its secret is right. */
   receive(token: string): boolean {
-    const expected = this.repo.getSetting(TOKEN_KEY);
+    const expected = this.get(TOKEN_KEY);
     if (!expected || !sameSecret(token, expected)) return false;
-    this.repo.setSetting(LAST_CALL_KEY, String(this.now()));
+    this.set(LAST_CALL_KEY, String(this.now()));
     this.deps.onCall();
     return true;
   }
@@ -88,7 +105,7 @@ export class WebhookReceiver {
   /** The callback of each number, as VoIP.ms has it now. `errors`: what VoIP.ms refused just before. */
   async status(errors: Map<string, string> = new Map()): Promise<WebhookStatusDto> {
     const client = this.client();
-    const token = this.repo.getSetting(TOKEN_KEY);
+    const token = this.get(TOKEN_KEY);
     const numbers: WebhookNumberDto[] = [];
     for (const d of await client.getDids()) {
       const did = normalizePhone(d.did);
@@ -101,10 +118,10 @@ export class WebhookReceiver {
     }
     const enabled = this.enabled();
     const complete = enabled && numbers.every((n) => n.state === 'ours' || n.state === 'sms_off');
-    this.repo.setSetting(COMPLETE_KEY, complete ? '1' : '0');
+    this.set(COMPLETE_KEY, complete ? '1' : '0');
     return {
       enabled,
-      url: enabled ? this.repo.getSetting(URL_KEY) : null,
+      url: enabled ? this.get(URL_KEY) : null,
       lastCallAt: this.lastCallAt(),
       complete,
       publicUrl: this.deps.publicOrigin,
@@ -124,16 +141,16 @@ export class WebhookReceiver {
     const base = this.deps.publicOrigin ?? origin;
     // VoIP.ms must reach the address from the Internet, and the secret must not travel in clear.
     if (!base?.startsWith('https://')) throw new WebhookError('webhook_needs_https');
-    let token = this.repo.getSetting(TOKEN_KEY);
+    let token = this.get(TOKEN_KEY);
     if (!token) {
       token = crypto.randomBytes(24).toString('base64url');
-      this.repo.setSetting(TOKEN_KEY, token);
+      this.set(TOKEN_KEY, token);
     }
     const url = new URL(CALLBACK_PATH + token, base).href;
     // VoIP.ms answers first: refused (an IP not allowed, say), nothing changes.
     const dids = await client.getDids();
-    this.repo.setSetting(URL_KEY, url);
-    this.repo.setSetting(ENABLED_KEY, '1');
+    this.set(URL_KEY, url);
+    this.set(ENABLED_KEY, '1');
 
     const previous = this.previous();
     const errors = new Map<string, string>();
@@ -151,7 +168,7 @@ export class WebhookReceiver {
         errors.set(did, err.code);
       }
     }
-    this.repo.setSetting(PREVIOUS_KEY, JSON.stringify(previous));
+    this.set(PREVIOUS_KEY, JSON.stringify(previous));
     return this.status(errors);
   }
 
@@ -162,9 +179,9 @@ export class WebhookReceiver {
    */
   async disable(): Promise<WebhookStatusDto> {
     const client = this.client();
-    this.repo.deleteSetting(ENABLED_KEY);
-    this.repo.deleteSetting(COMPLETE_KEY);
-    const token = this.repo.getSetting(TOKEN_KEY);
+    this.delete(ENABLED_KEY);
+    this.delete(COMPLETE_KEY);
+    const token = this.get(TOKEN_KEY);
     const previous = this.previous();
     const errors = new Map<string, string>();
     for (const d of await client.getDids()) {
@@ -178,7 +195,7 @@ export class WebhookReceiver {
         errors.set(did, err.code);
       }
     }
-    this.repo.setSetting(PREVIOUS_KEY, JSON.stringify(previous));
+    this.set(PREVIOUS_KEY, JSON.stringify(previous));
     return this.status(errors);
   }
 
@@ -189,13 +206,13 @@ export class WebhookReceiver {
   }
 
   private lastCallAt(): number | null {
-    const value = this.repo.getSetting(LAST_CALL_KEY);
+    const value = this.get(LAST_CALL_KEY);
     return value ? Number(value) : null;
   }
 
   private previous(): Record<string, SmsCallback> {
     try {
-      const value = JSON.parse(this.repo.getSetting(PREVIOUS_KEY) ?? '{}') as unknown;
+      const value = JSON.parse(this.get(PREVIOUS_KEY) ?? '{}') as unknown;
       return value && typeof value === 'object' ? (value as Record<string, SmsCallback>) : {};
     } catch {
       return {};

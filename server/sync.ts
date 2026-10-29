@@ -1,4 +1,4 @@
-import type { Repo } from './db.js';
+import { accountKey, PRIMARY_ACCOUNT, storedRemoteId, type Repo } from './db.js';
 import type { EventHub } from './events.js';
 import type { Logger } from './logger.js';
 import type { MediaStore } from './media.js';
@@ -23,6 +23,8 @@ const RATE_LIMIT_BACKOFF_MS = 60_000;
 const MAX_ERROR_BACKOFF_MS = 5 * 60_000;
 
 export interface SyncDeps {
+  /** The VoIP.ms account checked; each has its own engine (server/accounts.ts). */
+  accountId?: number;
   repo: Repo;
   events: EventHub;
   media: MediaStore;
@@ -39,6 +41,8 @@ export interface SyncDeps {
   onIncoming?: (messages: { messageId: number; conversationId: number }[]) => void;
   /** VoIP.ms announcing texts (server/webhook.ts): with every number covered, checks become a safety net. */
   webhook?: { complete(): boolean; summary(): WebhookSummaryDto | null };
+  /** Tells the tabs the state changed; by default, this engine's own status. */
+  publish?: () => void;
 }
 
 /** Serializes work that must not interleave (a poll and the bookkeeping of a send). */
@@ -72,13 +76,20 @@ export class SyncEngine {
   private state: SyncStatusDto['state'] = 'idle';
   private lastError: string | null = null;
 
+  private readonly accountId: number;
+  private readonly lastSuccessKey: string;
+  private readonly lastCheckKey: string;
+
   constructor(private readonly deps: SyncDeps) {
     this.now = deps.now ?? Date.now;
+    this.accountId = deps.accountId ?? PRIMARY_ACCOUNT;
+    this.lastSuccessKey = accountKey(this.accountId, LAST_SUCCESS_KEY);
+    this.lastCheckKey = accountKey(this.accountId, LAST_CHECK_KEY);
   }
 
   status(): SyncStatusDto {
-    const last = this.deps.repo.getSetting(LAST_SUCCESS_KEY);
-    const checked = this.deps.repo.getSetting(LAST_CHECK_KEY);
+    const last = this.deps.repo.getSetting(this.lastSuccessKey);
+    const checked = this.deps.repo.getSetting(this.lastCheckKey);
     return {
       state: this.deps.isEnabled() && this.deps.getClient() ? this.state : 'disabled',
       mode: this.active ? 'active' : 'idle',
@@ -161,14 +172,14 @@ export class SyncEngine {
       return;
     }
     const now = this.now();
-    const last = Number(this.deps.repo.getSetting(LAST_SUCCESS_KEY) ?? 0);
+    const last = Number(this.deps.repo.getSetting(this.lastSuccessKey) ?? 0);
     // Start a day before the last success to absorb clock and time zone edges; at most 90 days back.
     const from = Math.max(Math.min(now - DAY_MS, (last || now) - DAY_MS), now - 90 * DAY_MS);
     this.state = 'syncing';
     try {
       // The very first sync only establishes a baseline: no unread badges or notifications for old texts.
       await this.syncRange(client, from, now + DAY_MS, last > 0 ? -Infinity : Infinity);
-      this.deps.repo.setSetting(LAST_SUCCESS_KEY, String(now));
+      this.deps.repo.setSetting(this.lastSuccessKey, String(now));
       this.state = 'idle';
       this.lastError = null;
       this.consecutiveErrors = 0;
@@ -179,7 +190,7 @@ export class SyncEngine {
       this.consecutiveErrors++;
       this.deps.log.warn({ err }, 'VoIP.ms sync failed');
     }
-    this.deps.repo.setSetting(LAST_CHECK_KEY, String(now));
+    this.deps.repo.setSetting(this.lastCheckKey, String(now));
     this.publishStatus();
   }
 
@@ -193,7 +204,7 @@ export class SyncEngine {
     if (!client) throw new VoipMsError('not_configured');
     if (this.importing) throw new VoipMsError('import_in_progress');
     const now = this.now();
-    const last = Number(this.deps.repo.getSetting(LAST_SUCCESS_KEY) ?? 0);
+    const last = Number(this.deps.repo.getSetting(this.lastSuccessKey) ?? 0);
     const liveAfter = last > 0 ? last : Infinity;
     const windows = splitWindows(now - days * DAY_MS, now + DAY_MS, WINDOW_DAYS);
     this.importing = { done: 0, total: windows.length };
@@ -260,7 +271,11 @@ export class SyncEngine {
       for (const remote of messages) {
         const did = normalizePhone(remote.did);
         if (!remote.id || !repo.allowsDid(did)) continue;
-        const existing = repo.findMessageByRemote(remote.kind, remote.id);
+        // A number known under another account is that account's to fetch.
+        const owner = repo.accountOfDid(did);
+        if (owner !== null && owner !== this.accountId) continue;
+        const remoteId = storedRemoteId(this.accountId, remote.id);
+        const existing = repo.findMessageByRemote(remote.kind, remoteId);
         if (existing) {
           // Deleted in the portal: it stays deleted.
           if (existing.deleted) continue;
@@ -275,8 +290,8 @@ export class SyncEngine {
 
         const phone = normalizePhone(remote.contact);
         if (!did || !phone) continue;
-        if (!repo.getDid(did)) {
-          repo.ensureDid(did);
+        if (owner === null) {
+          repo.ensureDid(did, this.accountId);
           newDid = true;
         }
         const conversationId = repo.getOrCreateConversation(did, phone);
@@ -289,7 +304,7 @@ export class SyncEngine {
 
         const live = sentAt > liveAfter;
         if (remote.direction === 'out') {
-          const adopted = this.adoptLocalSend(conversationId, remote, sentAt);
+          const adopted = this.adoptLocalSend(conversationId, remote, remoteId, sentAt);
           if (adopted !== null) {
             changed.push({ messageId: adopted, conversationId });
             continue;
@@ -299,7 +314,7 @@ export class SyncEngine {
         const messageId = repo.insertMessage({
           conversationId,
           kind: remote.kind,
-          remoteId: remote.id,
+          remoteId,
           direction: remote.direction,
           body: remote.body,
           sentAt,
@@ -339,7 +354,7 @@ export class SyncEngine {
    * attach it to the local copy instead of displaying it twice. Only failed
    * attempts qualify: a message still waiting to be sent must go out.
    */
-  private adoptLocalSend(conversationId: number, remote: RemoteMessage, sentAt: number): number | null {
+  private adoptLocalSend(conversationId: number, remote: RemoteMessage, remoteId: string, sentAt: number): number | null {
     const row = this.deps.repo.db
       .prepare(
         `SELECT m.id FROM messages m
@@ -359,7 +374,7 @@ export class SyncEngine {
     if (!row) return null;
     this.deps.repo.updateMessage(row.id, {
       kind: remote.kind,
-      remoteId: remote.id,
+      remoteId,
       status: 'sent',
       error: null,
       carrierStatus: remote.carrierStatus,
@@ -368,7 +383,8 @@ export class SyncEngine {
   }
 
   private publishStatus(): void {
-    this.deps.events.broadcast({ type: 'sync', status: this.status() });
+    if (this.deps.publish) this.deps.publish();
+    else this.deps.events.broadcast({ type: 'sync', status: this.status() });
   }
 }
 
