@@ -1,6 +1,6 @@
 {
   "name": "voip-ms-sms-portal",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "private": true,
   "description": "A clean, modern self-hosted web interface for VoIP.ms SMS/MMS.",
   "license": "Apache-2.0",

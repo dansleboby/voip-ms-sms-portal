@@ -225,6 +225,9 @@ async function shoot(browser: Browser, lang: Language): Promise<Shooter> {
     await s.save('setup-numbers', shot(card));
 
     await button('common.continue').click();
+    // Receiving texts: regular checks, as a demo on a local address has no webhook to offer.
+    await card.locator('.receiving .choice').first().waitFor();
+    await button('common.continue').click();
     await button('setup.history.finish').click();
     await page.getByText(s.t('setup.cron.title')).waitFor();
     await s.save('setup-cron', shot(card));

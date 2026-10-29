@@ -112,13 +112,54 @@ final class DemoClient implements VoipMsApi
 
     /** Numbers the demo turned SMS on for, kept between requests. */
     private const ENABLED_KEY = 'demo.smsEnabled';
+    /** Each number's URL callback, once the portal changed one, kept between requests. */
+    private const CALLBACKS_KEY = 'demo.callbacks';
+    /** Laval already sends its texts to another system, as numbers wired to a CRM do (server/voipms/demo.ts). */
+    private const OTHER_CALLBACK = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
 
     public function getDids(): array
     {
         $enabled = $this->enabledByDemo();
+        $callbacks = $this->callbacks();
         return array_map(
-            static fn (array $d) => in_array($d['did'], $enabled, true) ? ['smsEnabled' => true, 'mmsAvailable' => true] + $d : $d,
+            static fn (array $d) => ['callback' => $callbacks[$d['did']] ?? null]
+                + (in_array($d['did'], $enabled, true) ? ['smsEnabled' => true, 'mmsAvailable' => true] + $d : $d),
             self::DIDS,
+        );
+    }
+
+    public function setCallback(string $did, ?array $callback): void
+    {
+        $info = null;
+        foreach ($this->getDids() as $d) {
+            if ($d['did'] === $did) {
+                $info = $d;
+            }
+        }
+        if ($info === null) {
+            throw new VoipMsError('invalid_did');
+        }
+        if (!$info['smsEnabled']) {
+            throw new VoipMsError('sms_disabled');
+        }
+        $this->storeCallback($did, $callback);
+    }
+
+    /** @return array<string, ?array{url: string, retry: bool}> */
+    private function callbacks(): array
+    {
+        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [self::CALLBACKS_KEY])->fetchColumn();
+        return $stored === false ? ['4505550199' => ['url' => self::OTHER_CALLBACK, 'retry' => false]] : json_decode($stored, true);
+    }
+
+    private function storeCallback(string $did, ?array $callback): void
+    {
+        $callbacks = $this->callbacks();
+        $callbacks[$did] = $callback === null ? null : ['url' => $callback['url'], 'retry' => (bool) $callback['retry']];
+        Db::run(
+            $this->db,
+            'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            [self::CALLBACKS_KEY, json_encode($callbacks)],
         );
     }
 
@@ -129,10 +170,13 @@ final class DemoClient implements VoipMsApi
         }
     }
 
-    public function enableSms(string $did): void
+    public function enableSms(string $did, ?array $callback = null): void
     {
         if (!(array_column(self::DIDS, 'smsAvailable', 'did')[$did] ?? false)) {
             throw new VoipMsError('invalid_did');
+        }
+        if ($callback !== null) {
+            $this->storeCallback($did, $callback);
         }
         Db::run(
             $this->db,

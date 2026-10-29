@@ -1,6 +1,6 @@
 import { DAY_MS, epochToZonedDate, epochToZonedDateTime } from '../time.js';
 import type { ContactIcon } from '../../shared/contact.js';
-import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type VoipMsApi } from './client.js';
+import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type SmsCallback, type VoipMsApi } from './client.js';
 
 /**
  * In-memory stand-in for a VoIP.ms account (DEMO_MODE=true): sample numbers,
@@ -36,10 +36,13 @@ interface Seed {
   media?: string[];
 }
 
+/** Laval already sends its texts to another system, as numbers wired to a CRM do. */
+const DEMO_OTHER_CALLBACK = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
+
 const DIDS: DidInfo[] = [
-  { did: '5145550100', description: 'Montréal, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true },
-  { did: '4505550199', description: 'Laval, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true },
-  { did: '8195550123', description: 'Gatineau, QC', smsAvailable: true, smsEnabled: false, mmsAvailable: false },
+  { did: '5145550100', description: 'Montréal, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
+  { did: '4505550199', description: 'Laval, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: { url: DEMO_OTHER_CALLBACK, retry: false } },
+  { did: '8195550123', description: 'Gatineau, QC', smsAvailable: true, smsEnabled: false, mmsAvailable: false, callback: null },
 ];
 
 /** Contacts created locally in demo mode so names show up. */
@@ -103,7 +106,7 @@ export class DemoVoipMs implements VoipMsApi {
   }
 
   async getDids(): Promise<DidInfo[]> {
-    return this.dids.map((d) => ({ ...d }));
+    return this.dids.map((d) => ({ ...d, callback: d.callback && { ...d.callback } }));
   }
 
   async deleteMessage(kind: RemoteKind, id: string): Promise<void> {
@@ -112,11 +115,19 @@ export class DemoVoipMs implements VoipMsApi {
     this.messages.splice(index, 1);
   }
 
-  async enableSms(did: string): Promise<void> {
+  async enableSms(did: string, callback?: SmsCallback): Promise<void> {
     const info = this.dids.find((d) => d.did === did);
     if (!info?.smsAvailable) throw new VoipMsError('invalid_did');
     info.smsEnabled = true;
     info.mmsAvailable = true;
+    if (callback !== undefined) info.callback = { ...callback };
+  }
+
+  async setCallback(did: string, callback: SmsCallback | null): Promise<void> {
+    const info = this.dids.find((d) => d.did === did);
+    if (!info) throw new VoipMsError('invalid_did');
+    if (!info.smsEnabled) throw new VoipMsError('sms_disabled');
+    info.callback = callback && { ...callback };
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {

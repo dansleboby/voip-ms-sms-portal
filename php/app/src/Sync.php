@@ -50,6 +50,8 @@ final class Sync
         private readonly string $lockDir,
         private readonly \Closure $onIncoming,
         private readonly string $cronCommand,
+        /** VoIP.ms announcing texts: with every number covered, checks become a safety net. */
+        private readonly ?Webhook $webhook = null,
     ) {
     }
 
@@ -75,6 +77,7 @@ final class Sync
             'lastError' => $error,
             'importing' => $import ? ['done' => $import['done'], 'total' => $import['total']] : null,
             'cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand],
+            'webhook' => $this->webhook?->summary(),
         ];
     }
 
@@ -83,8 +86,12 @@ final class Sync
         $this->repo->setSetting(self::CRON_KEY, (string) Time::nowMs());
     }
 
-    /** Whether a check is due: faster while someone has the app open, slower after errors. */
-    public function isDue(bool $active): bool
+    /**
+     * Whether a check is due: faster while someone has the app open, slower
+     * after errors, and only as a safety net while VoIP.ms announces texts,
+     * except for a tab that just opened ($opening).
+     */
+    public function isDue(bool $active, bool $opening = false): bool
     {
         $interval = $active ? $this->pollActiveMs : $this->pollIdleMs;
         $errors = (int) ($this->repo->getSetting(self::ERRORS_KEY) ?? 0);
@@ -92,6 +99,8 @@ final class Sync
             $interval = $this->repo->getSetting(self::LAST_ERROR_KEY) === 'api_limit_exceeded'
                 ? self::RATE_LIMIT_BACKOFF_MS
                 : min($interval * 2 ** ($errors - 1), self::MAX_ERROR_BACKOFF_MS);
+        } elseif (!$opening && $this->webhook?->complete()) {
+            $interval = Webhook::SAFETY_INTERVAL_MS;
         }
         // Polls and cron runs do not land exactly on the interval: a little early still counts.
         $slack = min(5000, intdiv($interval, 4));

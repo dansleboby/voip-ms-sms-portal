@@ -125,13 +125,19 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
    3. Back in the wizard, click **Check access**. VoIP.ms can take a minute to apply the change.
    4. When the wizard says "Connected", click **Continue**.
 5. **Your numbers**: give each one a name and a color if you like. A number whose SMS is off can be turned on here. Click **Continue**.
-6. **History**: choose how much of your past texts to bring in, then click **Finish**.
-7. **cPanel only, Checks in the background.** The wizard shows a command like `/usr/local/bin/php /home/you/sms-portal/cron.php`. It is what fetches new texts, and sends notifications, while the portal is closed.
+6. **Receiving texts**: how the portal learns that a text came in.
+   - On cPanel, or with Docker over HTTPS: choose **Instantly, through a VoIP.ms webhook**. The portal sets up your numbers at VoIP.ms itself, and texts then show up within seconds.
+   - If a number already sends its texts somewhere else (another app), it says so: click **Replace** to have it call the portal instead. Going back to regular checks gives it its old setting back.
+   - With Docker at home, without an HTTPS address, keep **Regular checks**.
+
+   Click **Continue**.
+7. **History**: choose how much of your past texts to bring in, then click **Finish**.
+8. **cPanel only, Checks in the background.** The wizard shows a command like `/usr/local/bin/php /home/you/sms-portal/cron.php`. It is what fetches new texts, and sends notifications, while the portal is closed. With the webhook on, it still runs, as a safety net, and downloads the pictures of MMS.
    1. Copy the command.
    2. In cPanel, open **Cron Jobs**. Under **Add New Cron Job**, in **Common Settings**, choose **Once Per Minute (\* \* \* \* \*)**.
    3. Paste the command in **Command** and click **Add New Cron Job**.
    4. Back in the wizard, wait until it sees the first run, within a minute.
-8. Click **Open my messages**. Done!
+9. Click **Open my messages**. Done!
 
 ## 4. Use it on your phone
 
@@ -150,7 +156,7 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
 | **"Wrong email or API password."** in the wizard | Use the API password from part 1, not your VoIP.ms sign-in password, and the email you sign in to VoIP.ms with. If in doubt, save a new API password on the VoIP.ms page and type it again. |
 | **"This IP address is not allowed in VoIP.ms."** | The address the wizard shows is not saved in **Enable IP Addresses** yet: paste it, click **Save IP Addresses**, wait a minute, then click **Check access** again. |
 | **"The API is not enabled on your VoIP.ms account."** | Click **Enable/Disable API** on the VoIP.ms API page (part 1, step 3). |
-| New texts only show up when the portal is open (cPanel) | The cron job is missing or stopped. **Settings** shows it with a red badge, and gives the command to add in cPanel → **Cron Jobs** (part 3, step 7). |
+| New texts only show up when the portal is open (cPanel) | The cron job is missing or stopped. **Settings** shows it with a red badge, and gives the command to add in cPanel → **Cron Jobs** (part 3, step 8). Or turn on the webhook (part 3, step 6), which brings texts in without waiting for it. |
 | No notifications on the phone | The address must start with `https://`. On an iPhone, open the portal from its home screen icon. Then turn notifications on in **Settings**, and try **Send a test notification**. |
 | Docker: the page does not open | In the folder, `docker compose ps` says whether it runs, and `docker compose logs` says why not. |
 

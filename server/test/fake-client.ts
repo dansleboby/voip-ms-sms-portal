@@ -1,11 +1,11 @@
 import { epochToZonedDateTime } from '../time.js';
-import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type VoipMsApi } from '../voipms/client.js';
+import { VoipMsError, type DidInfo, type MessageQuery, type RemoteKind, type RemoteMessage, type SmsCallback, type VoipMsApi } from '../voipms/client.js';
 
 /** Scriptable VoIP.ms double for tests. */
 export class FakeVoipMs implements VoipMsApi {
   dids: DidInfo[] = [
-    { did: '4506575294', description: 'Le Gardeur, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true },
-    { did: '5143604702', description: 'Montréal, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true },
+    { did: '4506575294', description: 'Le Gardeur, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
+    { did: '5143604702', description: 'Montréal, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
   ];
   messages: RemoteMessage[] = [];
   sent: { kind: RemoteKind; did: string; dst: string; message: string; media: string[] }[] = [];
@@ -14,7 +14,7 @@ export class FakeVoipMs implements VoipMsApi {
   /** Date given to pushed messages without one; defaults to the current Eastern time. */
   defaultDate: string | null = null;
   /** Next error to throw from the matching call. */
-  failNext: Partial<Record<'getIP' | 'getBalance' | 'getMessages' | 'sendSms' | 'sendMms' | 'deleteMessage', string>> = {};
+  failNext: Partial<Record<'getIP' | 'getBalance' | 'getMessages' | 'sendSms' | 'sendMms' | 'deleteMessage' | 'setCallback', string>> = {};
   deleted: { kind: RemoteKind; id: string }[] = [];
   private nextId = { sms: 1000, mms: 500 };
 
@@ -62,10 +62,18 @@ export class FakeVoipMs implements VoipMsApi {
     this.deleted.push({ kind, id });
   }
 
-  async enableSms(did: string): Promise<void> {
+  async enableSms(did: string, callback?: SmsCallback): Promise<void> {
     const info = this.dids.find((d) => d.did === did);
     if (!info?.smsAvailable) throw new VoipMsError('invalid_did');
     info.smsEnabled = true;
+    if (callback !== undefined) info.callback = callback;
+  }
+
+  async setCallback(did: string, callback: SmsCallback | null): Promise<void> {
+    this.maybeFail('setCallback');
+    const info = this.dids.find((d) => d.did === did);
+    if (!info?.smsEnabled) throw new VoipMsError('sms_disabled');
+    info.callback = callback;
   }
 
   async getMessages(kind: RemoteKind, query: MessageQuery): Promise<RemoteMessage[]> {

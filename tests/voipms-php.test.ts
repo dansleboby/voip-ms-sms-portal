@@ -40,6 +40,8 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
       VOIPMS_API_URL: `${voipms.url}/api/v1/rest.php`,
       VOIPMS_API_USERNAME: 'me@example.com',
       VOIPMS_API_PASSWORD: 'api-secret',
+      // The address VoIP.ms calls back.
+      PUBLIC_URL: 'https://sms.example.com',
     });
     client = new Client(backend.url);
     await client.login();
@@ -193,5 +195,31 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
     expect((await client.post('/api/setup/credentials', { username: 'me@example.com', password: 'nope' })).json).toEqual({
       error: 'credentials_from_env',
     });
+  });
+
+  it('checks VoIP.ms when it calls back, once the numbers point at the portal', async () => {
+    const OTHER = '5143604702';
+    const enabled = (await client.post('/api/webhook/enable', { replace: [OTHER] })).json;
+    expect(enabled).toMatchObject({ enabled: true, complete: true });
+    for (const call of voipms.calls.filter((c) => c.method === 'setSMS').slice(-2)) {
+      expect(call.fields).toMatchObject({ enable: '1', url_callback_enable: '1', url_callback: enabled.url, url_callback_retry: '1' });
+    }
+    // The rest of that number's SMS settings stays as it was.
+    expect(voipms.dids.find((d) => d.did === OTHER)).toMatchObject({ sms_email_enabled: '1', sms_email: 'me@example.com', sms_url_callback: enabled.url });
+
+    voipms.push({ direction: 'in', contact: '5145550001', message: 'Allô par webhook' });
+    expect(await new Client(backend.url).get(new URL(enabled.url).pathname)).toMatchObject({ status: 200, json: 'ok' });
+    // No tab polls here: the check after the answer is what brings the text in.
+    const conversation = await waitFor(async () => (await conversations()).find((c) => c.phone === '5145550001'));
+    expect(conversation).toMatchObject({ did: DID, unreadCount: 1 });
+
+    expect((await client.post('/api/webhook/disable')).json).toMatchObject({ enabled: false });
+    expect(voipms.dids.find((d) => d.did === OTHER)).toMatchObject({
+      sms_url_callback: 'https://hook.example/sms?from={FROM}',
+      sms_url_callback_enabled: '1',
+      sms_url_callback_retry: '1',
+      sms_email_enabled: '1',
+    });
+    expect(voipms.dids.find((d) => d.did === DID)).toMatchObject({ sms_url_callback_enabled: '0', sms_url_callback: '' });
   });
 });

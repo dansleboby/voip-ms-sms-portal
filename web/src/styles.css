@@ -1923,6 +1923,66 @@ textarea.input {
   font-size: 13px;
 }
 
+.warning-text {
+  color: var(--on-warning-container);
+}
+
+/* ------------------------------------------- receiving texts (Settings, wizard) */
+
+.receiving .choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.receiving .choice + .choice,
+.receiving .choice + .row,
+.receiving .row + .choice {
+  border-top: 1px solid var(--outline-variant);
+}
+
+.receiving .choice > span {
+  flex: 1;
+}
+
+.receiving .choice input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+}
+
+.receiving .choice.selected {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.receiving .choice.disabled {
+  cursor: default;
+}
+
+.receiving .check-title svg,
+.receiving-number .row-sub svg {
+  vertical-align: -2px;
+}
+
+.receiving .check-title svg {
+  color: var(--primary);
+}
+
+.receiving .chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 /* A release's changelog section, in Settings > Updates. */
 .update-details {
   flex-direction: column;

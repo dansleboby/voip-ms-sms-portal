@@ -3,12 +3,13 @@ import type {
   ContactDto,
   ConversationDto,
   DidDto,
-  UpdateStatusDto,
   EventsPollDto,
   MessageDto,
   SessionDto,
   SetupStatusDto,
   SyncStatusDto,
+  UpdateStatusDto,
+  WebhookStatusDto,
 } from '../../shared/types';
 
 export class ApiError extends Error {
@@ -153,4 +154,9 @@ export const api = {
   updateStatus: (refresh = false) => request<UpdateStatusDto>('GET', `/api/update${refresh ? '?refresh=1' : ''}`),
   installUpdate: () => request<{ version: string }>('POST', '/api/update/install'),
   syncNow: () => request<SyncStatusDto>('POST', '/api/sync/now'),
+  /** How VoIP.ms's URL callback is set on each number (asks VoIP.ms). */
+  webhook: () => request<WebhookStatusDto>('GET', '/api/webhook'),
+  /** `replace`: numbers whose callback to another address may be replaced. */
+  enableWebhook: (replace: string[] = []) => request<WebhookStatusDto>('POST', '/api/webhook/enable', { replace }),
+  disableWebhook: () => request<WebhookStatusDto>('POST', '/api/webhook/disable'),
 };

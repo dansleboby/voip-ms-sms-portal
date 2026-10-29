@@ -788,3 +788,65 @@ describe('push notifications', () => {
     expect(services.repo.listPushSubscriptions()).toEqual([]);
   });
 });
+
+describe('texts announced by VoIP.ms', () => {
+  beforeEach(async () => {
+    await start({ VOIPMS_API_USERNAME: 'me@example.com', VOIPMS_API_PASSWORD: 'x', PUBLIC_URL: 'https://sms.example.com' });
+    await login();
+    await app.inject({ url: '/api/setup/dids', headers: { cookie } });
+    await app.inject({ method: 'POST', url: '/api/setup/complete', headers: { cookie } });
+    services.sync.start();
+    // The first check only sets a baseline: texts after it are new.
+    await vi.waitFor(() => expect(services.repo.getSetting('sync.lastSuccessAt')).not.toBeNull());
+  });
+
+  const inject = (method: 'GET' | 'POST', url: string, payload?: object) => app.inject({ method, url, payload, headers: { cookie } });
+
+  it('checks VoIP.ms as soon as it calls, then only as a safety net', async () => {
+    client.dids[1]!.callback = { url: 'https://crm.example/sms', retry: false };
+    const enabled = (await inject('POST', '/api/webhook/enable', { replace: ['5143604702'] })).json();
+    expect(enabled).toMatchObject({ enabled: true, complete: true });
+    expect(client.dids.map((d) => d.callback)).toEqual([
+      { url: enabled.url, retry: true },
+      { url: enabled.url, retry: true },
+    ]);
+    const queries = client.queries.length;
+
+    const text = client.push({ direction: 'in', body: 'Allô par webhook' });
+    const call = await app.inject({ url: new URL(enabled.url).pathname });
+    expect(call.statusCode).toBe(200);
+    expect(call.body).toBe('ok');
+    await vi.waitFor(() => expect(services.repo.findMessageByRemote('sms', text.id)).not.toBeNull());
+    expect(client.queries.length).toBeGreaterThan(queries);
+    // A notification and an unread badge, as for a text found by a scheduled check.
+    expect(services.repo.listConversations({})[0]).toMatchObject({ unreadCount: 1 });
+
+    // No more checks every few seconds: the next one is the safety net, a quarter of an hour away.
+    const after = client.queries.length;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(client.queries.length).toBe(after);
+
+    const off = (await inject('POST', '/api/webhook/disable')).json();
+    expect(off).toMatchObject({ enabled: false });
+    expect(client.dids.map((d) => d.callback)).toEqual([null, { url: 'https://crm.example/sms', retry: false }]);
+  });
+
+  it('reports the numbers VoIP.ms refused to change, and keeps checking at the usual pace', async () => {
+    client.failNext.setCallback = 'sms_wait_message';
+    const enabled = (await inject('POST', '/api/webhook/enable')).json();
+    expect(enabled.numbers).toEqual([
+      { did: '4506575294', state: 'none', otherUrl: null, error: 'sms_wait_message' },
+      { did: '5143604702', state: 'ours', otherUrl: null, error: null },
+    ]);
+    expect(enabled.complete).toBe(false);
+    expect(services.webhook.complete()).toBe(false);
+    // Asked again a minute later, the number follows.
+    expect((await inject('POST', '/api/webhook/enable')).json()).toMatchObject({ complete: true });
+  });
+
+  it('ignores calls with a wrong secret', async () => {
+    await inject('POST', '/api/webhook/enable');
+    expect((await app.inject({ url: '/api/voipms/callback/guess' })).statusCode).toBe(404);
+    expect(services.repo.getSetting('webhook.lastCallAt')).toBeNull();
+  });
+});

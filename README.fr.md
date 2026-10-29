@@ -9,7 +9,7 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 ![Conversations sur deux numéros, avec une photo reçue par MMS](docs/screenshots/fr/hero.png)
 
 - **Tous vos numéros au même endroit.** Un menu latéral (des pastilles sur mobile) bascule entre « tous les numéros » et chaque DID. Donnez un nom et une couleur à chaque numéro ; chaque conversation indique à quel numéro elle appartient et les réponses partent toujours de ce numéro.
-- **Réception sans rien exposer sur Internet.** Le serveur interroge VoIP.ms : toutes les 10 s quand l'application est ouverte dans un navigateur, toutes les 60 s sinon. Les messages reçus pendant un arrêt du serveur sont récupérés au redémarrage.
+- **Réception vérifiée ou annoncée.** Le serveur interroge VoIP.ms (toutes les 10 s quand l'application est ouverte dans un navigateur, toutes les 60 s sinon), sans rien exposer sur Internet ; ou, quand le portail est joignable en HTTPS, VoIP.ms l'appelle dès qu'un texto arrive. Les messages reçus pendant un arrêt du serveur sont récupérés au redémarrage.
 - **SMS ou MMS, automatiquement.** VoIP.ms compte sa limite de 160 caractères en *octets* (une lettre accentuée compte pour 2, un émoji pour 4). La zone de saisie affiche le compte et passe en MMS au besoin, ou dès qu'un fichier est joint.
 - **Pièces jointes.** Photos, vidéos, sons et vCard (3 par message) ; les grosses photos sont redimensionnées dans le navigateur pour respecter la limite de 1,2 Mo de VoIP.ms. Les médias reçus sont téléchargés et conservés localement. Les messages vocaux, y compris les fichiers AMR qu'envoient les téléphones, se lisent dans un lecteur qui affiche leur forme d'onde.
 - **Assistant de configuration.** Il explique comment activer l'API, affiche l'adresse IP exacte à autoriser, teste la connexion, liste vos numéros et importe l'historique.
@@ -54,7 +54,7 @@ Tapez un nom ou un numéro : les contacts sont suggérés au fil de la frappe. A
 
 ### Assistant de configuration
 
-Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant.
+Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant. Il demande ensuite comment les nouveaux textos doivent arriver au portail (voir [Réception des textos](#réception-des-textos)).
 
 | Autoriser l'adresse IP | Choisir ses numéros |
 | --- | --- |
@@ -85,6 +85,14 @@ Touchez un message pour afficher son bouton *Supprimer* ; la corbeille dans l'en
 Activez-les dans les Réglages, sur chaque appareil : téléphone, ordinateur, tablette. Elles arrivent même quand aucun onglet n'est ouvert et évitent l'appareil où l'application est déjà à l'écran. Une fois l'application installée, son icône affiche aussi le nombre de textos non lus (iPhone, iPad, Windows, macOS ; Android affiche une pastille). Voir [Mettre en place les notifications push](#mettre-en-place-les-notifications-push) pour les prérequis.
 
 ![Réglages des notifications push](docs/screenshots/fr/push.png)
+
+### Réception des textos
+
+Par défaut, le portail interroge VoIP.ms à intervalles réguliers, ce qui fonctionne partout, même sur un réseau maison sans rien d'ouvert sur Internet. Quand le portail est joignable en HTTPS (toujours le cas sur un hébergement mutualisé ; avec Docker, réglez `PUBLIC_URL`), choisissez *Instantanée, par webhook VoIP.ms* dans l'assistant ou dans *Réglages* → *Réception des textos* : le portail règle lui-même le « SMS/MMS URL Callback » de chaque numéro chez VoIP.ms, et VoIP.ms appelle alors le portail dès qu'un de vos numéros reçoit un texto.
+
+- Un numéro qui envoie déjà ses textos à une autre adresse (un CRM, une autre application) la garde, sauf si vous choisissez *Remplacer* ; revenir à la vérification régulière la lui rend.
+- Un appel de VoIP.ms ne fait que déclencher une vérification immédiate de VoIP.ms : un appel qui ne viendrait pas de VoIP.ms ne peut donc pas ajouter de faux texto. Son adresse contient tout de même un secret.
+- Une vérification a encore lieu toutes les 15 minutes : VoIP.ms n'appelle que pour les textos que reçoivent vos numéros, pas pour ceux envoyés depuis d'autres applications, et un appel peut se perdre pendant un arrêt du serveur.
 
 ### Réglages
 
@@ -139,7 +147,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 **Par rapport à Docker :**
 
 - Les onglets ouverts demandent les nouveautés toutes les 3 s au lieu de garder une connexion ouverte : une réponse ou le résultat d'un envoi peut prendre quelques secondes à s'afficher.
-- Quand l'application est fermée, c'est la tâche cron qui vérifie VoIP.ms : les nouveaux textos et les notifications peuvent arriver jusqu'à une minute plus tard, davantage chez les hébergeurs qui limitent les tâches cron à toutes les 5 ou 15 minutes.
+- Quand l'application est fermée, c'est la tâche cron qui vérifie VoIP.ms : les nouveaux textos et les notifications peuvent arriver jusqu'à une minute plus tard, davantage chez les hébergeurs qui limitent les tâches cron à toutes les 5 ou 15 minutes. Avec le [webhook](#réception-des-textos), ils arrivent tout de suite.
 - L'adresse IP à autoriser dans VoIP.ms est celle du serveur, partagée avec les autres sites qu'il héberge : c'est le mot de passe d'API qui protège tout. Si l'hébergeur déplace votre compte sur un autre serveur, la synchronisation s'arrête jusqu'à ce que la nouvelle adresse soit autorisée ; *Réglages* → *Tester la connexion* l'affiche.
 - En venant de Docker : copiez `data/portal.db` et `data/media/` dans `sms-portal/data/`. Tout suit, sauf le mot de passe d'API VoIP.ms, que l'assistant redemande (les deux versions dérivent leur clé de chiffrement différemment), et les notifications push, à réactiver sur chaque appareil.
 
@@ -152,7 +160,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 | `POLL_INTERVAL_ACTIVE` | `10` | Secondes entre deux vérifications quand un onglet est ouvert. |
 | `POLL_INTERVAL_IDLE` | `60` | Secondes entre deux vérifications sinon. |
 | `LIVE_UPDATES` | `stream` | Comment les onglets ouverts reçoivent les nouveaux textos et les changements. `stream` garde une connexion ouverte par onglet (Server-Sent Events) ; `poll` fait plutôt demander chaque onglet toutes les 3 s, pour les proxys ou hébergeurs qui ne laissent pas passer un flux. |
-| `PUBLIC_URL` | | Adresse de l'application, comme `https://sms.example.com`. Recommandé derrière un proxy inverse : s'il ne transmet pas le `Host` et le protocole d'origine, la connexion serait refusée sans ce réglage. |
+| `PUBLIC_URL` | | Adresse de l'application, comme `https://sms.example.com`. Recommandé derrière un proxy inverse : s'il ne transmet pas le `Host` et le protocole d'origine, la connexion serait refusée sans ce réglage. C'est aussi l'adresse qu'appelle VoIP.ms quand les textos sont annoncés par webhook. |
 | `TRUST_PROXY` | `false` | `true` derrière un proxy inverse qui gère le HTTPS (cookies sécurisés, vraie IP des clients). `true` ne fait confiance qu'aux proxys sur la boucle locale et les réseaux privés ; on peut aussi lister des adresses/sous-réseaux (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` dans Docker, `sms-portal/data` en hébergement mutualisé) | Emplacement de la base et des médias. |
 | `PORT` | `8080` | Port HTTP. |
@@ -192,7 +200,7 @@ Les mises à jour en direct passent par Server-Sent Events (`/api/events`) : dé
 
 ## Fonctionnement
 
-- **Synchronisation.** `getSMS` et `getMMS` sont appelés séparément (avec `all_messages=1`, VoIP.ms mélange les deux sans les distinguer, et leurs identifiants se chevauchent). Chaque message est enregistré une seule fois ; ceux envoyés d'ailleurs (votre cellulaire, le portail VoIP.ms) apparaissent aussi. La toute première synchronisation et les imports d'historique ne marquent rien comme non lu.
+- **Synchronisation.** `getSMS` et `getMMS` sont appelés séparément (avec `all_messages=1`, VoIP.ms mélange les deux sans les distinguer, et leurs identifiants se chevauchent). Chaque message est enregistré une seule fois ; ceux envoyés d'ailleurs (votre cellulaire, le portail VoIP.ms) apparaissent aussi. La toute première synchronisation et les imports d'historique ne marquent rien comme non lu. Avec le webhook, un appel de VoIP.ms (`/api/voipms/callback/<secret>`) ne fait que lancer une vérification ; son contenu n'est jamais enregistré, puisque rien ne prouve qu'il vient de VoIP.ms.
 - **Médias.** Les liens des médias VoIP.ms sont publics et peuvent répondre 404 un moment après l'envoi : les téléchargements sont réessayés avec un délai croissant pendant environ 6 heures (et à la demande depuis la conversation).
 - **Dates.** VoIP.ms renvoie l'heure de l'Est ; son paramètre `timezone` ignore l'heure avancée, donc les dates sont converties avec le fuseau IANA.
 - **Push.** Chaque navigateur a un identifiant aléatoire, partagé par ses onglets et son abonnement push ; les onglets ouverts signalent s'ils sont visibles et le serveur évite les navigateurs qui affichent l'application. Les messages sont chiffrés selon la RFC 8291 et signés avec VAPID (RFC 8292) par le module crypto de Node, sans bibliothèque tierce.
