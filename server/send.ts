@@ -2,8 +2,9 @@ import type { Repo } from './db.js';
 import type { EventHub } from './events.js';
 import type { Logger } from './logger.js';
 import type { MediaStore } from './media.js';
-import type { SyncEngine } from './sync.js';
-import { VoipMsError, type VoipMsApi } from './voipms/client.js';
+import type { Account } from './accounts.js';
+import { storedRemoteId } from './db.js';
+import { VoipMsError } from './voipms/client.js';
 import { checkOutgoing, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 import { isValidNanp, normalizePhone } from '../shared/phone.js';
 import type { ConversationDto, MessageDto } from '../shared/types.js';
@@ -29,8 +30,8 @@ export interface SendDeps {
   repo: Repo;
   events: EventHub;
   media: MediaStore;
-  sync: SyncEngine;
-  getClient: () => VoipMsApi | null;
+  /** The account a number belongs to: its client sends, and its checks wait for the send. */
+  accountForDid: (did: string) => Account | null;
   log: Logger;
 }
 
@@ -90,7 +91,8 @@ export class MessageSender {
     if (AMBIGUOUS_ERRORS.has(row.error ?? '')) {
       // VoIP.ms may have accepted the first attempt: look at the history (which
       // adopts it) before texting the recipient a second time.
-      await this.deps.sync.syncRecent();
+      const conversation = this.deps.repo.getConversation(row.conversation_id)!;
+      await this.deps.accountForDid(conversation.did)?.sync.syncRecent();
       if (this.deps.repo.getMessageRow(messageId)?.status === 'sent') return this.publish(messageId, row.conversation_id).message;
     }
     this.deps.repo.updateMessage(messageId, { status: 'sending', error: null });
@@ -101,12 +103,16 @@ export class MessageSender {
 
   /** Sends through VoIP.ms. Never throws: failures end up on the message. */
   async deliver(messageId: number): Promise<void> {
-    const { repo, sync, media, log } = this.deps;
-    await sync.exclusive(async () => {
+    const { repo, media, log } = this.deps;
+    const queued = repo.getMessageRow(messageId);
+    const account = queued ? this.deps.accountForDid(repo.getConversation(queued.conversation_id)?.did ?? '') : null;
+    // No account (a number gone from the portal): fails below, outside any account's checks.
+    const exclusive = <T>(fn: () => Promise<T>) => (account ? account.sync.exclusive(fn) : fn());
+    await exclusive(async () => {
       const row = repo.getMessageRow(messageId);
       if (!row || row.status !== 'sending') return;
       const conversation = repo.getConversation(row.conversation_id);
-      const client = this.deps.getClient();
+      const client = account?.client() ?? null;
       let kind = row.kind;
       try {
         if (!conversation) throw new VoipMsError('not_found');
@@ -126,7 +132,7 @@ export class MessageSender {
           const dataUris = await Promise.all(attachments.map((a) => media.toDataUri(a)));
           remoteId = await client.sendMms(conversation.did, conversation.phone, row.body, dataUris);
         }
-        repo.updateMessage(messageId, { kind, remoteId, status: 'sent', error: null });
+        repo.updateMessage(messageId, { kind, remoteId: remoteId && storedRemoteId(account!.id, remoteId), status: 'sent', error: null });
       } catch (err) {
         const code = err instanceof VoipMsError ? err.code : 'internal_error';
         log.warn({ err, messageId }, 'Sending failed');

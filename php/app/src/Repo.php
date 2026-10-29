@@ -135,6 +135,65 @@ final class Repo
         $this->run('DELETE FROM settings WHERE key = ?', [$key]);
     }
 
+    // ----------------------------------------------------------------- accounts
+
+    /** The account set up first: the only one of a 1.x install, and the one the setup wizard is about. */
+    public const PRIMARY_ACCOUNT = 1;
+
+    /**
+     * The settings key of something each VoIP.ms account has (credentials,
+     * sync state, webhook): the first account keeps the plain keys of 1.x
+     * (server/db.ts).
+     */
+    public static function accountKey(int $accountId, string $key): string
+    {
+        return $accountId === self::PRIMARY_ACCOUNT ? $key : "account.$accountId.$key";
+    }
+
+    /**
+     * A VoIP.ms message id as stored: those of the accounts after the first
+     * carry the account ("2:1234"), so that two accounts' ids never clash.
+     */
+    public static function storedRemoteId(int $accountId, string $id): string
+    {
+        return $accountId === self::PRIMARY_ACCOUNT ? $id : "$accountId:$id";
+    }
+
+    /** The id VoIP.ms knows a stored message by. */
+    public static function voipmsId(string $stored): string
+    {
+        $colon = strpos($stored, ':');
+        return $colon === false ? $stored : substr($stored, $colon + 1);
+    }
+
+    /** @return list<array{id: int, label: ?string, numbers: int}> */
+    public function listAccounts(): array
+    {
+        return $this->all(
+            'SELECT a.id, a.label, (SELECT COUNT(*) FROM dids d WHERE d.account_id = a.id) AS numbers FROM voipms_accounts a ORDER BY a.id',
+        );
+    }
+
+    public function createAccount(?string $label): int
+    {
+        $label = $label !== null && trim($label) !== '' ? trim($label) : null;
+        $this->run('INSERT INTO voipms_accounts (label, created_at) VALUES (?, ?)', [$label, Time::nowMs()]);
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function updateAccount(int $id, ?string $label): bool
+    {
+        $label = $label !== null && trim($label) !== '' ? trim($label) : null;
+        return $this->run('UPDATE voipms_accounts SET label = ? WHERE id = ?', [$label, $id])->rowCount() > 0;
+    }
+
+    /** The account a number belongs to, or null for a number not seen yet. */
+    public function accountOfDid(string $did): ?int
+    {
+        $row = $this->one('SELECT account_id FROM dids WHERE did = ?', [$did]);
+        return $row === null ? null : (int) $row['account_id'];
+    }
+
     // --------------------------------------------------------------------- dids
 
     public function listDids(): array
@@ -156,6 +215,7 @@ final class Repo
             'description' => $r['description'],
             'position' => $r['position'],
             'unreadCount' => (int) ($r['unread'] ?? 0),
+            'accountId' => (int) $r['account_id'],
         ], $rows);
     }
 
@@ -184,9 +244,14 @@ final class Repo
      * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
      * and visibility; a number that just got SMS shows up, like a new one.
      */
-    public function upsertDid(array $info): void
+    /** A number already known under another account stays with it (false). */
+    public function upsertDid(array $info, int $accountId = self::PRIMARY_ACCOUNT): bool
     {
-        if ($this->one('SELECT did FROM dids WHERE did = ?', [$info['did']])) {
+        $owner = $this->accountOfDid($info['did']);
+        if ($owner !== null && $owner !== $accountId) {
+            return false;
+        }
+        if ($owner !== null) {
             $this->run(
                 'UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
                    description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?',
@@ -199,12 +264,12 @@ final class Repo
                     $info['did'],
                 ],
             );
-            return;
+            return true;
         }
         $position = (int) $this->run('SELECT COUNT(*) FROM dids')->fetchColumn();
         $this->run(
-            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
-             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position, account_id)
+             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $info['did'],
                 $this->nextDidColor(),
@@ -214,15 +279,17 @@ final class Repo
                 $info['mmsAvailable'] ? 1 : 0,
                 $info['description'],
                 $position,
+                $accountId,
             ],
         );
+        return true;
     }
 
     /** Makes sure a DID seen in message history exists locally. */
-    public function ensureDid(string $did): void
+    public function ensureDid(string $did, int $accountId = self::PRIMARY_ACCOUNT): void
     {
         if (!$this->one('SELECT did FROM dids WHERE did = ?', [$did])) {
-            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true]);
+            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true], $accountId);
         }
     }
 
@@ -376,8 +443,12 @@ final class Repo
     public function pendingRemoteDeletes(int $limit): array
     {
         return array_map(
-            static fn (array $r) => ['id' => $r['id'], 'kind' => $r['kind'], 'remoteId' => (string) $r['remote_id']],
-            $this->all('SELECT id, kind, remote_id FROM messages WHERE delete_remote = 1 ORDER BY id LIMIT ?', [$limit]),
+            static fn (array $r) => ['id' => $r['id'], 'kind' => $r['kind'], 'remoteId' => (string) $r['remote_id'], 'did' => $r['did']],
+            $this->all(
+                'SELECT m.id, m.kind, m.remote_id, c.did FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                 WHERE m.delete_remote = 1 ORDER BY m.id LIMIT ?',
+                [$limit],
+            ),
         );
     }
 

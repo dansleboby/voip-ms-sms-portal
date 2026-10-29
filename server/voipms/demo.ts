@@ -39,6 +39,7 @@ interface Seed {
 /** Laval already sends its texts to another system, as numbers wired to a CRM do. */
 const DEMO_OTHER_CALLBACK = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
 
+/** The first sample account; any other account is the second sample (OTHER_DIDS). */
 const DIDS: DidInfo[] = [
   { did: '5145550100', description: 'Montréal, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
   { did: '4505550199', description: 'Laval, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: { url: DEMO_OTHER_CALLBACK, retry: false } },
@@ -66,18 +67,37 @@ const SEEDS: Seed[] = [
   { ago: 40 * MIN, did: '4505550199', contact: '32665', dir: 'in', body: 'Votre code de vérification est 482913. Ne le partagez avec personne.' },
 ];
 
+/** A second VoIP.ms account, as an agency keeps one per client. */
+const OTHER_DIDS: DidInfo[] = [
+  { did: '4185550142', description: 'Québec, QC', smsAvailable: true, smsEnabled: true, mmsAvailable: true, callback: null },
+];
+
+const OTHER_SEEDS: Seed[] = [
+  { ago: 2 * DAY_MS + 3 * HOUR, did: '4185550142', contact: '4185550177', dir: 'in', body: 'Bonjour, est-ce que la commande de pains est prête pour vendredi?' },
+  { ago: 2 * DAY_MS + 2 * HOUR, did: '4185550142', contact: '4185550177', dir: 'out', body: 'Oui, tout sera prêt à 8 h. Merci!' },
+  { ago: 3 * HOUR, did: '4185550142', contact: '4185550123', dir: 'in', body: 'Avez-vous encore des croissants aux amandes?' },
+];
+
 interface Stored extends RemoteMessage {
   at: number;
 }
 
 export class DemoVoipMs implements VoipMsApi {
-  private readonly dids = DIDS.map((d) => ({ ...d }));
+  private readonly dids: DidInfo[];
   private readonly messages: Stored[] = [];
-  private nextId = { sms: 900000, mms: 50000 };
+  private nextId: Record<RemoteKind, number>;
 
-  constructor(private readonly timeZone: string) {
+  /** `accountId`: 1 is the first sample account, any other the second one. */
+  constructor(
+    private readonly timeZone: string,
+    accountId = 1,
+  ) {
+    const first = accountId === 1;
+    this.dids = (first ? DIDS : OTHER_DIDS).map((d) => ({ ...d, callback: d.callback && { ...d.callback } }));
+    // VoIP.ms ids are unique across accounts: the samples' never meet.
+    this.nextId = first ? { sms: 900000, mms: 50000 } : { sms: 700000, mms: 30000 };
     const now = Date.now();
-    for (const s of SEEDS) this.add(s.media ? 'mms' : 'sms', s.did, s.contact, s.dir, s.body, s.media ?? [], now - s.ago);
+    for (const s of first ? SEEDS : OTHER_SEEDS) this.add(s.media ? 'mms' : 'sms', s.did, s.contact, s.dir, s.body, s.media ?? [], now - s.ago);
   }
 
   private add(kind: RemoteKind, did: string, contact: string, direction: 'in' | 'out', body: string, media: string[], at: number): string {

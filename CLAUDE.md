@@ -16,9 +16,10 @@ React client runs on two servers that answer the same API:
   - `routes/`: the API.
   - `voipms/`: the REST client and the demo client.
   - `db.ts`: migrations and `Repo`.
-  - `sync.ts`, `send.ts`, `deletions.ts`: background work.
+  - `accounts.ts`: the VoIP.ms accounts, each with its client, `SyncEngine` and `WebhookReceiver`.
+  - `sync.ts`, `send.ts`, `deletions.ts`, `webhook.ts`: background work, per account where it talks to VoIP.ms.
 - `php/app/src/`: the PHP server, one class per Node module.
-  - `Routes/`, `VoipMs/`, `Http/`, `Db.php`, `Repo.php`, `Sync.php`, `Sender.php`, `RemoteDeletions.php`.
+  - `Routes/`, `VoipMs/`, `Http/`, `Db.php`, `Repo.php`, `Accounts.php`, `Sync.php`, `Webhook.php`, `Sender.php`, `RemoteDeletions.php`.
   - `php/app/cron.php` runs the checks while no tab is open.
   - `php/www/` is the public entry point. `php/dev-router.php` stands in for its `.htaccess` under `php -S`.
 - `shared/`: code both the client and the Node server import: phone formatting, SMS/MMS rules, API types.
@@ -57,6 +58,8 @@ whole `tests/api.test.ts` file rather than filtering with `-t`, because its case
   with a case in `tests/api.test.ts`.
 - **Migrations** are appended, never edited. Add each one to both `MIGRATIONS` in `server/db.ts`
   and `php/app/src/Db.php`, in the same order.
+- **VoIP.ms accounts.** The first one (id 1, `PRIMARY_ACCOUNT`) keeps the settings keys of 1.x;
+  the others' go through `accountKey()`, and their message ids through `storedRemoteId()`.
 - **PHP code must run on 8.1.** That rules out typed class constants, `readonly` classes and
   `json_validate`.
 - **Every user-visible string goes through i18n**, in `fr.ts` and `en.ts`.

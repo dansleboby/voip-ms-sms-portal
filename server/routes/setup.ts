@@ -12,7 +12,7 @@ const CredentialsBody = z.object({
 const ImportBody = z.object({ days: z.number().int().min(0).max(3650) });
 
 /** getIP works from any address (it only checks credentials); getBalance needs a whitelisted IP. */
-async function testConnection(client: VoipMsApi): Promise<ConnectionTestDto> {
+export async function testConnection(client: VoipMsApi): Promise<ConnectionTestDto> {
   let ip: string | null = null;
   try {
     ip = await client.getIP();
@@ -51,15 +51,10 @@ export function registerSetupRoutes(app: FastifyInstance, s: Services): void {
     return testConnection(client);
   });
 
-  /** Refreshes the numbers from VoIP.ms and returns them with local labels/colors. */
+  /** Refreshes the numbers of every VoIP.ms account and returns them with local labels/colors. */
   app.get('/api/setup/dids', async (_req, reply): Promise<DidDto[] | void> => {
-    const client = s.client();
-    if (!client) return reply.code(409).send({ error: 'not_configured' });
-    const dids = (await client.getDids()).filter((d) => s.repo.allowsDid(d.did));
-    s.repo.transaction(() => {
-      for (const d of dids) s.repo.upsertDid(d);
-    });
-    s.events.broadcast({ type: 'dids' });
+    if (!s.client()) return reply.code(409).send({ error: 'not_configured' });
+    await s.accounts.refreshDids();
     return s.repo.listDids();
   });
 

@@ -137,6 +137,15 @@ final class Db
                     }
                 }
             },
+            <<<'SQL'
+            CREATE TABLE voipms_accounts (
+              id         INTEGER PRIMARY KEY,
+              label      TEXT,
+              created_at INTEGER NOT NULL
+            );
+            INSERT INTO voipms_accounts (id, label, created_at) VALUES (1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+            ALTER TABLE dids ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
+            SQL,
         ];
     }
 

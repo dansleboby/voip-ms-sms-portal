@@ -32,19 +32,26 @@ final class Cron
         $deadline = microtime(true) + self::BUDGET_S;
         @set_time_limit(self::BUDGET_S + 70);
         try {
-            $app->sync->recordCronRun();
+            $app->accounts->primary()->sync->recordCronRun();
             foreach ($app->repo->failStaleSends(Time::nowMs() - self::STALE_SEND_MS) as $id) {
                 $message = $app->repo->getMessage($id);
                 $conversation = $message ? $app->repo->getConversation($message['conversationId']) : null;
                 $app->events->broadcast(['type' => 'message', 'message' => $message, 'conversation' => $conversation]);
             }
-            if ($app->sync->isDue($app->events->hasOpenTabs())) {
-                $app->sync->syncRecent();
-            } else {
-                // The tabs learn that the cron job is alive.
-                $app->sync->publishStatus();
+            $checked = false;
+            foreach ($app->accounts->all() as $account) {
+                if ($account->sync->isDue($app->events->hasOpenTabs())) {
+                    $account->sync->syncRecent();
+                    $checked = true;
+                }
             }
-            $app->sync->continueImport($deadline);
+            if (!$checked) {
+                // The tabs learn that the cron job is alive.
+                $app->accounts->publishStatus();
+            }
+            foreach ($app->accounts->all() as $account) {
+                $account->sync->continueImport($deadline);
+            }
             $app->media->drain($deadline);
             $app->deletions->drain($deadline);
             $app->events->prune();

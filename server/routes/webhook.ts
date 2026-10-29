@@ -32,7 +32,7 @@ export function registerWebhookRoutes(app: FastifyInstance, s: Services): void {
    */
   app.get('/api/voipms/callback/:token', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { token } = CallbackParams.parse(req.params);
-    if (!s.webhook.receive(token)) return reply.code(404).send({ error: 'not_found' });
+    if (!s.accounts.receive(token)) return reply.code(404).send({ error: 'not_found' });
     return reply.type('text/plain; charset=utf-8').send('ok');
   });
 }

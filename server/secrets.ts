@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { Repo } from './db.js';
+import { accountKey, PRIMARY_ACCOUNT, type Repo } from './db.js';
 import type { VoipMsCredentials } from './voipms/client.js';
 import type { CredentialsSource } from '../shared/types.js';
 
@@ -8,6 +8,9 @@ import type { CredentialsSource } from '../shared/types.js';
  * (AES-256-GCM) with a key derived from APP_PASSWORD, so a copy of the
  * database alone does not reveal the API password. Changing APP_PASSWORD
  * makes them unreadable and the wizard asks for them again.
+ *
+ * Each VoIP.ms account has its own; VOIPMS_API_USERNAME/PASSWORD only stand
+ * for the first one.
  */
 
 const CREDENTIALS_KEY = 'voipms.credentials';
@@ -33,17 +36,17 @@ export class CredentialStore {
     return this.key;
   }
 
-  source(): CredentialsSource {
-    if (this.fromEnv) return 'env';
-    return this.readStored() ? 'db' : null;
+  source(accountId = PRIMARY_ACCOUNT): CredentialsSource {
+    if (accountId === PRIMARY_ACCOUNT && this.fromEnv) return 'env';
+    return this.readStored(accountId) ? 'db' : null;
   }
 
-  get(): VoipMsCredentials | null {
-    return this.fromEnv ?? this.readStored();
+  get(accountId = PRIMARY_ACCOUNT): VoipMsCredentials | null {
+    return (accountId === PRIMARY_ACCOUNT ? this.fromEnv : null) ?? this.readStored(accountId);
   }
 
-  save(credentials: VoipMsCredentials): void {
-    if (this.fromEnv) throw new Error('Credentials are provided by environment variables');
+  save(credentials: VoipMsCredentials, accountId = PRIMARY_ACCOUNT): void {
+    if (accountId === PRIMARY_ACCOUNT && this.fromEnv) throw new Error('Credentials are provided by environment variables');
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', this.derivedKey(), iv);
     const data = Buffer.concat([cipher.update(JSON.stringify(credentials), 'utf8'), cipher.final()]);
@@ -52,11 +55,11 @@ export class CredentialStore {
       tag: cipher.getAuthTag().toString('base64'),
       data: data.toString('base64'),
     };
-    this.repo.setSetting(CREDENTIALS_KEY, JSON.stringify(payload));
+    this.repo.setSetting(accountKey(accountId, CREDENTIALS_KEY), JSON.stringify(payload));
   }
 
-  clear(): void {
-    this.repo.deleteSetting(CREDENTIALS_KEY);
+  clear(accountId = PRIMARY_ACCOUNT): void {
+    this.repo.deleteSetting(accountKey(accountId, CREDENTIALS_KEY));
   }
 
   /**
@@ -67,8 +70,8 @@ export class CredentialStore {
     return crypto.createHmac('sha256', this.derivedKey()).update(label).digest('base64url');
   }
 
-  private readStored(): VoipMsCredentials | null {
-    const raw = this.repo.getSetting(CREDENTIALS_KEY);
+  private readStored(accountId: number): VoipMsCredentials | null {
+    const raw = this.repo.getSetting(accountKey(accountId, CREDENTIALS_KEY));
     if (!raw) return null;
     try {
       const payload = JSON.parse(raw) as { iv: string; tag: string; data: string };

@@ -12,6 +12,9 @@ namespace SmsPortal;
  * The Docker version derives that key with scrypt, which PHP lacks: this
  * one uses PBKDF2. Credentials stored by the other version therefore read
  * as missing, and the wizard asks for them again.
+ *
+ * Each VoIP.ms account has its own; VOIPMS_API_USERNAME/PASSWORD only stand
+ * for the first one.
  */
 final class Credentials
 {
@@ -47,35 +50,36 @@ final class Credentials
      * "env", "db" or null. Unless $verify, stored credentials count without
      * being decrypted, which costs a key derivation.
      */
-    public function source(bool $verify = true): ?string
+    public function source(bool $verify = true, int $accountId = Repo::PRIMARY_ACCOUNT): ?string
     {
-        if ($this->fromEnv !== null) {
+        if ($accountId === Repo::PRIMARY_ACCOUNT && $this->fromEnv !== null) {
             return 'env';
         }
-        return ($verify ? $this->readStored() !== null : $this->present()) ? 'db' : null;
+        return ($verify ? $this->readStored($accountId) !== null : $this->present($accountId)) ? 'db' : null;
     }
 
     /** @return array{username: string, password: string}|null */
-    public function get(): ?array
+    public function get(int $accountId = Repo::PRIMARY_ACCOUNT): ?array
     {
-        return $this->fromEnv ?? $this->readStored();
+        return ($accountId === Repo::PRIMARY_ACCOUNT ? $this->fromEnv : null) ?? $this->readStored($accountId);
     }
 
     /** Whether there are credentials, without paying for the key derivation when they come from the settings. */
-    public function present(): bool
+    public function present(int $accountId = Repo::PRIMARY_ACCOUNT): bool
     {
-        return $this->fromEnv !== null || $this->repo->getSetting(self::KEY) !== null;
+        return ($accountId === Repo::PRIMARY_ACCOUNT && $this->fromEnv !== null)
+            || $this->repo->getSetting(Repo::accountKey($accountId, self::KEY)) !== null;
     }
 
-    public function save(array $credentials): void
+    public function save(array $credentials, int $accountId = Repo::PRIMARY_ACCOUNT): void
     {
-        if ($this->fromEnv !== null) {
+        if ($accountId === Repo::PRIMARY_ACCOUNT && $this->fromEnv !== null) {
             throw new \LogicException('Credentials are provided by the settings file');
         }
         $iv = random_bytes(12);
         $tag = '';
         $data = openssl_encrypt(json_encode($credentials), 'aes-256-gcm', $this->derivedKey(), OPENSSL_RAW_DATA, $iv, $tag);
-        $this->repo->setSetting(self::KEY, json_encode([
+        $this->repo->setSetting(Repo::accountKey($accountId, self::KEY), json_encode([
             'kdf' => self::KDF,
             'iv' => base64_encode($iv),
             'tag' => base64_encode($tag),
@@ -83,9 +87,9 @@ final class Credentials
         ]));
     }
 
-    public function clear(): void
+    public function clear(int $accountId = Repo::PRIMARY_ACCOUNT): void
     {
-        $this->repo->deleteSetting(self::KEY);
+        $this->repo->deleteSetting(Repo::accountKey($accountId, self::KEY));
     }
 
     /** Changes with APP_PASSWORD; safe to store, as it goes through the same slow derivation. */
@@ -94,9 +98,9 @@ final class Credentials
         return Base64Url::encode(hash_hmac('sha256', $label, $this->derivedKey(), true));
     }
 
-    private function readStored(): ?array
+    private function readStored(int $accountId): ?array
     {
-        $raw = $this->repo->getSetting(self::KEY);
+        $raw = $this->repo->getSetting(Repo::accountKey($accountId, self::KEY));
         if ($raw === null) {
             return null;
         }

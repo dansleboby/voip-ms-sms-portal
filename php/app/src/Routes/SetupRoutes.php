@@ -16,7 +16,7 @@ use SmsPortal\VoipMs\VoipMsError;
 final class SetupRoutes
 {
     /** getIP works from any address (it only checks credentials); getBalance needs a whitelisted IP. */
-    private static function testConnection(VoipMsApi $client): array
+    public static function testConnection(VoipMsApi $client): array
     {
         try {
             $ip = $client->getIP();
@@ -64,15 +64,10 @@ final class SetupRoutes
 
         $r->add('POST', '/api/setup/test', fn () => Response::json(self::testConnection(self::client($app))));
 
-        /** Refreshes the numbers from VoIP.ms and returns them with their local names and colors. */
+        /** Refreshes the numbers of every VoIP.ms account and returns them with their local names and colors. */
         $r->add('GET', '/api/setup/dids', function () use ($app): Response {
-            $dids = array_filter(self::client($app)->getDids(), fn (array $did) => $app->repo->allowsDid($did['did']));
-            $app->repo->transaction(function () use ($app, $dids): void {
-                foreach ($dids as $did) {
-                    $app->repo->upsertDid($did);
-                }
-            });
-            $app->events->broadcast(['type' => 'dids']);
+            self::client($app);
+            $app->accounts->refreshDids();
             return Response::json($app->repo->listDids());
         });
 
@@ -81,8 +76,10 @@ final class SetupRoutes
             $days = (new Input($req->json()))->int('days', 0, 3650);
             self::client($app);
             if ($days > 0) {
-                $app->sync->startImport($days);
-                $app->defer(fn () => $app->sync->continueImport(microtime(true) + 20));
+                // The history of the account the wizard sets up.
+                $sync = $app->accounts->primary()->sync;
+                $sync->startImport($days);
+                $app->defer(fn () => $sync->continueImport(microtime(true) + 20));
             }
             return Response::json(['ok' => true], 202);
         });
@@ -90,7 +87,11 @@ final class SetupRoutes
         $r->add('POST', '/api/setup/complete', function () use ($app): Response {
             self::client($app);
             $app->setSetupCompleted(true);
-            $app->defer(fn () => $app->sync->syncRecent());
+            $app->defer(function () use ($app): void {
+                foreach ($app->accounts->all() as $account) {
+                    $account->sync->syncRecent();
+                }
+            });
             return Response::json(['ok' => true]);
         });
     }

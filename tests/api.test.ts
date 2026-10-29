@@ -542,3 +542,84 @@ describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name)
     }
   }, 30_000);
 });
+
+describe.each(backendNames)('%s server with several VoIP.ms accounts', (name) => {
+  /** The demo's second sample account: a bakery in Québec. */
+  const QUEBEC = '4185550142';
+  let backend: Backend;
+  let client: Client;
+
+  beforeAll(async () => {
+    backend = await startBackend(name);
+    client = new Client(backend.url);
+    await client.login();
+    await client.get('/api/setup/dids');
+    await client.post('/api/setup/complete');
+  }, 30_000);
+
+  afterAll(async () => {
+    await backend?.stop();
+  });
+
+  /** A tab's poll: the PHP server checks VoIP.ms after answering it. */
+  const tick = () => client.get('/api/events/poll?tab=tab-00000001&visible=1');
+  const send = (fields: Record<string, string>) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    return client.post('/api/messages', form);
+  };
+
+  it('needs a session', async () => {
+    const stranger = new Client(backend.url);
+    expect((await stranger.get('/api/accounts')).status).toBe(401);
+    expect((await stranger.post('/api/accounts', { username: 'b@example.com', password: 'x' })).status).toBe(401);
+  });
+
+  it('lists the account set up first', async () => {
+    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3 }]);
+  });
+
+  it('adds an account once, checking its credentials, with its own numbers', async () => {
+    const added = await client.post('/api/accounts', { label: 'Boulangerie', username: 'b@example.com', password: 'secret' });
+    expect(added).toMatchObject({
+      status: 201,
+      json: {
+        account: { id: 2, label: 'Boulangerie', username: 'b@example.com', credentialsSource: 'db', numbers: 1 },
+        connection: { status: 'success', ip: '203.0.113.10' },
+      },
+    });
+    expect((await client.post('/api/accounts', { username: 'b@example.com', password: 'other' })).json).toEqual({ error: 'account_exists' });
+    expect((await client.post('/api/accounts', { username: 'DEMO@example.com', password: 'x' })).json).toEqual({ error: 'account_exists' });
+    expect((await client.post('/api/accounts', { username: 'b', password: 'x' })).status).toBe(400);
+    const dids = (await client.get('/api/dids')).json as DidDto[];
+    expect(dids.map((d) => [d.did, d.accountId])).toEqual([
+      [MONTREAL, 1],
+      ['4505550199', 1],
+      ['8195550123', 1],
+      [QUEBEC, 2],
+    ]);
+  });
+
+  it('checks the new account, and sends from its number', async () => {
+    // Its first check looks a day back, like the first account's: older texts are the history import's.
+    const quebec = await waitFor(async () => {
+      await tick();
+      const conversations = ((await client.get('/api/conversations')).json as ConversationDto[]).filter((c) => c.did === QUEBEC);
+      return conversations.length > 0 && conversations;
+    });
+    expect(quebec.map((c) => c.phone)).toEqual(['4185550123']);
+    const res = await send({ did: QUEBEC, to: '4185550177', body: 'Merci, à vendredi!' });
+    expect(res.status).toBe(202);
+    const id = (res.json as { message: MessageDto }).message.id;
+    await waitFor(async () => {
+      await tick();
+      const messages = (await client.get(`/api/conversations/${(res.json as { conversation: ConversationDto }).conversation.id}/messages`)).json as MessageDto[];
+      return messages.find((m) => m.id === id)?.status === 'sent';
+    });
+  }, 30_000);
+
+  it('renames an account', async () => {
+    expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
+    expect((await client.request('PATCH', '/api/accounts/99', { label: 'x' })).status).toBe(404);
+  });
+});
