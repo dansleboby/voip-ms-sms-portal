@@ -62,7 +62,7 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
 
   app.get('/api/dids', async (): Promise<DidDto[]> => s.repo.listDids());
 
-  app.patch('/api/dids/:did', async (req, reply): Promise<DidDto | void> => {
+  app.patch('/api/dids/:did', { config: { admin: true } }, async (req, reply): Promise<DidDto | void> => {
     const { did } = z.object({ did: z.string() }).parse(req.params);
     const patch = DidPatch.parse(req.body);
     if (!s.repo.updateDid(did, patch)) return reply.code(404).send({ error: 'not_found' });
@@ -72,7 +72,7 @@ export function registerMessagingRoutes(app: FastifyInstance, s: Services): void
   });
 
   /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
-  app.post('/api/dids/:did/enable-sms', async (req, reply): Promise<DidDto | void> => {
+  app.post('/api/dids/:did/enable-sms', { config: { admin: true } }, async (req, reply): Promise<DidDto | void> => {
     const { did } = z.object({ did: z.string() }).parse(req.params);
     const current = s.repo.getDid(did);
     if (!current) return reply.code(404).send({ error: 'not_found' });

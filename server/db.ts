@@ -8,6 +8,7 @@ import type {
   Direction,
   MessageDto,
   MessageStatus,
+  UserDto,
 } from '../shared/types.js';
 import type { ContactIcon } from '../shared/contact.js';
 import type { MessageKind } from '../shared/message.js';
@@ -158,6 +159,37 @@ const MIGRATIONS: (string | ((db: DB) => void))[] = [
   INSERT INTO voipms_accounts (id, label, created_at) VALUES (1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
   ALTER TABLE dids ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
   `,
+  // The Team mode's users, the numbers each one texts from, and the signed-in browsers.
+  `
+  CREATE TABLE users (
+    -- AUTOINCREMENT: a deleted user's id never goes to someone else.
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    email         TEXT NOT NULL UNIQUE,
+    name          TEXT,
+    -- pbkdf2-sha256$<iterations>$<salt>$<hash> (server/passwords.ts)
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    disabled_at   INTEGER,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+  );
+  CREATE TABLE user_dids (
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    did      TEXT NOT NULL,
+    can_send INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, did)
+  );
+  CREATE TABLE sessions (
+    -- SHA-256 of the id in the cookie: the table alone signs nobody in.
+    id           TEXT PRIMARY KEY,
+    -- NULL: the owner, signed in with APP_PASSWORD.
+    user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at   INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    user_agent   TEXT
+  );
+  CREATE INDEX sessions_user ON sessions(user_id);
+  `,
 ];
 
 /** The account set up first: the only one of a 1.x install, and the one the setup wizard is about. */
@@ -225,6 +257,25 @@ interface DidRow {
   position: number;
   unread: number | null;
   account_id: number;
+}
+
+export interface UserRow {
+  id: number;
+  email: string;
+  name: string | null;
+  password_hash: string;
+  role: 'admin' | 'user';
+  disabled_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SessionRow {
+  id: string;
+  user_id: number | null;
+  created_at: number;
+  last_seen_at: number;
+  user_agent: string | null;
 }
 
 interface ConversationRow {
@@ -461,6 +512,110 @@ export class Repo {
   accountOfDid(did: string): number | null {
     const row = this.db.prepare('SELECT account_id FROM dids WHERE did = ?').get(did) as { account_id: number } | undefined;
     return row?.account_id ?? null;
+  }
+
+  // ------------------------------------------------------------------- users
+
+  createUser(input: { email: string; name: string | null; passwordHash: string; role: UserDto['role'] }): number {
+    const now = Date.now();
+    return Number(
+      this.db
+        .prepare('INSERT INTO users (email, name, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(input.email, input.name, input.passwordHash, input.role, now, now).lastInsertRowid,
+    );
+  }
+
+  getUserRow(id: number): UserRow | null {
+    return (this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined) ?? null;
+  }
+
+  findUserByEmail(email: string): UserRow | null {
+    return (this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined) ?? null;
+  }
+
+  listUsers(): UserDto[] {
+    const rows = this.db.prepare('SELECT * FROM users ORDER BY email').all() as UserRow[];
+    const numbers = this.db.prepare('SELECT user_id, did, can_send FROM user_dids ORDER BY did').all() as { user_id: number; did: string; can_send: number }[];
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      name: r.name,
+      role: r.role,
+      disabled: r.disabled_at !== null,
+      createdAt: r.created_at,
+      numbers: numbers.filter((n) => n.user_id === r.id).map((n) => ({ did: n.did, canSend: n.can_send === 1 })),
+    }));
+  }
+
+  getUser(id: number): UserDto | null {
+    return this.listUsers().find((u) => u.id === id) ?? null;
+  }
+
+  updateUser(id: number, patch: { name?: string | null; role?: UserDto['role']; passwordHash?: string; disabled?: boolean }): boolean {
+    const sets: string[] = ['updated_at = ?'];
+    const values: unknown[] = [Date.now()];
+    if (patch.name !== undefined) {
+      sets.push('name = ?');
+      values.push(patch.name);
+    }
+    if (patch.role !== undefined) {
+      sets.push('role = ?');
+      values.push(patch.role);
+    }
+    if (patch.passwordHash !== undefined) {
+      sets.push('password_hash = ?');
+      values.push(patch.passwordHash);
+    }
+    if (patch.disabled !== undefined) {
+      sets.push('disabled_at = ?');
+      values.push(patch.disabled ? Date.now() : null);
+    }
+    return this.db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...values, id).changes > 0;
+  }
+
+  deleteUser(id: number): boolean {
+    return this.db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** The numbers a user texts from, in place of those they had. */
+  setUserNumbers(id: number, numbers: { did: string; canSend: boolean }[]): void {
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM user_dids WHERE user_id = ?').run(id);
+      const insert = this.db.prepare('INSERT INTO user_dids (user_id, did, can_send) VALUES (?, ?, ?)');
+      for (const n of numbers) insert.run(id, n.did, n.canSend ? 1 : 0);
+    });
+  }
+
+  // ---------------------------------------------------------------- sessions
+
+  createSession(id: string, userId: number | null, userAgent: string | null, now = Date.now()): void {
+    this.db.prepare('INSERT INTO sessions (id, user_id, created_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)').run(id, userId, now, now, userAgent);
+  }
+
+  getSession(id: string): SessionRow | null {
+    return (this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined) ?? null;
+  }
+
+  touchSession(id: string, now = Date.now()): void {
+    this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(now, id);
+  }
+
+  deleteSession(id: string): boolean {
+    return this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** Signs a user out everywhere but `exceptId` (null: the owner's sessions). */
+  deleteUserSessions(userId: number | null, exceptId: string | null = null): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id IS ? AND id IS NOT ?').run(userId, exceptId);
+  }
+
+  /** A user's sessions, the latest first (null: the owner's). */
+  listSessions(userId: number | null): SessionRow[] {
+    return this.db.prepare('SELECT * FROM sessions WHERE user_id IS ? ORDER BY last_seen_at DESC').all(userId) as SessionRow[];
+  }
+
+  pruneSessions(createdBefore: number): void {
+    this.db.prepare('DELETE FROM sessions WHERE created_at < ?').run(createdBefore);
   }
 
   // ---------------------------------------------------------------- accounts

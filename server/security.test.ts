@@ -6,29 +6,61 @@ import { describe, expect, it } from 'vitest';
 import { Auth } from './auth.js';
 import { accountKey, openDatabase, Repo } from './db.js';
 import { CredentialStore } from './secrets.js';
+import { hashPassword, verifyPassword } from './passwords.js';
 
 describe('Auth', () => {
   const repo = new Repo(openDatabase(':memory:'));
 
-  it('checks the password and verifies its own tokens', () => {
+  it('checks the password and verifies its own sessions', () => {
     const auth = new Auth(repo, 'pw', 30);
     expect(auth.checkPassword('pw')).toBe(true);
     expect(auth.checkPassword('PW')).toBe(false);
-    const token = auth.issue();
-    expect(auth.verify(token)).toBe(true);
-    expect(auth.verify(token.slice(0, -2) + 'xx')).toBe(false);
-    expect(auth.verify(undefined)).toBe(false);
+    const token = auth.open(null, 'Firefox');
+    expect(auth.verify(token)).toMatchObject({ userId: null, role: 'owner' });
+    expect(auth.verify(token.slice(0, -2) + 'xx')).toBeNull();
+    expect(auth.verify(undefined)).toBeNull();
+    // The table keeps a hash of the id: a stolen row signs nobody in.
+    const [id] = token.split('.');
+    expect(repo.getSession(id!)).toBeNull();
   });
 
-  it('expires tokens', () => {
+  it('expires sessions, and ends them on sign-out', () => {
     const auth = new Auth(repo, 'pw', 1);
-    const issued = Date.now() - 2 * 86_400_000;
-    expect(auth.verify(auth.issue(issued))).toBe(false);
+    expect(auth.verify(auth.open(null, null, Date.now() - 2 * 86_400_000))).toBeNull();
+    const token = auth.open(null, null);
+    auth.close(auth.verify(token)!.sessionId);
+    expect(auth.verify(token)).toBeNull();
   });
 
-  it('invalidates sessions when APP_PASSWORD changes', () => {
-    const token = new Auth(repo, 'old', 30).issue();
-    expect(new Auth(repo, 'new', 30).verify(token)).toBe(false);
+  it('signs everyone out when APP_PASSWORD changes', () => {
+    const token = new Auth(repo, 'old', 30).open(null, null);
+    expect(new Auth(repo, 'new', 30).verify(token)).toBeNull();
+  });
+
+  it('only lets users in while the Team mode is on and their account is enabled', () => {
+    const auth = new Auth(repo, 'pw', 30);
+    const id = repo.createUser({ email: 'ana@example.com', name: 'Ana', passwordHash: 'x', role: 'user' });
+    const token = auth.open(id, null);
+    expect(auth.verify(token)).toBeNull();
+    repo.setSetting('team.enabled', '1');
+    expect(auth.verify(token)).toMatchObject({ userId: id, email: 'ana@example.com', role: 'user' });
+    repo.updateUser(id, { disabled: true });
+    expect(auth.verify(token)).toBeNull();
+  });
+});
+
+/** Computed with PHP: hash_pbkdf2('sha256', 'secret', 'saltsaltsaltsalt', 1000, 32, true), base64url. */
+const PHP_HASH = 'dClvKSmj66n6MdMWNv3Go4mvH1Ym2WIGiJvquqa-mfE';
+
+describe('passwords', () => {
+  it('hashes with PBKDF2 in a form both servers read, and checks in constant time', async () => {
+    const hash = await hashPassword('correct horse', 1000);
+    expect(hash).toMatch(/^pbkdf2-sha256\$1000\$[\w-]{22}\$[\w-]{43}$/);
+    expect(await verifyPassword('correct horse', hash)).toBe(true);
+    expect(await verifyPassword('correct hors', hash)).toBe(false);
+    expect(await verifyPassword('x', 'md5$whatever')).toBe(false);
+    // A hash PHP's hash_pbkdf2 made for "secret" (salt "c2FsdHNhbHRzYWx0c2FsdA", 1000 rounds).
+    expect(await verifyPassword('secret', 'pbkdf2-sha256$1000$c2FsdHNhbHRzYWx0c2FsdA$' + PHP_HASH)).toBe(true);
   });
 });
 

@@ -6,11 +6,15 @@ import type {
   EventsPollDto,
   MessageDto,
   SessionDto,
+  SessionInfoDto,
   SetupStatusDto,
   SyncStatusDto,
   UpdateStatusDto,
+  UserDto,
   WebhookStatusDto,
 } from '../../shared/types';
+
+type UserInput = Pick<UserDto, 'name' | 'role' | 'numbers'>;
 
 export class ApiError extends Error {
   constructor(
@@ -68,8 +72,19 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 export const api = {
   session: () => request<SessionDto>('GET', '/api/session'),
-  login: (password: string) => request<{ ok: true }>('POST', '/api/auth/login', { password }),
+  /** No email: the owner's APP_PASSWORD. */
+  login: (password: string, email?: string) => request<{ ok: true }>('POST', '/api/auth/login', email ? { email, password } : { password }),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
+
+  /** Turns the Team mode on, for good, with its first admin. */
+  startTeam: (admin: { email: string; name: string | null; password: string }) => request<UserDto>('POST', '/api/team', admin),
+  users: () => request<UserDto[]>('GET', '/api/users'),
+  createUser: (user: UserInput & { email: string; password: string }) => request<UserDto>('POST', '/api/users', user),
+  updateUser: (id: number, patch: Partial<UserInput> & { password?: string; disabled?: boolean }) => request<UserDto>('PATCH', `/api/users/${id}`, patch),
+  deleteUser: (id: number) => request<{ ok: true }>('DELETE', `/api/users/${id}`),
+  updateMe: (patch: { name?: string | null; password?: { current: string; next: string } }) => request<UserDto>('PATCH', '/api/me', patch),
+  sessions: () => request<SessionInfoDto[]>('GET', '/api/sessions'),
+  endSession: (id: string) => request<{ ok: true }>('DELETE', `/api/sessions/${encodeURIComponent(id)}`),
 
   setupStatus: () => request<SetupStatusDto>('GET', '/api/setup/status'),
   saveCredentials: (username: string, password: string) =>

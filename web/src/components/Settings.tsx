@@ -13,6 +13,7 @@ import { loadDids, loadSession, resetData, toast, toastError, useStore } from '.
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
 import { ReceivingPanel } from './Receiving';
+import { MyAccountSection, TeamSection } from './Team';
 import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
 import type { ConnectionTestDto } from '../../../shared/types';
@@ -57,6 +58,8 @@ export function Settings() {
   const [connection, setConnection] = useState<ConnectionTestDto | null>(null);
   const [importDays, setImportDays] = useState(90);
   const langChoice = prefs.get('lang') ?? 'auto';
+  // A user of the Team mode texts; the numbers, VoIP.ms and the server are the admins'.
+  const admin = session?.user?.role !== 'user';
 
   const refreshDids = async () => {
     setRefreshing(true);
@@ -160,20 +163,22 @@ export function Settings() {
         <div className="page-inner">
           {session?.demo && <div className="banner info" style={{ margin: 0 }}>{t('settings.demo')}</div>}
 
-          <section className="section">
-            <h3>{t('settings.numbers')}</h3>
-            <p>{t('settings.numbersHint')}</p>
-            {session?.didsRestricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
-            <div className="card">
-              {dids.map((d) => (
-                <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />
-              ))}
-            </div>
-            <button className="btn text" style={{ marginTop: 8 }} onClick={refreshDids} disabled={refreshing}>
-              <RefreshCw size={18} className={refreshing ? 'spin' : ''} />
-              {t('settings.refreshNumbers')}
-            </button>
-          </section>
+          {admin && (
+            <section className="section">
+              <h3>{t('settings.numbers')}</h3>
+              <p>{t('settings.numbersHint')}</p>
+              {session?.didsRestricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
+              <div className="card">
+                {dids.map((d) => (
+                  <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />
+                ))}
+              </div>
+              <button className="btn text" style={{ marginTop: 8 }} onClick={refreshDids} disabled={refreshing}>
+                <RefreshCw size={18} className={refreshing ? 'spin' : ''} />
+                {t('settings.refreshNumbers')}
+              </button>
+            </section>
+          )}
 
           <section className="section">
             <h3>{t('settings.notifications')}</h3>
@@ -262,53 +267,61 @@ export function Settings() {
             </div>
           </section>
 
-          <section className="section">
-            <h3>{t('settings.account')}</h3>
-            <div className="card">
-              <div className="row">
-                <div className="row-main">
-                  <div className="row-title">{t('settings.username')}</div>
-                  <div className="row-sub">
-                    {session?.credentialsSource === 'env' ? t('settings.credentialsEnv') : t('settings.credentialsDb')}
-                  </div>
-                </div>
-                <button className="btn tonal small" onClick={test} disabled={testing}>
-                  {testing && <Loader2 size={16} className="spin" />}
-                  {t('settings.testConnection')}
-                </button>
-              </div>
-              {connection && (
+          <MyAccountSection />
+
+          {admin && <TeamSection />}
+
+          {admin && (
+            <section className="section">
+              <h3>{t('settings.account')}</h3>
+              <div className="card">
                 <div className="row">
                   <div className="row-main">
-                    {connection.status === 'success' ? (
-                      <span className="ok-text">✓ {t('setup.ip.ok', { balance: connection.balance?.toFixed(2) ?? '—' })}</span>
-                    ) : (
-                      <span className="error-text">{errorText(connection.status)}</span>
-                    )}
-                    {connection.ip && (
-                      <div className="row-sub">
-                        {t('setup.ip.yourIp')} : <code>{connection.ip}</code>
-                      </div>
-                    )}
+                    <div className="row-title">{t('settings.username')}</div>
+                    <div className="row-sub">
+                      {session?.credentialsSource === 'env' ? t('settings.credentialsEnv') : t('settings.credentialsDb')}
+                    </div>
                   </div>
-                </div>
-              )}
-              {!session?.demo && (
-                <div className="row">
-                  <div className="row-main row-sub">{t('settings.runWizard')}</div>
-                  <button className="btn outlined small" onClick={() => navigate({ name: 'setup' })}>
-                    {session?.credentialsSource === 'env' ? t('settings.runWizard') : t('settings.changeCredentials')}
+                  <button className="btn tonal small" onClick={test} disabled={testing}>
+                    {testing && <Loader2 size={16} className="spin" />}
+                    {t('settings.testConnection')}
                   </button>
                 </div>
-              )}
-            </div>
-          </section>
+                {connection && (
+                  <div className="row">
+                    <div className="row-main">
+                      {connection.status === 'success' ? (
+                        <span className="ok-text">✓ {t('setup.ip.ok', { balance: connection.balance?.toFixed(2) ?? '—' })}</span>
+                      ) : (
+                        <span className="error-text">{errorText(connection.status)}</span>
+                      )}
+                      {connection.ip && (
+                        <div className="row-sub">
+                          {t('setup.ip.yourIp')} : <code>{connection.ip}</code>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {!session?.demo && (
+                  <div className="row">
+                    <div className="row-main row-sub">{t('settings.runWizard')}</div>
+                    <button className="btn outlined small" onClick={() => navigate({ name: 'setup' })}>
+                      {session?.credentialsSource === 'env' ? t('settings.runWizard') : t('settings.changeCredentials')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
-          <section className="section">
-            <h3>{t('receiving.title')}</h3>
-            <p>{t('receiving.intro')}</p>
-            <ReceivingPanel pollActive={session?.pollActiveSeconds ?? 10} pollIdle={session?.pollIdleSeconds ?? 60} />
-          </section>
+          {admin && (
+            <section className="section">
+              <h3>{t('receiving.title')}</h3>
+              <p>{t('receiving.intro')}</p>
+              <ReceivingPanel pollActive={session?.pollActiveSeconds ?? 10} pollIdle={session?.pollIdleSeconds ?? 60} />
+            </section>
+          )}
 
           <section className="section">
             <h3>{t('settings.sync')}</h3>
@@ -343,28 +356,30 @@ export function Settings() {
                 </button>
               </div>
               {sync?.cron && <CronRow cron={sync.cron} />}
-              <div className="row">
-                <div className="row-main">
-                  <div className="row-title">{t('settings.importHistory')}</div>
-                  {sync?.importing && <div className="row-sub">{t('sync.importing', sync.importing)}</div>}
+              {admin && (
+                <div className="row">
+                  <div className="row-main">
+                    <div className="row-title">{t('settings.importHistory')}</div>
+                    {sync?.importing && <div className="row-sub">{t('sync.importing', sync.importing)}</div>}
+                  </div>
+                  <div className="row-actions">
+                    <select className="input" style={{ width: 'auto', height: 36 }} value={importDays} onChange={(e) => setImportDays(Number(e.target.value))}>
+                      {IMPORT_CHOICES.map((d) => (
+                        <option key={d} value={d}>
+                          {d === 365 ? t('setup.history.year') : t('setup.history.days', { n: d })}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="btn tonal small" onClick={startImport} disabled={!!sync?.importing}>
+                      {t('settings.history')}
+                    </button>
+                  </div>
                 </div>
-                <div className="row-actions">
-                  <select className="input" style={{ width: 'auto', height: 36 }} value={importDays} onChange={(e) => setImportDays(Number(e.target.value))}>
-                    {IMPORT_CHOICES.map((d) => (
-                      <option key={d} value={d}>
-                        {d === 365 ? t('setup.history.year') : t('setup.history.days', { n: d })}
-                      </option>
-                    ))}
-                  </select>
-                  <button className="btn tonal small" onClick={startImport} disabled={!!sync?.importing}>
-                    {t('settings.history')}
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           </section>
 
-          <UpdatesSection />
+          {admin && <UpdatesSection />}
 
           <section className="section" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button className="btn outlined" onClick={logout}>

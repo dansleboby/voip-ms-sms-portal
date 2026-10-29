@@ -23,10 +23,10 @@ final class AccountRoutes
     {
         $r = $app->router;
 
-        $r->add('GET', '/api/accounts', fn () => Response::json($app->accounts->list()));
+        $r->admin('GET', '/api/accounts', fn () => Response::json($app->accounts->list()));
 
         /** Checks the credentials, keeps them encrypted like the first account's, and fetches the account's numbers. */
-        $r->add('POST', '/api/accounts', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/accounts', function (Request $req) use ($app): Response {
             $body = new Input($req->json());
             $label = $body->has('label') ? $body->nullableString('label', 60) : null;
             $credentials = ['username' => $body->string('username', 3, 200, trim: true), 'password' => $body->string('password', 1, 200)];
@@ -56,7 +56,7 @@ final class AccountRoutes
             throw new HttpError(500, 'internal_error');
         });
 
-        $r->add('PATCH', '/api/accounts/{id}', function (Request $req) use ($app): Response {
+        $r->admin('PATCH', '/api/accounts/{id}', function (Request $req) use ($app): Response {
             $id = Input::id($req->param('id'));
             $label = (new Input($req->json()))->nullableString('label', 60);
             if (!$app->repo->updateAccount($id, $label)) {

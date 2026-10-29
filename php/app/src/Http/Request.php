@@ -9,6 +9,13 @@ final class Request
     private ?array $json = null;
 
     /**
+     * Who signed the request in (App::handle sets it), as Auth::verify returns it.
+     *
+     * @var ?array{sessionId: string, userId: ?int, email: ?string, name: ?string, role: string}
+     */
+    public ?array $user = null;
+
+    /**
      * @param array<string, string> $headers lowercase names
      * @param array<string, string> $params filled by the router from the path
      */

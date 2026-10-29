@@ -19,9 +19,9 @@ final class WebhookRoutes
         $r = $app->router;
 
         // The first account's: the one the setup wizard and Settings show.
-        $r->add('GET', '/api/webhook', fn () => Response::json($app->accounts->primary()->webhook->status()));
+        $r->admin('GET', '/api/webhook', fn () => Response::json($app->accounts->primary()->webhook->status()));
 
-        $r->add('POST', '/api/webhook/enable', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/webhook/enable', function (Request $req) use ($app): Response {
             $body = new Input($req->json());
             // Numbers whose callback to another address may be replaced.
             $replace = $body->has('replace') ? $body->stringList('replace', 0, 1000) : [];
@@ -33,7 +33,7 @@ final class WebhookRoutes
             return Response::json($app->accounts->primary()->webhook->enable($req->header('origin'), $replace));
         });
 
-        $r->add('POST', '/api/webhook/disable', fn () => Response::json($app->accounts->primary()->webhook->disable()));
+        $r->admin('POST', '/api/webhook/disable', fn () => Response::json($app->accounts->primary()->webhook->disable()));
 
         /**
          * VoIP.ms's call for a text one of the numbers received. Public: the secret

@@ -102,6 +102,10 @@ Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, sy
 
 ![Page des réglages](docs/screenshots/fr/settings.png)
 
+### Mode Équipe
+
+Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Les utilisateurs ne voient que leurs propres réglages. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut.
+
 ### Sur téléphone, et dans le noir
 
 L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles de filtre). Sur téléphone, un bandeau propose d'installer l'application sur l'écran d'accueil, puis d'activer les notifications. Le thème sombre suit celui du système ou peut être imposé.
@@ -157,7 +161,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 
 | Variable | Défaut | Description |
 | --- | --- | --- |
-| `APP_PASSWORD` | *(obligatoire)* | Mot de passe protégeant l'interface. Le changer déconnecte tout le monde. |
+| `APP_PASSWORD` | *(obligatoire)* | Mot de passe protégeant l'interface; en mode Équipe, celui du propriétaire. Le changer déconnecte tout le monde. |
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | Courriel du compte VoIP.ms et mot de passe API. Facultatif : sinon, ils sont saisis dans l'assistant et chiffrés avec une clé dérivée d'`APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Secondes entre deux vérifications quand un onglet est ouvert. |
 | `POLL_INTERVAL_IDLE` | `60` | Secondes entre deux vérifications sinon. |
@@ -185,7 +189,7 @@ La même application fonctionne aussi sur un hébergement web PHP ordinaire, san
 
 - Le mot de passe API de VoIP.ms **donne accès à tout le compte** (commander ou annuler des numéros, routage des appels, messagerie vocale…) et ne peut pas être restreint. Gardez cette instance privée et protégée par un `APP_PASSWORD` solide.
 - Mettez-la derrière HTTPS si vous l'ouvrez sur Internet (voir plus bas) et définissez `TRUST_PROXY=true`. Assurez-vous alors que le port de l'application n'est joignable que par le proxy (par exemple `127.0.0.1:8080:8080` dans `docker-compose.yml`).
-- Les tentatives de connexion sont limitées, les sessions sont des cookies signés `HttpOnly`/`SameSite=Lax` et les écritures provenant d'un autre site sont refusées. Les fichiers reçus sont servis avec une CSP de type « sandbox ». La CSP de l'application n'exécute que ses propres scripts, plus le WebAssembly (`'wasm-unsafe-eval'`) qui décode les messages vocaux AMR.
+- Les tentatives de connexion sont limitées, les sessions sont des cookies signés `HttpOnly`/`SameSite=Lax` et les écritures provenant d'un autre site sont refusées. Les sessions sont gardées dans la base de données, qui ne conserve qu'un hachage de leurs identifiants : se déconnecter, ou déconnecter un autre appareil depuis *Réglages* → *Mon compte*, en termine une pour de bon. En mode Équipe, les mots de passe sont gardés sous forme de hachages PBKDF2-SHA256 (600 000 itérations). Les fichiers reçus sont servis avec une CSP de type « sandbox ». La CSP de l'application n'exécute que ses propres scripts, plus le WebAssembly (`'wasm-unsafe-eval'`) qui décode les messages vocaux AMR.
 
 ### Derrière un proxy inverse
 
