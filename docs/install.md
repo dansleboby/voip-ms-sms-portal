@@ -27,6 +27,7 @@ The steps:
 2. Install: [A. on cPanel](#2a-install-on-cpanel-web-hosting) or [B. with Docker](#2b-install-with-docker)
 3. [Run the setup wizard](#3-run-the-setup-wizard) (everyone)
 4. [Use it on your phone](#4-use-it-on-your-phone)
+5. [Several people?](#5-several-people-optional) (optional)
 
 ## 1. Prepare your VoIP.ms account
 
@@ -147,6 +148,10 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
 - **Android**: open the address in Chrome. Tap **Install** when the portal offers it, or **⋮ → Install app** (or **Add to Home screen**). Then, in **Settings**, turn on **Push notifications on this device**.
 
 **Send a test notification**, in **Settings**, checks that everything works.
+
+## 5. Several people? (optional)
+
+For an office, a family or an agency, Team mode gives each person their own email, password and numbers: see the [Team mode guide](team.md).
 
 ## Something went wrong?
 

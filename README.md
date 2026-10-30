@@ -16,6 +16,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
 - **Archive** the conversations you are done with; they come back as soon as a new text arrives. **Delete** messages or whole conversations, in the portal only or at VoIP.ms too.
 - **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
+- **Team mode**, for an office, a family or an agency: everyone signs in with their own email and sees the numbers they are given, read only or with sending; each text says who sent it, and the administrators keep an activity log. One VoIP.ms account per client if need be. See the [Team mode guide](docs/team.md).
 - **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: the same server either way. See [Shared hosting](#shared-hosting-cpanel).
 
 ## A quick tour
@@ -106,7 +107,15 @@ Rename or recolor numbers, turn off the ones you do not use, sync now or import 
 
 ### Team mode
 
-For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*; each person can also hide a number for themselves, or mute it, in *Settings* → *My numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*, and administrators see who signed in and what changed in *Settings* → *Activity log*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can.
+For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*; each person can also hide a number for themselves, or mute it, in *Settings* → *My numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*, and administrators see who signed in and what changed in *Settings* → *Activity log*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can. The [Team mode guide](docs/team.md) takes it step by step.
+
+| A number given read only: who sent each text | The users and their numbers |
+| --- | --- |
+| ![A user's view of a read-only number, with who sent each text](docs/screenshots/en/team-thread.png) | ![The users of the portal and their numbers](docs/screenshots/en/team.png) |
+
+| The activity log | Adding a VoIP.ms account |
+| --- | --- |
+| ![The activity log](docs/screenshots/en/activity.png) | ![A second VoIP.ms account added, with its numbers](docs/screenshots/en/account-added.png) |
 
 ### On a phone, and in the dark
 

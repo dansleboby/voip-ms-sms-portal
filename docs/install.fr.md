@@ -27,6 +27,7 @@ Les étapes :
 2. Installer : [A. sur cPanel](#2a-installer-sur-un-hébergement-cpanel) ou [B. avec Docker](#2b-installer-avec-docker)
 3. [Assistant de configuration](#3-assistant-de-configuration) (pour tous)
 4. [Sur votre téléphone](#4-sur-votre-téléphone)
+5. [Plusieurs personnes?](#5-plusieurs-personnes-facultatif) (facultatif)
 
 ## 1. Préparer votre compte VoIP.ms
 
@@ -147,6 +148,10 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
 - **Android** : ouvrez l'adresse dans Chrome. Touchez **Installer** quand le portail le propose, ou **⋮ → Installer l'application** (ou **Ajouter à l'écran d'accueil**). Puis, dans **Réglages**, activez **Notifications push sur cet appareil**.
 
 **Envoyer une notification test**, dans les **Réglages**, vérifie que tout fonctionne.
+
+## 5. Plusieurs personnes? (facultatif)
+
+Pour un bureau, une famille ou une agence, le mode Équipe donne à chacun son courriel, son mot de passe et ses numéros : voir le [guide du mode Équipe](team.fr.md).
 
 ## Un problème?
 
