@@ -16,6 +16,7 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 - **Notifications push**, même quand l'application est fermée ou le téléphone verrouillé, sur chaque appareil où vous les activez.
 - **Archivage** des conversations terminées ; elles reviennent dès qu'un nouveau texto arrive. **Suppression** de messages ou de conversations entières, dans le portail seulement ou chez VoIP.ms aussi.
 - **Contacts** avec import vCard (Google Contacts, iCloud, Android…), sélecteur d'émojis, recherche qui ignore les accents (« belanger » trouve « Bélanger »), thèmes clair et sombre, français et anglais, installable comme une application sur téléphone.
+- **Mode Équipe**, pour un bureau, une famille ou une agence : chacun se connecte avec son courriel et voit les numéros qu'on lui donne, en lecture seule ou avec l'envoi; chaque texto indique qui l'a envoyé, et les administrateurs ont un journal d'activité. Un compte VoIP.ms par client au besoin. Voir le [guide du mode Équipe](docs/team.fr.md).
 - **Docker ou hébergement mutualisé.** Un seul conteneur, ou un hébergement web PHP ordinaire (cPanel) avec une tâche cron : le même serveur dans les deux cas. Voir [Hébergement mutualisé](#hébergement-mutualisé-cpanel).
 
 ## Visite guidée
@@ -106,7 +107,15 @@ Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, sy
 
 ### Mode Équipe
 
-Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*; chacun peut aussi masquer un numéro pour lui seul, ou couper ses notifications, dans *Réglages* → *Mes numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*, et les administrateurs voient qui s'est connecté et ce qui a changé dans *Réglages* → *Journal d'activité*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut.
+Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*; chacun peut aussi masquer un numéro pour lui seul, ou couper ses notifications, dans *Réglages* → *Mes numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*, et les administrateurs voient qui s'est connecté et ce qui a changé dans *Réglages* → *Journal d'activité*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut. Le [guide du mode Équipe](docs/team.fr.md) le présente pas à pas.
+
+| Un numéro en lecture seule : qui a envoyé chaque texto | Les utilisateurs et leurs numéros |
+| --- | --- |
+| ![Ce que voit un utilisateur d'un numéro en lecture seule, avec qui a envoyé chaque texto](docs/screenshots/fr/team-thread.png) | ![Les utilisateurs du portail et leurs numéros](docs/screenshots/fr/team.png) |
+
+| Le journal d'activité | Ajouter un compte VoIP.ms |
+| --- | --- |
+| ![Le journal d'activité](docs/screenshots/fr/activity.png) | ![Un deuxième compte VoIP.ms ajouté, avec ses numéros](docs/screenshots/fr/account-added.png) |
 
 ### Sur téléphone, et dans le noir
 
