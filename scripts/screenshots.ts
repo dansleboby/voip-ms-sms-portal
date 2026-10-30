@@ -34,6 +34,8 @@ interface Language {
   sms: string;
   mms: string;
   emoji: string;
+  /** The Team mode's people, the text one of them sends, and a second VoIP.ms account. */
+  team: { admin: string; user: string; other: string; text: string; account: string };
 }
 
 const LANGUAGES: Language[] = [
@@ -46,6 +48,7 @@ const LANGUAGES: Language[] = [
     sms: "Perfect, let's meet at the cottage around 10 on Saturday. I'll bring coffee and croissants. Could you grab some firewood?",
     mms: "Here's the view from the dock this morning. The lake was perfectly calm and we even saw a loon go by. Let me know if you want the address for next summer — it's lovely!",
     emoji: 'Hey! 😊',
+    team: { admin: 'Julie Fortin', user: 'Marc Gagnon', other: 'Sophie Roy', text: "I'll book the table for Saturday.", account: 'Fortin Bakery' },
   },
   {
     code: 'fr',
@@ -56,6 +59,7 @@ const LANGUAGES: Language[] = [
     sms: "Parfait, on se rejoint au chalet vers 10 h samedi. J'apporte le café et les croissants. Peux-tu prendre du bois?",
     mms: "Voici la vue du quai ce matin. Le lac était parfaitement calme et on a même vu passer un huard. Dis-moi si tu veux l'adresse pour l'été prochain, c'est magnifique!",
     emoji: 'Salut! 😊',
+    team: { admin: 'Julie Fortin', user: 'Marc Gagnon', other: 'Sophie Roy', text: 'Je réserve la table pour samedi.', account: 'Boulangerie Fortin' },
   },
 ];
 
@@ -368,11 +372,154 @@ async function shoot(browser: Browser, lang: Language): Promise<Shooter> {
   return s;
 }
 
+/**
+ * Calls the API from the page, with its session; fails loudly on an error: a
+ * screenshot of an error would pass unnoticed. (Playwright's own requests drop
+ * the session cookie, Secure because PUBLIC_URL is https.)
+ */
+async function call(page: Page, method: string, path: string, body?: object, form = false): Promise<any> {
+  const result = await page.evaluate(
+    async ({ method, path, body, form }) => {
+      let init: RequestInit = { method };
+      if (body && form) {
+        const data = new FormData();
+        for (const [key, value] of Object.entries(body)) data.set(key, String(value));
+        init = { method, body: data };
+      } else if (body) {
+        init = { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } };
+      }
+      const res = await fetch(path, init);
+      return { status: res.status, text: await res.text() };
+    },
+    { method, path, body, form },
+  );
+  if (result.status >= 300) throw new Error(`${method} ${path}: ${result.status} ${result.text}`);
+  return result.text ? JSON.parse(result.text) : null;
+}
+
+/** Signs in through the sign-in page: with an email in the Team mode, with APP_PASSWORD otherwise. */
+async function signIn(page: Page, url: string, password: string, email?: string): Promise<void> {
+  await page.goto(url);
+  if (email) await page.locator('input[type=email]').fill(email);
+  await page.locator('input[type=password]').fill(password);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/auth/login') && r.ok()),
+    page.locator('button[type=submit]').click(),
+  ]);
+}
+
+/**
+ * The Team mode, on a demo server of its own: started afresh, its clock is
+ * still at DEMO_NOW, so the times shown come out the same every run. The
+ * owner sets it up through the API (the wizard has its screenshots), then an
+ * admin and a user each show what they see.
+ */
+async function shootTeam(browser: Browser, lang: Language, s: Shooter): Promise<void> {
+  const server = await startServer();
+  try {
+    const owner = await newContext(browser, lang);
+    const ownerPage = await owner.newPage();
+    await signIn(ownerPage, server.url, 'demo');
+    const api = (method: string, path: string, body?: object) => call(ownerPage, method, path, body);
+    const dids = (await api('GET', '/api/setup/dids')) as { did: string }[];
+    const [perso, bureau] = [dids[0]!.did, dids[1]!.did];
+    for (const [i, label] of lang.labels.entries()) await api('PATCH', `/api/dids/${dids[i]!.did}`, { label });
+    await api('POST', '/api/setup/import', { days: 30 });
+    await api('POST', '/api/setup/complete');
+    for (let i = 0; ; i++) {
+      // A tab's poll: the import goes on after each answer.
+      await api('GET', '/api/events/poll?tab=tab-00000099&visible=1');
+      const status = await api('GET', '/api/sync/status');
+      const conversations = (await api('GET', '/api/conversations')) as unknown[];
+      if (status.importing === null && conversations.length === 4) break;
+      if (i > 100) throw new Error('The history import did not finish');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const password = 'demo password';
+    await api('POST', '/api/team', { email: 'julie@example.com', name: lang.team.admin, password });
+    const numbers = (did: string, canSend: boolean) => ({ did, canSend });
+    await api('POST', '/api/users', {
+      email: 'marc@example.com',
+      name: lang.team.user,
+      password,
+      role: 'user',
+      numbers: [numbers(perso, false), numbers(bureau, true)],
+    });
+    await api('POST', '/api/users', { email: 'sophie@example.com', name: lang.team.other, password, role: 'user', numbers: [numbers(bureau, true)] });
+    await owner.close();
+
+    const julie = await newContext(browser, lang);
+    // A documentation address in the activity log, instead of the test server's.
+    await julie.route('**/api/activity*', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const entry of body.entries) entry.ip &&= '203.0.113.24';
+      await route.fulfill({ response, json: body });
+    });
+    const settings = await julie.newPage();
+    await signIn(settings, server.url, password, 'julie@example.com');
+    // Julie answers Marie from the personal number, which Marc may only read.
+    const sent = await call(settings, 'POST', '/api/messages', { did: perso, to: '4385550142', body: lang.team.text }, true);
+    const conversation = sent.conversation.id as number;
+    for (let i = 0; ; i++) {
+      const thread = (await call(settings, 'GET', `/api/conversations/${conversation}/messages?limit=1`)) as { status: string }[];
+      if (thread[0]?.status === 'sent') break;
+      if (i > 100) throw new Error('The text was not sent');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const marc = await newContext(browser, lang);
+    const page = await marc.newPage();
+    await signIn(page, server.url, password, 'marc@example.com');
+    await page.goto(`${server.url}/c/${conversation}`);
+    await page.locator('.read-only-note').waitFor();
+    await page.waitForFunction(() => [...document.querySelectorAll('.main img')].every((img) => (img as HTMLImageElement).complete));
+    await settle(page);
+    await s.save('team-thread', shot(page));
+    await marc.close();
+
+    // An admin's Settings: another VoIP.ms account, the users, and the activity log.
+    await settings.goto(`${server.url}/settings`);
+    const section = (key: MessageKey) => settings.locator('section.section', { has: settings.getByRole('heading', { name: s.t(key), exact: true }) });
+    await section('accounts.title').getByRole('button', { name: s.t('accounts.add') }).click();
+    const dialog = settings.getByRole('dialog');
+    const fields = dialog.locator('input');
+    await fields.nth(0).fill(lang.team.account);
+    await fields.nth(1).fill('fortin@example.com');
+    await fields.nth(2).fill('api password');
+    await dialog.locator('button[type=submit]').click();
+    await dialog.locator('.did-row').waitFor();
+    await settle(settings);
+    await s.save('account-added', shot(dialog));
+    await dialog.getByRole('button', { name: s.t('common.done') }).click();
+
+    await settings.reload();
+    const users = section('team.users');
+    await users.locator('.contact-item').nth(2).waitFor();
+    await users.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await settle(settings);
+    await s.save('team', shot(users));
+    const activity = section('activity.title');
+    await activity.locator('.row').nth(6).waitFor();
+    await activity.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await settle(settings);
+    // Its latest seven entries: the rest is more of the same.
+    const box = (await activity.boundingBox())!;
+    const last = (await activity.locator('.row').nth(6).boundingBox())!;
+    await s.save('activity', shot(settings, { clip: { x: box.x, y: box.y, width: box.width, height: last.y + last.height - box.y + 1 } }));
+    await julie.close();
+  } finally {
+    server.stop();
+  }
+}
+
 const browser = await chromium.launch();
 let changes = 0;
 try {
   for (const lang of LANGUAGES) {
     const s = await shoot(browser, lang);
+    await shootTeam(browser, lang, s);
     changes += s.changed.length;
     const total = s.changed.length + s.unchanged.length;
     console.log(`${lang.code}: ${total} screenshots, ${s.changed.length ? `changed: ${s.changed.join(', ')}` : 'none changed'}`);
