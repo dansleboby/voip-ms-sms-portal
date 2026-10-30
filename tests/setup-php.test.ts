@@ -57,6 +57,16 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server missing a se
     expect(await answer(`${url}/api/auth/login`, login)).toEqual(expected);
   });
 
+  it('asks for the PHP that package.json names, which release.json announces', () => {
+    const { engines } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { engines: { php: string } };
+    const [, major, minor] = /^>=(\d+)\.(\d+)$/.exec(engines.php)!;
+    for (const file of ['php/www/api.php', 'php/app/bootstrap.php']) {
+      const code = fs.readFileSync(path.join(root, file), 'utf8');
+      expect(code, file).toContain(`PHP_VERSION_ID < ${Number(major) * 10000 + Number(minor) * 100})`);
+      expect(code, file).toContain(`needs PHP ${major}.${minor} or later`);
+    }
+  });
+
   it('says where the sms-portal folder should be when the site cannot find it', async () => {
     const url = await start({ SMS_PORTAL_DIR: path.join(os.tmpdir(), 'no-such-folder'), APP_PASSWORD: 'x' });
     expect(await answer(`${url}/api/session`)).toEqual({

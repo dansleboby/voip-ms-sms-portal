@@ -249,6 +249,7 @@ export const en: Record<MessageKey, string> = {
   'updates.confirmBody': 'The new version replaces this server’s files; your settings, messages and contacts stay. The files it replaces are kept in the data folder (update/backup). It takes a few seconds, then the page reloads.',
   'updates.docker': 'Run this where docker-compose.yml is:',
   'updates.source': 'Run this in the project folder, then restart the server:',
+  'updates.phpTooOld': 'This version needs PHP {required} or later, and this site runs PHP {running}. In cPanel, choose PHP {required} for this domain (MultiPHP Manager, or Select PHP Version), then come back to install it.',
   'settings.version': 'Version {version}',
   'settings.demo': 'Demo mode: sample data, no real texts are sent.',
 
@@ -339,6 +340,7 @@ export const en: Record<MessageKey, string> = {
   'error.unreachable': 'GitHub could not be reached.',
   'error.invalid_manifest': 'The release description is unreadable.',
   'error.not_packaged': 'This copy runs from the project’s source, not an installed package: update it with git.',
+  'error.php_too_old': 'This version needs a newer PHP than this site runs: change it in cPanel first.',
   'error.not_writable': 'The server cannot replace its own files here. Update by extracting the new zip over the old folders, or make these writable by your account:',
   'error.no_unzip': 'PHP cannot open zip files on this server (neither the zip nor the phar extension): update by extracting the new zip over the old folders.',
   'error.download_failed': 'The new version could not be downloaded.',

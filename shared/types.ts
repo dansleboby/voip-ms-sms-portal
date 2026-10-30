@@ -208,6 +208,8 @@ export interface UpdateStatusDto {
   blocked: string | null;
   /** Files or folders it cannot write to, when blocked is "not_writable". */
   paths?: string[];
+  /** When blocked is "php_too_old": the PHP the newest release needs, and the one this server runs. */
+  php?: { required: string; running: string };
 }
 
 /** GET /api/events/poll: the events since `after`, the same ones the stream sends. */
