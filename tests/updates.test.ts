@@ -46,13 +46,15 @@ class FakeReleases {
     return new Promise((resolve) => this.server.close(resolve));
   }
 
-  release(v: string, zip: Buffer | null = null, sha256 = zip ? crypto.createHash('sha256').update(zip).digest('hex') : '0'.repeat(64)) {
+  /** `php`: the oldest PHP the release runs on, as release.json says from 1.8.1 on. */
+  release(v: string, zip: Buffer | null = null, sha256 = zip ? crypto.createHash('sha256').update(zip).digest('hex') : '0'.repeat(64), php?: string) {
     if (zip) this.files.set(`/sms-portal-cpanel-${v}.zip`, zip);
     this.manifest = {
       version: v,
       publishedAt: '2026-10-17T12:00:00Z',
       url: `https://github.com/dansleboby/voip-ms-sms-portal/releases/tag/v${v}`,
       notes: '- **New.** Something `better`.',
+      ...(php ? { php } : {}),
       cpanel: { url: `${this.url}/sms-portal-cpanel-${v}.zip`, sha256, size: zip?.length ?? 0 },
       docker: { image: `ghcr.io/dansleboby/voip-ms-sms-portal:${v}` },
     };
@@ -263,6 +265,19 @@ describe.each(['ZipArchive', 'PharData'])('PHP server: installing an update with
     releases.release('9.9.9', packageZip('9.9.9', () => {}, (dir) => fs.writeFileSync(path.join(dir, 'sms-portal-site/extra.php'), '<?php')));
     expect(await client.post('/api/update/install')).toMatchObject({ status: 502, json: { error: 'invalid_package' } });
     expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
+  });
+
+  it('waits for a newer PHP when the release needs one, saying which, changing nothing', async () => {
+    const zip = packageZip('9.9.9');
+    releases.release('9.9.9', zip, undefined, '99.0');
+    const status = (await client.get('/api/update?refresh=1')).json;
+    expect(status).toMatchObject({ available: true, canInstall: false, blocked: 'php_too_old', php: { required: '99.0', running: expect.stringMatching(/^8\./) } });
+    expect(await client.post('/api/update/install')).toMatchObject({ status: 409, json: { error: 'php_too_old' } });
+    expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
+    // The PHP this server runs, or an older one, is fine.
+    releases.release('9.9.9', zip, undefined, '8.1');
+    expect((await client.get('/api/update?refresh=1')).json).toMatchObject({ canInstall: true, blocked: null });
+    expect((await client.get('/api/update')).json.php).toBeUndefined();
   });
 
   it('refuses a package of another version', async () => {

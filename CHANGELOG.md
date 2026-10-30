@@ -12,6 +12,10 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 - **Signed-in devices.** *Settings* → *My account* lists the browsers signed in, with when each was last active, and signs out any of them. Changing your password signs out the others. Signing out now ends a session for good: before, a copy of its cookie kept working until it expired. Everyone signs in again once after this update.
 - When several texts from the same person arrive within the same second, as the parts of a long text can, the push notification now shows the last one instead of the first.
 
+## 1.8.1 (2026-10-30)
+
+- Shared hosting: *Settings* → *Updates* now checks that a new version runs on the site's PHP before installing it. Version 2.0 will need PHP 8.4 or later: on an older PHP, it says which version to choose in cPanel (*MultiPHP Manager*) and installs the update once it is chosen, instead of installing a version the site cannot run.
+
 ## 1.8.0 (2026-10-29)
 
 - **Texts announced by VoIP.ms.** Instead of checking VoIP.ms on a schedule, the portal can have VoIP.ms call it as soon as one of your numbers receives a text: choose *Instantly, through a VoIP.ms webhook* in the setup wizard or in *Settings* → *Receiving texts*. It needs an address VoIP.ms can reach over HTTPS: shared hosting always has one; with Docker, set `PUBLIC_URL`. The portal sets each number's "SMS/MMS URL Callback" at VoIP.ms itself, keeping the number's other settings. A number that already sends its texts to another address keeps it unless you choose *Replace*, and gets it back when you go back to regular checks. A check still runs every 15 minutes, for texts sent from other apps and calls missed while the server was down. On shared hosting, texts no longer wait for the cron job.

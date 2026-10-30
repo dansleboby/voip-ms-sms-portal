@@ -127,7 +127,11 @@ export function UpdatesSection() {
                 </button>
               ) : (
                 <div>
-                  <div className="error-text">{errorText(status.blocked ?? 'install_failed')}</div>
+                  <div className="error-text">
+                    {status.blocked === 'php_too_old' && status.php
+                      ? t('updates.phpTooOld', status.php)
+                      : errorText(status.blocked ?? 'install_failed')}
+                  </div>
                   {status.paths && <code className="command">{status.paths.join('\n')}</code>}
                 </div>
               )
