@@ -2,7 +2,7 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
-## Unreleased
+## 2.0.0 (2026-10-30)
 
 - **Team mode.** Several people can use the same portal, each with their own email and password. The owner turns it on in *Settings* → *Team mode* by creating the first administrator; it does not turn off. Administrators add users, give them a new password when they forget theirs, suspend or delete them, and choose the numbers each user texts from, read only or with sending. Users see only the settings that concern them: notifications, appearance and their account. The server's `APP_PASSWORD` still opens the portal as its owner, with *Owner sign-in* on the sign-in page. Without Team mode, nothing changes: `APP_PASSWORD` alone opens the portal. The [Team mode guide](docs/team.md) ([en français](docs/team.fr.md)) takes it step by step.
   - A user sees the conversations, pictures, live updates and push notifications of their own numbers only. On a number given to them read only, they read the texts but cannot send, retry or delete any.
