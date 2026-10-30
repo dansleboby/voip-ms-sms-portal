@@ -7,14 +7,14 @@ namespace SmsPortal;
 use PDO;
 
 /**
- * The SQLite database. Its schema is the one of the Docker version
- * (server/db.ts), migration for migration, so a database can move between
- * the two; the tables only the PHP version needs are created apart from
- * that numbering.
+ * The SQLite database. Its migrations are those of the Node server of 1.x
+ * (the Docker image before 2.0), migration for migration, so the databases
+ * it left behind carry on here; the tables it kept in memory instead are
+ * created apart from that numbering.
  */
 final class Db
 {
-    /** Same list, same order as MIGRATIONS in server/db.ts; the index + 1 is PRAGMA user_version. */
+    /** Appended, never edited: the index + 1 is PRAGMA user_version. */
     private static function migrations(): array
     {
         return [
@@ -152,7 +152,7 @@ final class Db
               id            INTEGER PRIMARY KEY AUTOINCREMENT,
               email         TEXT NOT NULL UNIQUE,
               name          TEXT,
-              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (server/passwords.ts)
+              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (Passwords)
               password_hash TEXT NOT NULL,
               role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
               disabled_at   INTEGER,
@@ -179,9 +179,13 @@ final class Db
         ];
     }
 
-    /** Tables of the PHP version only; the Docker version ignores them. */
+    /**
+     * Created on every open, outside the migrations: the Node server of 1.x
+     * (the Docker image before 2.0) kept these in memory, so the databases it
+     * left behind lack them.
+     */
     private const PHP_TABLES = <<<'SQL'
-        -- What the Docker version sends over Server-Sent Events, kept for tabs to poll.
+        -- What happened, kept for open tabs to poll.
         CREATE TABLE IF NOT EXISTS events (
           id         INTEGER PRIMARY KEY AUTOINCREMENT,
           data       TEXT NOT NULL,
@@ -229,29 +233,27 @@ final class Db
         $statement->execute();
     }
 
-    public static function open(string $file): PDO
+    /**
+     * Opens the database and brings its schema up to date. Tests pass
+     * $version to build the database of an earlier release, as it stopped
+     * at that migration, and check what the later ones do to it.
+     */
+    public static function open(string $file, ?int $version = null): PDO
     {
-        $dsn = 'sqlite:' . $file;
-        // PHP 8.4 has a SQLite-specific class; createFunction moved there.
-        $db = class_exists(\Pdo\Sqlite::class) ? new \Pdo\Sqlite($dsn) : new PDO($dsn);
+        $db = new \Pdo\Sqlite('sqlite:' . $file);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $db->exec('PRAGMA busy_timeout = 5000');
         $db->exec('PRAGMA journal_mode = WAL');
         $db->exec('PRAGMA foreign_keys = ON');
-        $fold = static fn ($value) => is_string($value) ? Text::fold($value) : $value;
-        if ($db instanceof \Pdo\Sqlite) {
-            $db->createFunction('fold', $fold, 1, \Pdo\Sqlite::DETERMINISTIC);
-        } else {
-            $db->sqliteCreateFunction('fold', $fold, 1, PDO::SQLITE_DETERMINISTIC);
-        }
-        self::migrate($db);
+        $db->createFunction('fold', static fn ($value) => is_string($value) ? Text::fold($value) : $value, 1, \Pdo\Sqlite::DETERMINISTIC);
+        self::migrate($db, $version);
         return $db;
     }
 
-    private static function migrate(PDO $db): void
+    private static function migrate(PDO $db, ?int $version): void
     {
-        $migrations = self::migrations();
+        $migrations = array_slice(self::migrations(), 0, $version);
         while ((int) $db->query('PRAGMA user_version')->fetchColumn() < count($migrations)) {
             // Two first requests can arrive together: the one that waited finds the work done.
             $db->exec('BEGIN IMMEDIATE');

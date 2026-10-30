@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Web Push notifications for new incoming texts, to the browsers that asked
- * for them, skipping those where the app is on screen (server/push.ts).
+ * for them, skipping those where the app is on screen.
  */
 final class Push
 {
@@ -35,12 +35,14 @@ final class Push
 
     /**
      * @param \Closure(): string $ownerFingerprint changes with APP_PASSWORD (slow to compute: only asked when needed)
+     * @param ?\Closure(): string $legacyOwnerFingerprint the same, as the Node server of 1.x computed it
      */
     public function __construct(
         private readonly Repo $repo,
         private readonly Events $events,
         private readonly string $subject,
         private readonly \Closure $ownerFingerprint,
+        private readonly ?\Closure $legacyOwnerFingerprint = null,
     ) {
     }
 
@@ -71,8 +73,11 @@ final class Push
         }
         $this->ownerChecked = true;
         $owner = ($this->ownerFingerprint)();
-        if ($this->repo->getSetting(self::OWNER_KEY) !== $owner) {
-            $dropped = $this->repo->deleteAllPushSubscriptions();
+        $stored = $this->repo->getSetting(self::OWNER_KEY);
+        if ($stored !== $owner) {
+            // A Docker install from before 2.0 computed it another way: the same APP_PASSWORD keeps its browsers.
+            $sameOwner = $stored !== null && $this->legacyOwnerFingerprint !== null && $stored === ($this->legacyOwnerFingerprint)();
+            $dropped = $sameOwner ? 0 : $this->repo->deleteAllPushSubscriptions();
             if ($dropped) {
                 Log::info('APP_PASSWORD changed: push subscriptions removed', ['count' => $dropped]);
             }
@@ -92,17 +97,20 @@ final class Push
         if (!$subscriptions) {
             return;
         }
-        // VoIP.ms lists newest first: the last one stored is not necessarily the latest.
+        // VoIP.ms lists newest first: the last one stored is not necessarily the latest. Its dates
+        // stop at the second; within one (a long text split in parts, say), its ids, which only grow, tell.
         $latest = [];
         foreach ($items as ['messageId' => $messageId, 'conversationId' => $conversationId]) {
-            $sentAt = $this->repo->getMessageRow($messageId)['sent_at'] ?? 0;
+            $row = $this->repo->getMessageRow($messageId);
+            $sentAt = $row['sent_at'] ?? 0;
+            $remoteId = (int) Repo::voipmsId((string) ($row['remote_id'] ?? ''));
             $entry = $latest[$conversationId] ?? null;
-            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && $messageId > $entry['messageId']);
-            $latest[$conversationId] = [
-                'messageId' => $newer ? $messageId : $entry['messageId'],
-                'sentAt' => $newer ? $sentAt : $entry['sentAt'],
-                'count' => ($entry['count'] ?? 0) + 1,
-            ];
+            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && (
+                $remoteId > $entry['remoteId'] || ($remoteId === $entry['remoteId'] && $messageId > $entry['messageId'])
+            ));
+            $latest[$conversationId] = $newer
+                ? ['messageId' => $messageId, 'sentAt' => $sentAt, 'remoteId' => $remoteId, 'count' => ($entry['count'] ?? 0) + 1]
+                : ['count' => $entry['count'] + 1] + $entry;
         }
         $dids = array_values(array_filter($this->repo->listDids(), static fn (array $d) => $d['visible']));
         $multi = count($dids) > 1;

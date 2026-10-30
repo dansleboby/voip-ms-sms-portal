@@ -8,11 +8,11 @@ use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
- * Keeps the database in step with VoIP.ms by polling getSMS/getMMS
- * (server/sync.ts). There is no process of its own to run a timer: checks
- * happen when an open tab polls (every POLL_INTERVAL_ACTIVE) and when the
- * cron job runs (every POLL_INTERVAL_IDLE, at most once a minute). What the
- * Docker version keeps in memory lives in the settings table.
+ * Keeps the database in step with VoIP.ms by polling getSMS/getMMS. There
+ * is no process of its own to run a timer: checks happen when an open tab
+ * polls (every POLL_INTERVAL_ACTIVE) and when the cron job runs (every
+ * POLL_INTERVAL_IDLE; at most once a minute on shared hosting, every 10 s
+ * in Docker). Its state lives in the settings table.
  *
  * VoIP.ms keeps the history, so polling never loses anything: after a
  * downtime the next check widens its window back to the last success.
@@ -49,7 +49,8 @@ final class Sync
         private readonly int $pollIdleMs,
         private readonly string $lockDir,
         private readonly \Closure $onIncoming,
-        private readonly string $cronCommand,
+        /** The line for cPanel's cron jobs; null where the server runs its own (Docker). */
+        private readonly ?string $cronCommand,
         /** VoIP.ms announcing texts: with every number covered, checks become a safety net. */
         private readonly ?Webhook $webhook = null,
         /** The VoIP.ms account checked; each has its own (Accounts). */
@@ -92,9 +93,8 @@ final class Sync
             'lastCheckAt' => $checked !== null ? (int) $checked : null,
             'lastError' => $error,
             'importing' => $import ? ['done' => $import['done'], 'total' => $import['total']] : null,
-            'cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand],
             'webhook' => $this->webhook?->summary(),
-        ];
+        ] + ($this->cronCommand === null ? [] : ['cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand]]);
     }
 
     public function recordCronRun(): void

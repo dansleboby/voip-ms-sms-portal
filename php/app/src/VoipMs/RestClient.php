@@ -7,7 +7,7 @@ namespace SmsPortal\VoipMs;
 use SmsPortal\Text;
 
 /**
- * VoIP.ms REST client (server/voipms/client.ts). What the live API taught:
+ * VoIP.ms REST client. What the live API taught:
  * - bodies must be multipart/form-data (urlencoded ones get a SOAP fault);
  * - every call but getIP is refused unless the caller's IP is whitelisted;
  * - getSMS/getMMS with all_messages=1 mix both kinds without saying which,

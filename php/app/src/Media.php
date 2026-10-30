@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Attachment files under DATA_DIR/media, and the downloads of received ones
- * (server/media.ts). VoIP.ms media links are public and can answer 404 for
+ *. VoIP.ms media links are public and can answer 404 for
  * a while after a message is sent, so downloads keep trying for about 6
  * hours, in short batches run by polls and the cron job.
  */

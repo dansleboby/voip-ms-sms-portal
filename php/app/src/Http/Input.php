@@ -6,7 +6,7 @@ namespace SmsPortal\Http;
 
 /**
  * Typed reads from a decoded body or query, refusing anything unexpected
- * the way the zod schemas of the Docker version do.
+ * with a 400.
  */
 final class Input
 {

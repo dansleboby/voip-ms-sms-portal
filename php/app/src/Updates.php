@@ -8,7 +8,7 @@ use SmsPortal\Http\HttpError;
 
 /**
  * New versions: whether one was published (from the release.json each
- * release carries, as server/updates.ts reads it), and installing it in
+ * release carries), and installing it in
  * place from Settings. The update replaces the files of the sms-portal
  * folder and of the site; config.php and the data folder are never touched.
  *
@@ -31,6 +31,8 @@ final class Updates
 
     public function __construct(
         private readonly Repo $repo,
+        /** "docker": a new image replaces this one, the server never touches its own files. */
+        private readonly string $install,
         private readonly string $version,
         private readonly bool $enabled,
         private readonly string $manifestUrl,
@@ -52,10 +54,10 @@ final class Updates
             $this->check();
         }
         $latest = $this->latest();
-        [$blocked, $paths] = $this->blocked();
+        [$blocked, $paths] = $this->install === 'docker' ? [null, []] : $this->blocked($latest);
         $status = [
             'current' => $this->version,
-            'install' => 'php',
+            'install' => $this->install,
             'enabled' => $this->enabled,
             'latest' => $latest === null ? null : [
                 'version' => $latest['version'],
@@ -66,11 +68,14 @@ final class Updates
             'available' => $latest !== null && self::isNewer($latest['version'], $this->version),
             'checkedAt' => ((int) ($this->repo->getSetting(self::CHECKED_KEY) ?? 0)) ?: null,
             'error' => $this->repo->getSetting(self::ERROR_KEY),
-            'canInstall' => $blocked === null,
+            'canInstall' => $this->install !== 'docker' && $blocked === null,
             'blocked' => $blocked,
         ];
         if ($paths) {
             $status['paths'] = $paths;
+        }
+        if ($blocked === 'php_too_old') {
+            $status['php'] = ['required' => $latest['php'], 'running' => PHP_VERSION];
         }
         return $status;
     }
@@ -123,6 +128,8 @@ final class Updates
             'publishedAt' => is_string($m['publishedAt'] ?? null) ? $m['publishedAt'] : null,
             'url' => $m['url'],
             'notes' => is_string($m['notes'] ?? null) ? mb_substr($m['notes'], 0, self::MAX_NOTES, 'UTF-8') : '',
+            // The oldest PHP it runs on; releases before 1.8.1 do not say.
+            'php' => is_string($m['php'] ?? null) && preg_match('/^\d+\.\d+(\.\d+)?$/', $m['php']) ? $m['php'] : null,
             'cpanel' => $validZip ? ['url' => $zip['url'], 'sha256' => $zip['sha256'], 'size' => (int) ($zip['size'] ?? 0)] : null,
         ];
     }
@@ -137,16 +144,21 @@ final class Updates
     // ---------------------------------------------------------------- installing
 
     /**
-     * Why this server cannot update itself, if it cannot, and the paths at fault.
+     * Why this server cannot update itself to $latest, if it cannot, and the paths at fault.
      *
      * @return array{0: ?string, 1: list<string>}
      */
-    private function blocked(): array
+    private function blocked(?array $latest): array
     {
         $site = $this->siteDir;
         // A checkout of the project (no VERSION file) is updated with git, not with a package.
         if (!is_file("$this->appDir/VERSION") || $site === null || !is_file("$site/index.html") || !is_file("$site/api.php")) {
             return ['not_packaged', []];
+        }
+        // Installed anyway, the new version would only answer that it needs another PHP: the site would be down
+        // until someone changes it in cPanel. Changing it first, then installing, keeps the site up.
+        if (($latest['php'] ?? null) !== null && version_compare(PHP_VERSION, $latest['php'], '<')) {
+            return ['php_too_old', []];
         }
         if (!class_exists(\ZipArchive::class) && !class_exists(\PharData::class)) {
             return ['no_unzip', []];
@@ -177,6 +189,9 @@ final class Updates
         class_exists(HttpError::class);
         class_exists(Log::class);
 
+        if ($this->install === 'docker') {
+            throw new HttpError(409, 'install_unsupported');
+        }
         $lock = Lock::take($this->lockDir, 'update') ?? throw new HttpError(409, 'update_in_progress');
         try {
             $this->check();
@@ -187,7 +202,7 @@ final class Updates
             if ($latest['cpanel'] === null) {
                 throw new HttpError(502, 'invalid_manifest');
             }
-            [$blocked, $paths] = $this->blocked();
+            [$blocked, $paths] = $this->blocked($latest);
             if ($blocked !== null) {
                 throw new HttpError(409, $blocked, $paths ? ['paths' => $paths] : []);
             }

@@ -1,10 +1,10 @@
 import { api } from '../api';
-import type { LiveUpdates, ServerEvent } from '../../../shared/types';
+import type { ServerEvent } from '../../../shared/types';
 
 /**
- * Live updates from the server, over one Server-Sent Events stream or by
- * polling for the same events every few seconds, on hosts that cannot hold
- * a stream open. The session says which one the server wants.
+ * Live updates from the server: each tab asks for the events since its
+ * last poll every few seconds, which every host can serve (no stream is
+ * held open).
  */
 
 export interface LiveHandlers {
@@ -13,7 +13,7 @@ export interface LiveHandlers {
   onEvent(event: ServerEvent): void;
   /** Connection lost; it keeps retrying on its own. */
   onError(): void;
-  /** Some events were missed (polling only): reload everything. */
+  /** Some events were missed: reload everything. */
   onReset(): void;
 }
 
@@ -23,32 +23,13 @@ export interface LiveTab {
   visible: () => boolean;
 }
 
-/** Opens live updates; returns the function that closes them. */
-export function openLiveUpdates(mode: LiveUpdates, tab: LiveTab, handlers: LiveHandlers): () => void {
-  return mode === 'poll' ? openPolling(tab, handlers) : openStream(tab, handlers);
-}
-
-function openStream(tab: LiveTab, handlers: LiveHandlers): () => void {
-  const params = new URLSearchParams({ device: tab.device, tab: tab.tab, visible: tab.visible() ? '1' : '0' });
-  const source = new EventSource(`/api/events?${params}`);
-  source.onopen = () => handlers.onOpen();
-  source.onmessage = (e) => {
-    try {
-      handlers.onEvent(JSON.parse(e.data as string) as ServerEvent);
-    } catch {
-      // Ignore malformed frames.
-    }
-  };
-  source.onerror = () => handlers.onError();
-  return () => source.close();
-}
-
-/** Often enough that a reply or a send's outcome shows up about as fast as over a stream. */
+/** Often enough that a reply or a send's outcome shows up within moments. */
 const POLL_VISIBLE_MS = 3000;
 /** The server keeps a hidden tab counted as open (faster VoIP.ms polling) while it polls at this pace. */
 const POLL_HIDDEN_MS = 30_000;
 
-function openPolling(tab: LiveTab, handlers: LiveHandlers): () => void {
+/** Opens live updates; returns the function that closes them. */
+export function openLiveUpdates(tab: LiveTab, handlers: LiveHandlers): () => void {
   let cursor: string | undefined;
   /** null until the first poll answers. */
   let healthy: boolean | null = null;

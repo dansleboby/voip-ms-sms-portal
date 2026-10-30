@@ -6,13 +6,13 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { backendNames, Client, freePort, phpAvailable, startBackend, type Backend } from './backends.js';
+import { Client, freePort, startBackend, type Backend } from './backends.js';
 import { writeFileList } from '../scripts/package-files.mjs';
 
 /**
- * New versions: both servers read the release.json of the newest release
- * (scripts/release-manifest.mjs) and say whether to update; the PHP one
- * also installs it in place.
+ * New versions: the server reads the release.json of the newest release
+ * (scripts/release-manifest.mjs), says whether to update, and installs it
+ * in place on shared hosting.
  */
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -46,27 +46,29 @@ class FakeReleases {
     return new Promise((resolve) => this.server.close(resolve));
   }
 
-  release(v: string, zip: Buffer | null = null, sha256 = zip ? crypto.createHash('sha256').update(zip).digest('hex') : '0'.repeat(64)) {
+  /** `php`: the oldest PHP the release runs on, as release.json says from 1.8.1 on. */
+  release(v: string, zip: Buffer | null = null, sha256 = zip ? crypto.createHash('sha256').update(zip).digest('hex') : '0'.repeat(64), php?: string) {
     if (zip) this.files.set(`/sms-portal-cpanel-${v}.zip`, zip);
     this.manifest = {
       version: v,
       publishedAt: '2026-10-17T12:00:00Z',
       url: `https://github.com/dansleboby/voip-ms-sms-portal/releases/tag/v${v}`,
       notes: '- **New.** Something `better`.',
+      ...(php ? { php } : {}),
       cpanel: { url: `${this.url}/sms-portal-cpanel-${v}.zip`, sha256, size: zip?.length ?? 0 },
       docker: { image: `ghcr.io/dansleboby/voip-ms-sms-portal:${v}` },
     };
   }
 }
 
-describe.each(backendNames)('%s server: update check', (name) => {
+describe('Update check', () => {
   const releases = new FakeReleases();
   let backend: Backend;
   let client: Client;
 
   beforeAll(async () => {
     await releases.start();
-    backend = await startBackend(name, { UPDATE_MANIFEST_URL: `${releases.url}/release.json` });
+    backend = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json` });
     client = new Client(backend.url);
   }, 30_000);
 
@@ -84,7 +86,7 @@ describe.each(backendNames)('%s server: update check', (name) => {
   it('says when nothing is published yet', async () => {
     const status = (await client.get('/api/update')).json;
     expect(status).toMatchObject({ current: version, enabled: true, latest: null, available: false, error: null });
-    expect(status.install).toBe(name === 'php' ? 'php' : 'source');
+    expect(status.install).toBe('php');
   });
 
   it('offers a newer release, with its notes', async () => {
@@ -108,8 +110,8 @@ describe.each(backendNames)('%s server: update check', (name) => {
     const install = await client.post('/api/update/install');
     expect(install.status).toBe(409);
     // A checkout of the project updates with git, not with a package.
-    expect(install.json.error).toBe(name === 'php' ? 'not_packaged' : 'install_unsupported');
-    if (name === 'php') expect(status.blocked).toBe('not_packaged');
+    expect(install.json.error).toBe('not_packaged');
+    expect(status.blocked).toBe('not_packaged');
   });
 
   it('keeps the last answer when the release cannot be read, and reports why', async () => {
@@ -124,7 +126,7 @@ describe.each(backendNames)('%s server: update check', (name) => {
   });
 
   it('asks nothing when update checks are off', async () => {
-    const off = await startBackend(name, { UPDATE_MANIFEST_URL: `${releases.url}/release.json`, UPDATE_CHECK: 'false' });
+    const off = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json`, UPDATE_CHECK: 'false' });
     try {
       const offClient = new Client(off.url);
       await offClient.login();
@@ -133,6 +135,20 @@ describe.each(backendNames)('%s server: update check', (name) => {
       expect(releases.hits).toBe(hits);
     } finally {
       await off.stop();
+    }
+  });
+
+  it('leaves updates to a new image in Docker, which runs its own cron job', async () => {
+    // As the image sets it; --env-file keeps the quotes of a value written "docker".
+    const docker = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json`, SMS_PORTAL_INSTALL: '"docker"' });
+    try {
+      const dockerClient = new Client(docker.url);
+      await dockerClient.login();
+      expect((await dockerClient.get('/api/update')).json).toMatchObject({ install: 'docker', canInstall: false, blocked: null });
+      expect(await dockerClient.post('/api/update/install')).toMatchObject({ status: 409, json: { error: 'install_unsupported' } });
+      expect((await dockerClient.get('/api/sync/status')).json.cron).toBeUndefined();
+    } finally {
+      await docker.stop();
     }
   });
 });
@@ -166,7 +182,7 @@ function packageZip(v: string, extra: (dir: string) => void = () => {}, after: (
 }
 
 // Hosts without PHP's zip extension, or with ZipArchive disabled, unpack with PharData instead.
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'PharData'])('PHP server: installing an update with %s', (extractor) => {
+describe.each(['ZipArchive', 'PharData'])('PHP server: installing an update with %s', (extractor) => {
   const releases = new FakeReleases();
   let home: string;
   let app: string;
@@ -249,6 +265,19 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'Pha
     releases.release('9.9.9', packageZip('9.9.9', () => {}, (dir) => fs.writeFileSync(path.join(dir, 'sms-portal-site/extra.php'), '<?php')));
     expect(await client.post('/api/update/install')).toMatchObject({ status: 502, json: { error: 'invalid_package' } });
     expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
+  });
+
+  it('waits for a newer PHP when the release needs one, saying which, changing nothing', async () => {
+    const zip = packageZip('9.9.9');
+    releases.release('9.9.9', zip, undefined, '99.0');
+    const status = (await client.get('/api/update?refresh=1')).json;
+    expect(status).toMatchObject({ available: true, canInstall: false, blocked: 'php_too_old', php: { required: '99.0', running: expect.stringMatching(/^8\./) } });
+    expect(await client.post('/api/update/install')).toMatchObject({ status: 409, json: { error: 'php_too_old' } });
+    expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
+    // The PHP this server runs, or an older one, is fine.
+    releases.release('9.9.9', zip, undefined, '8.4');
+    expect((await client.get('/api/update?refresh=1')).json).toMatchObject({ canInstall: true, blocked: null });
+    expect((await client.get('/api/update')).json.php).toBeUndefined();
   });
 
   it('refuses a package of another version', async () => {

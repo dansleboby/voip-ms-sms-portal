@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace SmsPortal;
 
 /**
- * Who is signed in (server/auth.ts). The owner signs in with APP_PASSWORD,
- * the only way in the simple mode; in the Team mode, users sign in with
- * their email and their own password (Passwords).
+ * Who is signed in. The owner signs in with APP_PASSWORD, the only way in
+ * the simple mode; in the Team mode, users sign in with their email and
+ * their own password (Passwords).
  *
  * Each sign-in is a row of the sessions table. The cookie holds the
  * session's id, signed with a secret and a digest of APP_PASSWORD: changing
  * APP_PASSWORD signs everyone out, and the table alone (which keeps only a
- * hash of each id) signs nobody in. Same format and secret as the Docker
- * version, so a sign-in survives moving the database.
+ * hash of each id) signs nobody in.
  */
 final class Auth
 {

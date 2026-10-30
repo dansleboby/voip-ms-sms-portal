@@ -13,7 +13,7 @@ use SmsPortal\Log;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
- * The VoIP.ms accounts the portal uses (server/routes/accounts.ts). The first
+ * The VoIP.ms accounts the portal uses. The first
  * one comes from the setup wizard; the others are added here (an agency keeps
  * one per client).
  */

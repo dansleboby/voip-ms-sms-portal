@@ -10,7 +10,7 @@ use SmsPortal\VoipMs\VoipMsError;
 
 /**
  * Texts announced by VoIP.ms (each number's "SMS/MMS URL Callback") instead
- * of found by checking on a schedule (server/webhook.ts). A call is only a
+ * of found by checking on a schedule. A call is only a
  * signal to check VoIP.ms right away: what it says is never stored, since
  * nothing proves it comes from VoIP.ms. The secret in its address only keeps
  * strangers from making the portal check more often.

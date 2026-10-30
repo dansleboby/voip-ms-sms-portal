@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Reads the contacts of a .vcf export (Google Contacts, iCloud, Android...):
- * the display name and the North American phone numbers (server/vcard.ts).
+ * the display name and the North American phone numbers.
  */
 final class VCard
 {

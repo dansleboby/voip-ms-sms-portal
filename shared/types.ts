@@ -1,4 +1,4 @@
-/** Shapes exchanged between the server's REST/SSE API and the web client. */
+/** Shapes exchanged between the server's API and the web client. */
 
 import type { ContactIcon } from './contact.js';
 import type { MessageKind } from './message.js';
@@ -7,12 +7,6 @@ export type Direction = 'in' | 'out';
 export type MessageStatus = 'received' | 'sending' | 'sent' | 'failed';
 export type AttachmentStatus = 'pending' | 'ready' | 'failed';
 export type CredentialsSource = 'env' | 'db' | null;
-/**
- * How open tabs receive live updates: one Server-Sent Events stream each, or
- * by polling /api/events/poll, for proxies and hosts that cannot hold a
- * stream open (shared PHP hosting).
- */
-export type LiveUpdates = 'stream' | 'poll';
 
 export interface SessionDto {
   authenticated: boolean;
@@ -23,7 +17,8 @@ export interface SessionDto {
   /** Polling periods, in seconds, shown in the UI. */
   pollActiveSeconds: number;
   pollIdleSeconds: number;
-  liveUpdates: LiveUpdates;
+  /** Tabs poll /api/events/poll for live updates. Said for tabs opened before 2.0, which would otherwise open an event stream. */
+  liveUpdates: 'poll';
   /** Whether the server's configuration leaves some of the account's numbers out (ALLOWED_DIDS, EXCLUDED_DIDS). */
   didsRestricted: boolean;
   /** simple: one password (APP_PASSWORD). team: users who sign in with their email, each with their numbers. */
@@ -262,6 +257,8 @@ export interface UpdateStatusDto {
   blocked: string | null;
   /** Files or folders it cannot write to, when blocked is "not_writable". */
   paths?: string[];
+  /** When blocked is "php_too_old": the PHP the newest release needs, and the one this server runs. */
+  php?: { required: string; running: string };
 }
 
 /** GET /api/events/poll: the events since `after`, the same ones the stream sends. */

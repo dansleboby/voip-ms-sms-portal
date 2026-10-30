@@ -13,7 +13,7 @@ use SmsPortal\Http\Response;
 use SmsPortal\Passwords;
 use SmsPortal\Time;
 
-/** server/routes/auth.ts */
+/** The session, signing in and out. */
 final class AuthRoutes
 {
     private const LOGIN_ATTEMPTS_PER_MINUTE = 10;
@@ -38,7 +38,7 @@ final class AuthRoutes
                 'version' => $app->version,
                 'pollActiveSeconds' => (int) round($app->config->pollActiveMs / 1000),
                 'pollIdleSeconds' => (int) round($app->config->pollIdleMs / 1000),
-                // A PHP request cannot hold a stream open.
+                // Tabs opened before 2.0, from the Docker image's Node server, would otherwise open an event stream.
                 'liveUpdates' => 'poll',
                 'didsRestricted' => $app->config->allowedDids !== null || $app->config->excludedDids !== [],
                 'mode' => $app->auth->mode(),
@@ -92,7 +92,7 @@ final class AuthRoutes
         return 'pbkdf2-sha256$' . Passwords::ITERATIONS . '$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     }
 
-    /** Ten sign-in attempts a minute per address, like the Docker version. */
+    /** Ten sign-in attempts a minute per address. */
     private static function limitAttempts(App $app, string $ip): void
     {
         $repo = $app->repo;

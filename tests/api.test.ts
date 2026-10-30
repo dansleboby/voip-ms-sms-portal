@@ -2,17 +2,14 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadConfig } from '../server/config.js';
-import { backendNames, Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
-import { browserKeys } from '../server/test/webpush-helpers.js';
+import { Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
+import { browserKeys } from './webpush-helpers.js';
 import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
 
 /**
- * The HTTP API, as the web client uses it, checked against both servers in
- * demo mode: whatever passes here works the same in Docker and on shared
- * PHP hosting.
+ * The HTTP API, as the web client uses it, in demo mode. Docker and shared
+ * hosting run the same server, so whatever passes here works on both.
  */
 
 const PNG = Buffer.from(
@@ -25,7 +22,7 @@ const MONTREAL = '5145550100';
 const GATINEAU = '8195550123';
 const MARIE = '4385550142';
 
-describe.each(backendNames)('%s server', (name) => {
+describe('The server', () => {
   let backend: Backend;
   let client: Client;
   let cursor: string | undefined;
@@ -43,12 +40,12 @@ describe.each(backendNames)('%s server', (name) => {
   function sendForm(fields: Record<string, string>, files: { type: string; data: Buffer }[] = []) {
     const form = new FormData();
     for (const [k, v] of Object.entries(fields)) form.set(k, v);
-    for (const f of files) form.append('files[]', new Blob([f.data], { type: f.type }), 'file');
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f.data)], { type: f.type }), 'file');
     return client.post('/api/messages', form);
   }
 
   beforeAll(async () => {
-    backend = await startBackend(name);
+    backend = await startBackend();
     client = new Client(backend.url);
   }, 30_000);
 
@@ -59,7 +56,7 @@ describe.each(backendNames)('%s server', (name) => {
   it('reports its state before sign-in, and asks for it', async () => {
     const session = await client.get('/api/session');
     expect(session.json).toMatchObject({ authenticated: false, setupCompleted: false, credentialsSource: 'env', demo: true, version, pollActiveSeconds: 3 });
-    expect(['stream', 'poll']).toContain(session.json.liveUpdates);
+    expect(session.json.liveUpdates).toBe('poll');
     expect((await client.get('/api/conversations')).status).toBe(401);
     expect((await client.get('/api/events/poll')).status).toBe(401);
     expect((await client.post('/api/auth/login', { password: 'nope' })).json).toEqual({ error: 'wrong_password' });
@@ -327,13 +324,9 @@ describe.each(backendNames)('%s server', (name) => {
     const status = (await client.get('/api/sync/status')).json;
     expect(status).toMatchObject({ state: 'idle', lastError: null, importing: null });
     expect(status.lastCheckAt).toBeGreaterThanOrEqual(status.lastSyncAt);
-    if (name === 'php') {
-      expect(status.cron).toEqual({ lastRunAt: null, command: expect.stringMatching(/php .*cron\.php$/) });
-      runCron(backend);
-      expect((await client.get('/api/sync/status')).json.cron.lastRunAt).toBeGreaterThan(Date.now() - 10_000);
-    } else {
-      expect(status.cron).toBeUndefined();
-    }
+    expect(status.cron).toEqual({ lastRunAt: null, command: expect.stringMatching(/php .*cron\.php$/) });
+    runCron(backend);
+    expect((await client.get('/api/sync/status')).json.cron.lastRunAt).toBeGreaterThan(Date.now() - 10_000);
   });
 
   it('imports older history in the background', async () => {
@@ -359,7 +352,7 @@ describe.each(backendNames)('%s server', (name) => {
   });
 });
 
-describe.each(backendNames)('%s server with numbers left out by its settings', (name) => {
+describe('The server with numbers left out by its settings', () => {
   const LAVAL = '4505550199';
   const GARAGE = '4505550111';
   let dataDir: string;
@@ -367,7 +360,7 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
 
   async function start(env: Record<string, string>): Promise<Client> {
     await backend?.stop();
-    backend = await startBackend(name, { DATA_DIR: dataDir, ...env });
+    backend = await startBackend({ DATA_DIR: dataDir, ...env });
     const client = new Client(backend.url);
     await client.login();
     return client;
@@ -383,7 +376,7 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
   }
 
   beforeAll(() => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-dids-`));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contract-dids-'));
   });
 
   afterAll(async () => {
@@ -398,9 +391,9 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
     await client.post('/api/setup/complete');
     await waitFor(async () => (await client.get('/api/sync/status')).json.lastSyncAt);
     expect(await conversations(client)).toEqual(['4385550142', '5145550187']);
-    const db = new Database(path.join(dataDir, 'portal.db'), { readonly: true });
-    expect(db.prepare('SELECT DISTINCT did FROM conversations UNION SELECT did FROM dids').pluck().all()).toEqual([MONTREAL]);
-    db.close();
+    const query = `echo json_encode((new PDO('sqlite:' . $argv[1]))->query('SELECT DISTINCT did FROM conversations UNION SELECT did FROM dids')->fetchAll(PDO::FETCH_COLUMN));`;
+    const stored = spawnSync('php', ['-r', query, '--', path.join(dataDir, 'portal.db')], { encoding: 'utf8' }).stdout;
+    expect(JSON.parse(stored)).toEqual([MONTREAL]);
   }, 30_000);
 
   it('hides what was stored before a number was left out, until it is allowed again', async () => {
@@ -442,24 +435,20 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
   }, 30_000);
 
   it('refuses a setting that is not a list of numbers', async () => {
-    if (name === 'node') {
-      expect(() => loadConfig({ APP_PASSWORD: 'x', EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
-    } else {
-      expect(() => runCron(backend!, { EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
-      // config.php takes a list too.
-      const load = (list: string) => {
-        fs.writeFileSync(path.join(dataDir, 'config.php'), `<?php return ['APP_PASSWORD' => 'x', 'ALLOWED_DIDS' => ${list}];`);
-        const script = `require '${path.resolve('php/app/bootstrap.php')}';
-          try { echo json_encode(SmsPortal\\Config::load('${dataDir}')->allowedDids); } catch (SmsPortal\\ConfigError $e) { echo $e->getMessage(); }`;
-        return spawnSync('php', ['-r', script], { encoding: 'utf8' }).stdout;
-      };
-      expect(load(`['514-555-0100', 4505550199]`)).toBe('["5145550100","4505550199"]');
-      expect(load(`['514-555-0100', 'office']`)).toBe('ALLOWED_DIDS: "office" is not a 10-digit phone number.');
-    }
+    expect(() => runCron(backend!, { EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
+    // config.php takes a list too.
+    const load = (list: string) => {
+      fs.writeFileSync(path.join(dataDir, 'config.php'), `<?php return ['APP_PASSWORD' => 'x', 'ALLOWED_DIDS' => ${list}];`);
+      const script = `require '${path.resolve('php/app/bootstrap.php')}';
+        try { echo json_encode(SmsPortal\\Config::load('${dataDir}')->allowedDids); } catch (SmsPortal\\ConfigError $e) { echo $e->getMessage(); }`;
+      return spawnSync('php', ['-r', script], { encoding: 'utf8' }).stdout;
+    };
+    expect(load(`['514-555-0100', 4505550199]`)).toBe('["5145550100","4505550199"]');
+    expect(load(`['514-555-0100', 'office']`)).toBe('ALLOWED_DIDS: "office" is not a 10-digit phone number.');
   }, 30_000);
 });
 
-describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) => {
+describe('The server with texts announced by VoIP.ms', () => {
   const LAVAL = '4505550199';
   const GATINEAU = '8195550123';
   /** Laval's callback in the demo account, to another system. */
@@ -468,7 +457,7 @@ describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) 
   let client: Client;
 
   beforeAll(async () => {
-    backend = await startBackend(name, { PUBLIC_URL: 'https://sms.example.com' });
+    backend = await startBackend({ PUBLIC_URL: 'https://sms.example.com' });
     client = new Client(backend.url);
     await client.login();
     await client.get('/api/setup/dids');
@@ -533,9 +522,9 @@ describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) 
   });
 });
 
-describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name) => {
+describe('The server asked for webhooks without HTTPS', () => {
   it('refuses: VoIP.ms could not reach it, and the secret would travel in clear', async () => {
-    const backend = await startBackend(name);
+    const backend = await startBackend();
     try {
       const client = new Client(backend.url);
       await client.login();
@@ -548,14 +537,14 @@ describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name)
   }, 30_000);
 });
 
-describe.each(backendNames)('%s server with several VoIP.ms accounts', (name) => {
+describe('The server with several VoIP.ms accounts', () => {
   /** The demo's second sample account: a bakery in Québec. */
   const QUEBEC = '4185550142';
   let backend: Backend;
   let client: Client;
 
   beforeAll(async () => {
-    backend = await startBackend(name);
+    backend = await startBackend();
     client = new Client(backend.url);
     await client.login();
     await client.get('/api/setup/dids');
@@ -629,7 +618,7 @@ describe.each(backendNames)('%s server with several VoIP.ms accounts', (name) =>
   });
 });
 
-describe.each(backendNames)('%s server in the Team mode', (name) => {
+describe('The server in the Team mode', () => {
   let backend: Backend;
   let owner: Client;
   let admin: Client;
@@ -637,7 +626,7 @@ describe.each(backendNames)('%s server in the Team mode', (name) => {
   let marcId: number;
 
   beforeAll(async () => {
-    backend = await startBackend(name);
+    backend = await startBackend();
     owner = new Client(backend.url);
     await owner.login();
     await owner.get('/api/setup/dids');

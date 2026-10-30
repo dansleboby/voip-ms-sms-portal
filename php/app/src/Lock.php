@@ -6,8 +6,8 @@ namespace SmsPortal;
 
 /**
  * File locks between the PHP processes of the site: requests and the cron
- * job run side by side, and the work the Docker version does in one process
- * (one sync at a time, sends and syncs taking turns) needs them.
+ * job run side by side, and some work must not (one sync at a time, sends
+ * and syncs taking turns).
  */
 final class Lock
 {

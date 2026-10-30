@@ -10,7 +10,7 @@ use SmsPortal\VoipMs\VoipMsError;
 /**
  * Records an outgoing message right away (status "sending") and delivers it
  * through VoIP.ms once the response is on its way; the tabs follow along
- * through their polls (server/send.ts).
+ * through their polls.
  */
 final class Sender
 {

@@ -3,18 +3,14 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { buildApp } from '../server/app.js';
-import { loadConfig } from '../server/config.js';
 
 /**
- * The two servers of the project, started in demo mode on a free port, for
- * tests that check they answer the same API: the Node one (Docker) and
- * the PHP one (shared hosting, through PHP's built-in server and
- * php/dev-router.php, which does what php/www/.htaccess does on a host).
+ * The server, started in demo mode on a free port, the way shared hosting
+ * runs it: PHP's built-in server with php/dev-router.php, which does what
+ * php/www/.htaccess does on a host (and the Docker image's Apache).
  */
 
 export interface Backend {
-  name: 'node' | 'php';
   url: string;
   dataDir: string;
   stop(): Promise<void>;
@@ -22,13 +18,12 @@ export interface Backend {
 
 const root = path.resolve(import.meta.dirname, '..');
 
-/** Settings both get: demo account, checks every 3 s while a tab is open. */
+/** Demo account, checks every 3 s while a tab is open. */
 const ENV = { APP_PASSWORD: 'hunter2', DEMO_MODE: 'true', POLL_INTERVAL_ACTIVE: '3' };
 
-export const phpAvailable = spawnSync('php', ['-v']).status === 0;
-
-/** CI sets REQUIRE_PHP so that a missing PHP fails the run instead of skipping half of it. */
-export const backendNames: Backend['name'][] = phpAvailable || process.env.REQUIRE_PHP ? ['node', 'php'] : ['node'];
+if (spawnSync('php', ['-v']).status !== 0) {
+  throw new Error('The tests need PHP 8.4 or later on the PATH: the server is written in PHP.');
+}
 
 /** A port nothing uses right now, picked by the system. */
 export function freePort(): Promise<number> {
@@ -43,27 +38,10 @@ export function freePort(): Promise<number> {
 }
 
 /** A DATA_DIR in `env` is left in place when the server stops (to start another one on the same data). */
-export async function startBackend(name: Backend['name'], env: Record<string, string> = {}): Promise<Backend> {
-  const dataDir = env.DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-`));
+export async function startBackend(env: Record<string, string> = {}): Promise<Backend> {
+  const dataDir = env.DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), 'contract-'));
   const cleanUp = () => env.DATA_DIR === undefined && fs.rmSync(dataDir, { recursive: true, force: true });
   const settings = { ...ENV, ...env, DATA_DIR: dataDir };
-
-  if (name === 'node') {
-    const config = loadConfig({ ...settings, WEB_DIR: path.join(dataDir, 'no-web') });
-    const { app, services } = await buildApp(config, { logger: false });
-    await app.listen({ port: 0, host: '127.0.0.1' });
-    services.sync.start();
-    const { port } = app.server.address() as net.AddressInfo;
-    return {
-      name,
-      url: `http://127.0.0.1:${port}`,
-      dataDir,
-      stop: async () => {
-        await app.close();
-        cleanUp();
-      },
-    };
-  }
 
   const port = await freePort();
   const webRoot = path.join(dataDir, 'www');
@@ -83,7 +61,6 @@ export async function startBackend(name: Backend['name'], env: Record<string, st
     await new Promise((r) => setTimeout(r, 50));
   }
   return {
-    name,
     url,
     dataDir,
     stop: async () => {
@@ -95,7 +72,7 @@ export async function startBackend(name: Backend['name'], env: Record<string, st
   };
 }
 
-/** Runs the PHP version's cron job against a backend's data. */
+/** Runs the cron job (which the Docker image runs every 10 s) against a backend's data. */
 export function runCron(backend: Backend, env: Record<string, string> = {}): void {
   const result = spawnSync('php', [path.join(root, 'php/app/cron.php')], {
     env: { ...process.env, ...ENV, DATA_DIR: backend.dataDir, ...env },

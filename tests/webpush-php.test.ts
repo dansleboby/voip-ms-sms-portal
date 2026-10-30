@@ -2,11 +2,10 @@ import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { phpAvailable } from './backends.js';
-import { browserKeys, decryptPayload } from '../server/test/webpush-helpers.js';
+import { browserKeys, decryptPayload } from './webpush-helpers.js';
 
 /** What a browser and a push service would do with the PHP version's notifications. */
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP web push', () => {
+describe('PHP web push', () => {
   const run = (...args: string[]) =>
     JSON.parse(execFileSync('php', [path.join(import.meta.dirname, 'php/webpush.php'), ...args], { encoding: 'utf8' })) as {
       body: string;

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace SmsPortal;
 
 /**
- * Live updates for tabs that poll (GET /api/events/poll), as EventHub does
- * in the Docker version but kept in the database, since every PHP request
- * is a process of its own: the events (shapes of ServerEvent in
- * shared/types.ts) in a change log, and the open tabs from their polls.
+ * Live updates for tabs that poll (GET /api/events/poll), kept in the
+ * database, since every PHP request is a process of its own: the events
+ * (shapes of ServerEvent in shared/types.ts) in a change log, and the open
+ * tabs from their polls.
  */
 final class Events
 {

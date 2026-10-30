@@ -11,7 +11,7 @@ use SmsPortal\Http\InvalidRequest;
 use SmsPortal\Http\Request;
 use SmsPortal\Http\Response;
 
-/** server/routes/webhook.ts */
+/** VoIP.ms calling back when texts arrive: turning it on and off, and the callback itself. */
 final class WebhookRoutes
 {
     public static function register(App $app): void

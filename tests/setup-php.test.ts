@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { freePort, phpAvailable } from './backends.js';
+import { freePort } from './backends.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -11,7 +11,7 @@ const root = path.resolve(import.meta.dirname, '..');
  * A first install on shared hosting that misses a step answers with what to
  * do, which the sign-in page shows: it read "Lost connection to the server".
  */
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server missing a setup step', () => {
+describe('PHP server missing a setup step', () => {
   const servers: ChildProcess[] = [];
   const dirs: string[] = [];
 
@@ -55,6 +55,16 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server missing a se
     expect(await answer(`${url}/api/session`)).toEqual(expected);
     const login = { method: 'POST', headers: { 'content-type': 'application/json', origin: url }, body: JSON.stringify({ password: 'x' }) };
     expect(await answer(`${url}/api/auth/login`, login)).toEqual(expected);
+  });
+
+  it('asks for the PHP that package.json names, which release.json announces', () => {
+    const { engines } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as { engines: { php: string } };
+    const [, major, minor] = /^>=(\d+)\.(\d+)$/.exec(engines.php)!;
+    for (const file of ['php/www/api.php', 'php/app/bootstrap.php']) {
+      const code = fs.readFileSync(path.join(root, file), 'utf8');
+      expect(code, file).toContain(`PHP_VERSION_ID < ${Number(major) * 10000 + Number(minor) * 100})`);
+      expect(code, file).toContain(`needs PHP ${major}.${minor} or later`);
+    }
   });
 
   it('says where the sms-portal folder should be when the site cannot find it', async () => {

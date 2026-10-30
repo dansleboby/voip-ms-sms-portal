@@ -16,7 +16,7 @@ use SmsPortal\VoipMs\VoipMsError;
 /**
  * The services of one request (or one cron run), and the request's life:
  * routing, the checks every API call goes through, errors, and the work
- * left for after the response (server/app.ts).
+ * left for after the response.
  */
 final class App
 {
@@ -57,7 +57,10 @@ final class App
         if (!is_file("$dataDir/.htaccess")) {
             @file_put_contents("$dataDir/.htaccess", "Require all denied\nDeny from all\n");
         }
-        Log::to("$dataDir/portal.log");
+        // Docker keeps logs itself (docker logs): with no file, they go to Apache's error log, or stderr.
+        if ($config->install !== 'docker') {
+            Log::to("$dataDir/portal.log");
+        }
 
         $this->version = self::readVersion($config->appDir);
         $this->repo = new Repo(Db::open("$dataDir/portal.db"), $config->allowedDids, $config->excludedDids);
@@ -69,7 +72,13 @@ final class App
             $config->demo ? ['username' => 'demo@example.com', 'password' => 'demo'] : $config->voipmsEnv,
         );
         $this->media = new Media("$dataDir/media", $dataDir, $this->repo, $this->events);
-        $this->push = new Push($this->repo, $this->events, $config->vapidSubject, fn () => $this->credentials->fingerprint('push-subscriptions'));
+        $this->push = new Push(
+            $this->repo,
+            $this->events,
+            $config->vapidSubject,
+            fn () => $this->credentials->fingerprint('push-subscriptions'),
+            fn () => $this->credentials->legacyFingerprint('push-subscriptions'),
+        );
         $this->accounts = new Accounts(
             $this->repo,
             $this->events,
@@ -88,6 +97,7 @@ final class App
         $this->deletions = new RemoteDeletions($this->repo, fn (string $did) => $this->accounts->forDid($did)?->client(), $dataDir);
         $this->updates = new Updates(
             repo: $this->repo,
+            install: $config->install,
             version: $this->version,
             enabled: $config->updateCheck,
             manifestUrl: $config->updateManifestUrl,
@@ -144,7 +154,7 @@ final class App
     private function buildAccount(Account $account, Config $config, string $dataDir): array
     {
         // A call from VoIP.ms checks the account after the answer, once a check already running is
-        // done, then fetches the pictures of the MMS it found, as the Docker version does right away.
+        // done, then fetches the pictures of the MMS it found.
         $webhook = new Webhook(
             $this->repo,
             fn () => $account->client(),
@@ -165,7 +175,8 @@ final class App
             pollIdleMs: $config->pollIdleMs,
             lockDir: $dataDir,
             onIncoming: fn (array $items) => $this->push->notifyIncoming($items),
-            cronCommand: self::cronCommand($config->appDir),
+            // Docker runs the cron job itself: Settings has nothing to ask of anyone there.
+            cronCommand: $config->install === 'docker' ? null : self::cronCommand($config->appDir),
             webhook: $webhook,
             accountId: $account->id,
             publish: fn () => $this->accounts->publishStatus(),

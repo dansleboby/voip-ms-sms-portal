@@ -5,8 +5,9 @@ First time? The step-by-step guide gives every click, what you should
 see, and what to do when something goes wrong:
 https://github.com/dansleboby/voip-ms-sms-portal/blob/main/docs/install.md
 
-Needs PHP 8.1 or later with pdo_sqlite, openssl, curl and mbstring (all on by
-default in cPanel), and a subdomain, like sms.example.com, with HTTPS.
+Needs PHP 8.4 or later (cPanel > MultiPHP Manager) with pdo_sqlite, openssl,
+curl and mbstring (all on by default in cPanel), and a subdomain, like
+sms.example.com, with HTTPS.
 
 1. Extract this zip in your home folder (cPanel > File Manager > Upload, then
    Extract). You get two folders, side by side:
@@ -44,9 +45,9 @@ Première fois? Le guide pas à pas donne chaque clic, ce que vous devez
 voir et quoi faire en cas de problème :
 https://github.com/dansleboby/voip-ms-sms-portal/blob/main/docs/install.fr.md
 
-Il faut PHP 8.1 ou plus récent avec pdo_sqlite, openssl, curl et mbstring
-(activés par défaut dans cPanel), et un sous-domaine, comme sms.exemple.com,
-en HTTPS.
+Il faut PHP 8.4 ou plus récent (cPanel > MultiPHP Manager) avec pdo_sqlite,
+openssl, curl et mbstring (activés par défaut dans cPanel), et un sous-domaine,
+comme sms.exemple.com, en HTTPS.
 
 1. Décompressez ce zip dans votre dossier personnel (cPanel > Gestionnaire de
    fichiers > Charger, puis Extraire). Vous obtenez deux dossiers, côte à côte :

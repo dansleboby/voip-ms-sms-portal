@@ -14,7 +14,7 @@ use SmsPortal\Media;
 use SmsPortal\MessageRules;
 use SmsPortal\Phone;
 
-/** server/routes/messaging.ts, with polling in place of the event stream. */
+/** Numbers, conversations, messages, attachments, and the live updates tabs poll for. */
 final class MessagingRoutes
 {
     private const CLIENT_ID = '/^[\w-]{8,64}$/';
