@@ -170,7 +170,7 @@ export function Settings() {
               {session?.didsRestricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
               <div className="card">
                 {dids.map((d) => (
-                  <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />
+                  <DidEditor key={d.did} did={d} team={session?.mode === 'team'} onChange={() => void loadDids()} />
                 ))}
               </div>
               <button className="btn text" style={{ marginTop: 8 }} onClick={refreshDids} disabled={refreshing}>

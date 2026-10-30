@@ -78,6 +78,7 @@ final class App
             $config->vapidSubject,
             fn () => $this->credentials->fingerprint('push-subscriptions'),
             fn () => $this->credentials->legacyFingerprint('push-subscriptions'),
+            fn (int $key) => $this->auth->viewerForKey($key),
         );
         $this->accounts = new Accounts(
             $this->repo,
@@ -275,6 +276,7 @@ final class App
                 throw new HttpError(403, 'bad_origin');
             }
             $request->user = $this->auth->verify($request->cookies[Auth::COOKIE] ?? null);
+            $request->viewer = $this->auth->viewer($request->user);
             if (!$match['public'] && $request->user === null) {
                 throw new HttpError(401, 'unauthorized');
             }

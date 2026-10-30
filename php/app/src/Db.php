@@ -176,6 +176,28 @@ final class Db
             );
             CREATE INDEX sessions_user ON sessions(user_id);
             SQL,
+            // What each person sees in the Team mode: numbers whose unread counts and archive are
+            // their own, who sent each text, and whose browser each push subscription is.
+            <<<'SQL'
+            -- 1: one unread count and archive for everyone; 0: one per person (conversation_states).
+            ALTER TABLE dids ADD COLUMN shared_state INTEGER NOT NULL DEFAULT 1;
+            -- Who sent a text from the portal: 0 the owner, otherwise a user's id; NULL when nobody known did
+            -- (sent elsewhere, or before 2.0). The name as it was then, which stays if the user goes.
+            ALTER TABLE messages ADD COLUMN sent_by_user INTEGER;
+            ALTER TABLE messages ADD COLUMN sent_by_name TEXT;
+            -- 0: the owner's browser, otherwise a user's.
+            ALTER TABLE push_subscriptions ADD COLUMN user_key INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE conversation_states (
+              conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+              -- 0: the owner; otherwise a user's id.
+              user_key        INTEGER NOT NULL,
+              -- The last message read (date and id): later incoming ones are unread. NULL: the shared count.
+              read_at         INTEGER,
+              read_message_id INTEGER,
+              archived_at     INTEGER,
+              PRIMARY KEY (conversation_id, user_key)
+            );
+            SQL,
         ];
     }
 

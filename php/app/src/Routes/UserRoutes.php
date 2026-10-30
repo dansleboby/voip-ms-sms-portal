@@ -74,7 +74,7 @@ final class UserRoutes
             return Response::json($repo->getUser($id), 201);
         }, admin: true);
 
-        $r->add('PATCH', '/api/users/{id}', function (Request $req) use ($repo, $teamOnly): Response {
+        $r->add('PATCH', '/api/users/{id}', function (Request $req) use ($app, $repo, $teamOnly): Response {
             $teamOnly();
             $id = Input::id($req->param('id'));
             $body = new Input($req->json());
@@ -107,6 +107,14 @@ final class UserRoutes
             // A new password, or no access at all: their other browsers are signed out.
             if ($password !== null || ($patch['disabled'] ?? false)) {
                 $repo->deleteUserSessions($id, $id === $req->user['userId'] ? $req->user['sessionId'] : null);
+            }
+            if ($patch['disabled'] ?? false) {
+                $repo->deleteUserPushSubscriptions($id);
+            }
+            if ($numbers !== null || isset($patch['role'])) {
+                // Their tabs show the numbers they have now.
+                $app->events->broadcast(['type' => 'dids']);
+                $app->events->broadcast(['type' => 'reload']);
             }
             return Response::json($repo->getUser($id));
         }, admin: true);

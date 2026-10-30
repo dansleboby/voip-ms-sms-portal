@@ -235,6 +235,35 @@ describe('PHP server: push notifications', () => {
     expect(await subscriptions()).toEqual([]);
   });
 
+  it('tells each user of the Team mode about the numbers given to them, with their own unread count', async () => {
+    const OTHER = '5143604702';
+    expect((await client.post('/api/team', { email: 'julie@example.com', password: 'correct horse' })).status).toBe(201);
+    const created = await client.post('/api/users', { email: 'marc@example.com', password: 'marc password', role: 'user', numbers: [{ did: OTHER, canSend: false }] });
+    expect(created.status).toBe(201);
+    const marc = new Client(backend.url);
+    expect((await marc.post('/api/auth/login', { email: 'marc@example.com', password: 'marc password' })).status).toBe(200);
+    const owner = await subscribe('owner', ua);
+    const keys = browserKeys();
+    const res = await marc.post('/api/push/subscriptions', { endpoint: 'https://push.example.net/send/marc', keys: { p256dh: keys.p256dh, auth: keys.auth } });
+    expect(res.json).toEqual({ ok: true });
+    const theirs = `${service.url}/send/marc`;
+    await php(backend, `$app->repo->run('UPDATE push_subscriptions SET endpoint = ? WHERE endpoint = ?', ['${theirs}', 'https://push.example.net/send/marc']);`);
+
+    voipms.push({ direction: 'in', contact: MARIE, message: 'Pour le propriétaire' });
+    voipms.push({ direction: 'in', did: OTHER, contact: '5145550188', message: 'Pour Marc aussi' });
+    await checkNow(client);
+    await waitFor(async () => service.received.length === 3);
+    const to = (endpoint: string) => service.received.filter((p) => `${service.url}${p.path}` === endpoint);
+    expect(to(owner)).toHaveLength(2);
+    const [forMarc] = to(theirs).map((p) => JSON.parse(decryptPayload(p.body, keys.private, keys.authSecret)));
+    // One number: no need to say which.
+    expect(forMarc).toMatchObject({ title: '(514) 555-0188', body: 'Pour Marc aussi', unread: 1 });
+
+    // A disabled user's browsers stop getting them.
+    expect((await client.request('PATCH', `/api/users/${created.json.id}`, { disabled: true })).status).toBe(200);
+    expect((await subscriptions()).map((s) => s.endpoint)).toEqual([owner]);
+  }, 30_000);
+
   it('drops every subscription when APP_PASSWORD changes, and keeps its keys', async () => {
     await subscribe('abc123', ua);
     const key = (await client.get('/api/push/key')).json.publicKey as string;

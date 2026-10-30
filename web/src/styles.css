@@ -1743,6 +1743,17 @@ textarea.input {
   margin-left: -12px;
 }
 
+.did-row .did-shared {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.read-only-note {
+  margin: 0 16px 16px;
+}
+
 .switch:disabled {
   opacity: 0.38;
   cursor: default;

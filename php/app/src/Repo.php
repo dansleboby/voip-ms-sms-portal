@@ -15,14 +15,30 @@ final class Repo
     /** Distinct colors that read well on light and dark surfaces. */
     public const DID_COLORS = ['#1a73e8', '#e8710a', '#188038', '#a142f4', '#d93025', '#007b83', '#c5221f', '#9334e6'];
 
-    private const MESSAGE_COLUMNS = 'id, conversation_id, kind, remote_id, direction, body, sent_at, status, error, carrier_status, created_at';
+    private const MESSAGE_COLUMNS = 'id, conversation_id, kind, remote_id, direction, body, sent_at, status, error, carrier_status, created_at, sent_by_user, sent_by_name';
 
-    private const CONVERSATION_SELECT = <<<'SQL'
-        SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
+    /**
+     * A conversation's unread count and archive date, as the viewer sees them: the shared ones,
+     * unless the number keeps them per person (dids.shared_state = 0) and the viewer has their own
+     * (conversation_states, joined as s, with the number as d).
+     */
+    private const UNREAD_SQL = <<<'SQL'
+        CASE WHEN COALESCE(d.shared_state, 1) = 1 OR s.read_at IS NULL THEN c.unread_count
+        ELSE (SELECT COUNT(*) FROM messages mu WHERE mu.conversation_id = c.id AND mu.direction = 'in' AND mu.deleted_at IS NULL
+              AND (mu.sent_at > s.read_at OR (mu.sent_at = s.read_at AND mu.id > s.read_message_id))) END
+        SQL;
+    private const ARCHIVED_SQL = 'CASE WHEN COALESCE(d.shared_state, 1) = 1 OR s.conversation_id IS NULL THEN c.archived_at ELSE s.archived_at END';
+
+    private const CONVERSATION_SELECT = 'SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, '
+        . self::UNREAD_SQL . ' AS unread_count, ' . self::ARCHIVED_SQL . <<<'SQL'
+         AS archived_at,
                m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
+               m.sent_by_user AS last_sent_by_user, m.sent_by_name AS last_sent_by_name,
                (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
                ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
         FROM conversations c
+        LEFT JOIN dids d ON d.did = c.did
+        LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
         LEFT JOIN messages m ON m.id = c.last_message_id
         LEFT JOIN contact_phones cp ON cp.phone = c.phone
         LEFT JOIN contacts ct ON ct.id = cp.contact_id
@@ -33,12 +49,30 @@ final class Repo
     /**
      * @param list<string>|null $allowedDids the only numbers of the account the configuration lets the portal use (null: all of them)
      * @param list<string> $excludedDids numbers it leaves alone
+     * @param ?Viewer $viewer whom reads are for (forViewer); null for the server's own work, which sees everything
      */
     public function __construct(
         public readonly PDO $db,
         private readonly ?array $allowedDids = null,
         private readonly array $excludedDids = [],
+        private readonly ?Viewer $viewer = null,
     ) {
+    }
+
+    /**
+     * The same database, as $viewer sees it: only their numbers, with their own unread
+     * counts and archive where a number keeps them per person. Writes that are not
+     * about that state are the same as through this Repo.
+     */
+    public function forViewer(?Viewer $viewer): self
+    {
+        return new self($this->db, $this->allowedDids, $this->excludedDids, $viewer);
+    }
+
+    /** The key conversation_states uses for the viewer; -1, which matches none, for the server's own work. */
+    private function viewerKey(): int
+    {
+        return $this->viewer?->key ?? -1;
     }
 
     /**
@@ -60,13 +94,19 @@ final class Repo
     private function didScope(string $column): array
     {
         $conditions = [];
-        if ($this->allowedDids !== null) {
-            $conditions[] = "$column IN (" . implode(', ', array_fill(0, count($this->allowedDids), '?')) . ')';
+        $params = [];
+        // The viewer's own numbers (Team mode), within those of the configuration.
+        foreach ([$this->allowedDids, $this->viewer?->dids()] as $only) {
+            if ($only !== null) {
+                $conditions[] = $only ? "$column IN (" . self::placeholders($only) . ')' : '0';
+                array_push($params, ...$only);
+            }
         }
         if ($this->excludedDids) {
-            $conditions[] = "$column NOT IN (" . implode(', ', array_fill(0, count($this->excludedDids), '?')) . ')';
+            $conditions[] = "$column NOT IN (" . self::placeholders($this->excludedDids) . ')';
+            array_push($params, ...$this->excludedDids);
         }
-        return [$conditions ? implode(' AND ', $conditions) : '1', [...($this->allowedDids ?? []), ...$this->excludedDids]];
+        return [$conditions ? implode(' AND ', $conditions) : '1', $params];
     }
 
     /**
@@ -209,18 +249,44 @@ final class Repo
         return $this->run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $values)->rowCount() > 0;
     }
 
+    /** Also forgets what the user read and archived for themselves, and their devices' notifications. */
     public function deleteUser(int $id): bool
     {
-        return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
+        return $this->transaction(function () use ($id): bool {
+            $this->run('DELETE FROM conversation_states WHERE user_key = ?', [$id]);
+            $this->deleteUserPushSubscriptions($id);
+            return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
+        });
+    }
+
+    /** @return array<string, bool> the numbers given to a user: did => may send from it */
+    public function userNumbers(int $id): array
+    {
+        $numbers = [];
+        foreach ($this->all('SELECT did, can_send FROM user_dids WHERE user_id = ?', [$id]) as $n) {
+            $numbers[(string) $n['did']] = $n['can_send'] === 1;
+        }
+        return $numbers;
     }
 
     /** @param list<array{did: string, canSend: bool}> $numbers in place of those the user had */
     public function setUserNumbers(int $id, array $numbers): void
     {
         $this->transaction(function () use ($id, $numbers): void {
+            $had = $this->userNumbers($id);
             $this->run('DELETE FROM user_dids WHERE user_id = ?', [$id]);
             foreach ($numbers as $n) {
                 $this->run('INSERT INTO user_dids (user_id, did, can_send) VALUES (?, ?, ?)', [$id, $n['did'], $n['canSend'] ? 1 : 0]);
+                if (!array_key_exists($n['did'], $had)) {
+                    // On a number that keeps them per person, what came before they were given it is no news to them.
+                    $this->run(
+                        'INSERT OR REPLACE INTO conversation_states (conversation_id, user_key, read_at, read_message_id, archived_at)
+                         SELECT c.id, ?, m.sent_at, m.id, c.archived_at FROM conversations c
+                         JOIN dids d ON d.did = c.did AND d.shared_state = 0 JOIN messages m ON m.id = c.last_message_id
+                         WHERE c.did = ?',
+                        [$id, $n['did']],
+                    );
+                }
             }
         });
     }
@@ -328,11 +394,13 @@ final class Repo
     {
         [$scope, $scopeParams] = $this->didScope('d.did');
         $rows = $this->all(
-            "SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
+            'SELECT d.*, (SELECT SUM(' . self::UNREAD_SQL . ') FROM conversations c
+                LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
+                WHERE c.did = d.did AND (' . self::ARCHIVED_SQL . ") IS NULL) AS unread
              FROM dids d WHERE $scope ORDER BY d.position, d.did",
-            $scopeParams,
+            [$this->viewerKey(), ...$scopeParams],
         );
-        return array_map(static fn (array $r) => [
+        return array_map(fn (array $r) => [
             'did' => $r['did'],
             'label' => $r['label'],
             'color' => $r['color'],
@@ -344,6 +412,8 @@ final class Repo
             'position' => $r['position'],
             'unreadCount' => (int) ($r['unread'] ?? 0),
             'accountId' => (int) $r['account_id'],
+            'sharedState' => $r['shared_state'] === 1,
+            'canSend' => $this->viewer?->canSend($r['did']) ?? true,
         ], $rows);
     }
 
@@ -445,11 +515,44 @@ final class Repo
             $sets[] = 'position = ?';
             $values[] = $patch['position'];
         }
-        if (!$sets) {
+        if (!$sets && !array_key_exists('sharedState', $patch)) {
             return $this->getDid($did) !== null;
         }
-        $values[] = $did;
-        return $this->run('UPDATE dids SET ' . implode(', ', $sets) . ' WHERE did = ?', $values)->rowCount() > 0;
+        return $this->transaction(function () use ($did, $sets, $values, $patch): bool {
+            if (array_key_exists('sharedState', $patch)) {
+                $this->setSharedState($did, (bool) $patch['sharedState']);
+            }
+            if (!$sets) {
+                return $this->one('SELECT did FROM dids WHERE did = ?', [$did]) !== null;
+            }
+            $values[] = $did;
+            return $this->run('UPDATE dids SET ' . implode(', ', $sets) . ' WHERE did = ?', $values)->rowCount() > 0;
+        });
+    }
+
+    /**
+     * Whether everyone shares the number's unread counts and archive, or each
+     * person keeps their own. Going back to shared, what someone read counts as
+     * read; either way each person starts again from the shared state.
+     */
+    private function setSharedState(string $did, bool $shared): void
+    {
+        $was = $this->run('SELECT shared_state FROM dids WHERE did = ?', [$did])->fetchColumn();
+        if ($was === false || ((int) $was === 1) === $shared) {
+            return;
+        }
+        if ($shared) {
+            $this->run(
+                "UPDATE conversations SET unread_count = (
+                   SELECT COUNT(*) FROM messages mu WHERE mu.conversation_id = conversations.id AND mu.direction = 'in' AND mu.deleted_at IS NULL
+                     AND (mu.sent_at, mu.id) > (SELECT s.read_at, s.read_message_id FROM conversation_states s
+                       WHERE s.conversation_id = conversations.id AND s.read_at IS NOT NULL ORDER BY s.read_at DESC, s.read_message_id DESC LIMIT 1))
+                 WHERE did = ? AND EXISTS (SELECT 1 FROM conversation_states s WHERE s.conversation_id = conversations.id AND s.read_at IS NOT NULL)",
+                [$did],
+            );
+        }
+        $this->run('DELETE FROM conversation_states WHERE conversation_id IN (SELECT id FROM conversations WHERE did = ?)', [$did]);
+        $this->run('UPDATE dids SET shared_state = ? WHERE did = ?', [$shared ? 1 : 0, $did]);
     }
 
     // ------------------------------------------------------------ conversations
@@ -473,7 +576,7 @@ final class Repo
     public function getConversation(int $id): ?array
     {
         [$scope, $scopeParams] = $this->didScope('c.did');
-        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$id, ...$scopeParams]);
+        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$this->viewerKey(), $id, ...$scopeParams]);
         return $row ? self::conversationDto($row) : null;
     }
 
@@ -483,12 +586,13 @@ final class Repo
      */
     public function listConversations(?string $did = null, ?string $query = null, ?bool $archived = null, int $limit = 500): array
     {
-        [$scope, $params] = $this->didScope('c.did');
+        [$scope, $scopeParams] = $this->didScope('c.did');
+        $params = [$this->viewerKey(), ...$scopeParams];
         $where = ['c.last_message_id IS NOT NULL', $scope];
         $q = trim($query ?? '');
         $archived ??= $q !== '' ? null : false;
         if ($archived !== null) {
-            $where[] = $archived ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL';
+            $where[] = '(' . self::ARCHIVED_SQL . ($archived ? ') IS NOT NULL' : ') IS NULL');
         }
         if ($did) {
             $where[] = 'c.did = ?';
@@ -585,23 +689,67 @@ final class Repo
         $this->run('UPDATE messages SET delete_remote = 0 WHERE id = ?', [$id]);
     }
 
+    /** For the viewer only, on a number that keeps its archive per person; for everyone otherwise. */
     public function setArchived(int $id, bool $archived): bool
     {
+        if ($this->personalState($id)) {
+            return $this->run(
+                'UPDATE conversation_states SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END
+                 WHERE conversation_id = ? AND user_key = ?',
+                [$archived ? 1 : 0, Time::nowMs(), $id, $this->viewerKey()],
+            )->rowCount() > 0;
+        }
         return $this->run(
             'UPDATE conversations SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END WHERE id = ?',
             [$archived ? 1 : 0, Time::nowMs(), $id],
         )->rowCount() > 0;
     }
 
-    /** A new message brings an archived conversation back to the list. */
+    /** A new message brings an archived conversation back to the list, everyone's. */
     public function unarchiveConversation(int $id): bool
     {
-        return $this->run('UPDATE conversations SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL', [$id])->rowCount() > 0;
+        $mine = $this->run('UPDATE conversation_states SET archived_at = NULL WHERE conversation_id = ? AND archived_at IS NOT NULL', [$id])->rowCount();
+        return $this->run('UPDATE conversations SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL', [$id])->rowCount() + $mine > 0;
     }
 
+    /** True when there was something unread. For the viewer only where the number keeps unread counts per person. */
     public function markConversationRead(int $id): bool
     {
+        if ($this->personalState($id)) {
+            $unread = $this->getConversation($id)['unreadCount'] ?? 0;
+            $this->run(
+                'UPDATE conversation_states SET (read_at, read_message_id) = (
+                   SELECT sent_at, id FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT 1
+                 ) WHERE conversation_id = ? AND user_key = ?',
+                [$id, $id, $this->viewerKey()],
+            );
+            return $unread > 0;
+        }
         return $this->run('UPDATE conversations SET unread_count = 0 WHERE id = ? AND unread_count > 0', [$id])->rowCount() > 0;
+    }
+
+    /**
+     * Whether the viewer has a state of their own for this conversation, its number
+     * keeping one per person; it starts as the shared one (archived or not, with the
+     * shared unread count until they read it).
+     */
+    private function personalState(int $conversationId): bool
+    {
+        if ($this->viewer === null) {
+            return false;
+        }
+        $shared = $this->run(
+            'SELECT d.shared_state FROM conversations c JOIN dids d ON d.did = c.did WHERE c.id = ?',
+            [$conversationId],
+        )->fetchColumn();
+        if ($shared === false || (int) $shared === 1) {
+            return false;
+        }
+        $this->run(
+            'INSERT OR IGNORE INTO conversation_states (conversation_id, user_key, archived_at) SELECT id, ?, archived_at FROM conversations WHERE id = ?',
+            [$this->viewerKey(), $conversationId],
+        );
+        return true;
     }
 
     // ----------------------------------------------------------------- messages
@@ -609,8 +757,8 @@ final class Repo
     public function insertMessage(array $m): int
     {
         $this->run(
-            'INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, carrier_status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, carrier_status, created_at, sent_by_user, sent_by_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $m['conversationId'],
                 $m['kind'],
@@ -622,6 +770,8 @@ final class Repo
                 $m['status'],
                 $m['carrierStatus'] ?? null,
                 Time::nowMs(),
+                $m['sentBy']['key'] ?? null,
+                $m['sentBy']['name'] ?? null,
             ],
         );
         return (int) $this->db->lastInsertId();
@@ -715,7 +865,14 @@ final class Repo
             'error' => $row['error'],
             'carrierStatus' => $row['carrier_status'],
             'attachments' => array_map([self::class, 'attachmentDto'], $attachments[$row['id']] ?? []),
+            'sentBy' => self::sentByDto($row['sent_by_user'], $row['sent_by_name']),
         ];
+    }
+
+    /** Who sent a text from the portal: the owner has no id; null when nobody known did. */
+    private static function sentByDto(?int $key, ?string $name): ?array
+    {
+        return $key === null ? null : ['userId' => $key === Viewer::OWNER ? null : $key, 'name' => $name];
     }
 
     // -------------------------------------------------------------- attachments
@@ -883,23 +1040,30 @@ final class Repo
 
     public function listPushSubscriptions(): array
     {
-        return $this->all('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions');
+        return $this->all('SELECT endpoint, p256dh, auth, device, lang, user_key FROM push_subscriptions');
     }
 
     public function getPushSubscription(string $endpoint): ?array
     {
-        return $this->one('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions WHERE endpoint = ?', [$endpoint]);
+        return $this->one('SELECT endpoint, p256dh, auth, device, lang, user_key FROM push_subscriptions WHERE endpoint = ?', [$endpoint]);
     }
 
+    /** $sub['userKey']: whose browser it is (Viewer::key), the owner's by default. */
     public function savePushSubscription(array $sub): void
     {
         $now = Time::nowMs();
         $this->run(
-            'INSERT INTO push_subscriptions (endpoint, p256dh, auth, device, lang, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+            'INSERT INTO push_subscriptions (endpoint, p256dh, auth, device, lang, user_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
-               device = excluded.device, lang = excluded.lang, updated_at = excluded.updated_at',
-            [$sub['endpoint'], $sub['p256dh'], $sub['auth'], $sub['device'], $sub['lang'], $now, $now],
+               device = excluded.device, lang = excluded.lang, user_key = excluded.user_key, updated_at = excluded.updated_at',
+            [$sub['endpoint'], $sub['p256dh'], $sub['auth'], $sub['device'], $sub['lang'], $sub['userKey'] ?? Viewer::OWNER, $now, $now],
         );
+    }
+
+    /** A user's browsers stop getting notifications: they lost access, or the account is gone. */
+    public function deleteUserPushSubscriptions(int $userId): int
+    {
+        return $this->run('DELETE FROM push_subscriptions WHERE user_key = ?', [$userId])->rowCount();
     }
 
     public function deletePushSubscription(string $endpoint): bool
@@ -932,6 +1096,7 @@ final class Repo
                     'direction' => $row['last_direction'],
                     'status' => $row['last_status'] ?? 'sent',
                     'attachmentCount' => $row['last_attachments'] ?? 0,
+                    'sentBy' => self::sentByDto($row['last_sent_by_user'], $row['last_sent_by_name']),
                 ]
                 : null,
         ];

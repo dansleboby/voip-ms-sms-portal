@@ -33,9 +33,10 @@ final class Sender
 
     /**
      * @param list<array{bytes: string, mime: string}> $files
+     * @param ?array{key: int, name: ?string} $sentBy who sends it (Viewer key, and the name shown on the text)
      * @return array{message: array, conversation: array}
      */
-    public function queue(string $did, string $to, string $body, array $files): array
+    public function queue(string $did, string $to, string $body, array $files, ?array $sentBy = null): array
     {
         $did = Phone::normalize($did);
         $to = Phone::normalize($to);
@@ -64,7 +65,7 @@ final class Sender
         }
 
         $saved = array_map(fn (array $f) => $this->media->save($f['bytes'], $f['mime']), $files);
-        [$messageId, $conversationId] = $this->repo->transaction(function () use ($did, $to, $body, $check, $saved): array {
+        [$messageId, $conversationId] = $this->repo->transaction(function () use ($did, $to, $body, $check, $saved, $sentBy): array {
             $conversationId = $this->repo->getOrCreateConversation($did, $to);
             $messageId = $this->repo->insertMessage([
                 'conversationId' => $conversationId,
@@ -74,6 +75,7 @@ final class Sender
                 'body' => $body,
                 'sentAt' => Time::nowMs(),
                 'status' => 'sending',
+                'sentBy' => $sentBy,
             ]);
             foreach ($saved as $i => $file) {
                 $this->repo->insertAttachment($messageId, $i, $file + ['status' => 'ready']);
