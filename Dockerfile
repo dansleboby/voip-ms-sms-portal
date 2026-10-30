@@ -13,30 +13,32 @@ RUN npm ci
 COPY . .
 RUN npm run build:cpanel
 
-FROM docker.io/library/php:8.4-apache
-# intl folds accents for search the way the browser does (é = e); the rest is in the base image.
+# Apache and PHP from Debian's packages: they get the distribution's security updates, and
+# nothing is compiled (the official PHP image keeps a compiler for that, twice the size).
+FROM docker.io/library/debian:trixie-slim
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends libicu-dev; \
-    docker-php-ext-install -j"$(nproc)" intl; \
-    # Keeps the ICU library the extension links to, without its headers.
-    apt-mark manual $(dpkg-query -W -f='${Package}\n' 'libicu[0-9]*'); \
-    apt-get purge -y --auto-remove libicu-dev; \
+    apt-get install -y --no-install-recommends ca-certificates apache2 libapache2-mod-php php-cli php-sqlite3 php-curl php-mbstring php-intl; \
     rm -rf /var/lib/apt/lists/*; \
-    php -m | grep -qx intl
-RUN set -eux; \
     a2enmod rewrite headers remoteip; \
     a2dissite 000-default; \
     # Open tabs ask for news every few seconds: an access log would mostly be that.
     a2disconf other-vhosts-access-log; \
-    cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"; \
+    # PUID/PGID, which the entrypoint passes on, instead of www-data.
+    sed -ri 's/^export (APACHE_RUN_(USER|GROUP))=www-data$/export \1=${\1:-www-data}/' /etc/apache2/envvars; \
+    grep -q 'APACHE_RUN_USER:-www-data' /etc/apache2/envvars; \
+    # Errors go to the container's logs; the folders are open to a container started as another user.
+    ln -sfT /dev/stderr /var/log/apache2/error.log; \
+    for dir in /var/run/apache2 /var/lock/apache2 /var/log/apache2; do mkdir -p "$dir"; chmod 1777 "$dir"; done; \
+    ln -s /etc/sms-portal/php.ini "/etc/php/$(php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')/apache2/conf.d/99-sms-portal.ini"; \
     groupadd --gid 1000 portal; \
     useradd --uid 1000 --gid portal --home-dir /data --no-create-home --shell /usr/sbin/nologin portal; \
     mkdir -p /data; \
     chown portal:portal /data
 COPY docker/apache.conf /etc/apache2/sites-enabled/sms-portal.conf
 COPY docker/ports.conf /etc/apache2/ports.conf
-COPY docker/php.ini "$PHP_INI_DIR/conf.d/sms-portal.ini"
+COPY docker/php.ini /etc/sms-portal/php.ini
+COPY docker/apache2-foreground /usr/local/bin/apache2-foreground
 COPY --from=build /app/dist/cpanel/sms-portal /app/sms-portal
 COPY --from=build /app/dist/cpanel/sms-portal-site /app/site
 COPY docker-entrypoint.sh /usr/local/bin/sms-portal-entrypoint

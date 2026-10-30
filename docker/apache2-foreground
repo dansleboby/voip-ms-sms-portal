@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs Apache in the foreground with Debian's settings (/etc/apache2/envvars),
+# as apache2ctl would in the background.
+set -e
+. /etc/apache2/envvars
+# A container stopped hard leaves the previous run's pid file behind.
+rm -f "${APACHE_PID_FILE:-/var/run/apache2/apache2.pid}"
+exec apache2 -DFOREGROUND "$@"
