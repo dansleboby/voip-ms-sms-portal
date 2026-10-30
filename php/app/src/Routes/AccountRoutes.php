@@ -29,31 +29,12 @@ final class AccountRoutes
         $r->admin('POST', '/api/accounts', function (Request $req) use ($app): Response {
             $body = new Input($req->json());
             $label = $body->has('label') ? $body->nullableString('label', 60) : null;
-            $credentials = ['username' => $body->string('username', 3, 200, trim: true), 'password' => $body->string('password', 1, 200)];
-            foreach ($app->accounts->list() as $account) {
-                if ($account['username'] !== null && strcasecmp($account['username'], $credentials['username']) === 0) {
-                    throw new HttpError(409, 'account_exists');
-                }
-            }
-            $connection = SetupRoutes::testConnection($app->clientFor($credentials));
-            if ($connection['ip'] === null) {
-                throw new HttpError(400, $connection['status']);
-            }
+            $credentials = self::credentials($app, $body, null);
+            $connection = self::check($app, $credentials, null);
             $id = $app->accounts->add($label, $credentials)->id;
-            // Its numbers, when VoIP.ms already lets this server in; otherwise with a later refresh.
-            if ($connection['status'] === 'success') {
-                try {
-                    $app->accounts->refreshDids();
-                } catch (VoipMsError $e) {
-                    Log::warn('Numbers not refreshed', ['err' => $e]);
-                }
-            }
-            foreach ($app->accounts->list() as $account) {
-                if ($account['id'] === $id) {
-                    return Response::json(['account' => $account, 'connection' => $connection], 201);
-                }
-            }
-            throw new HttpError(500, 'internal_error');
+            // Its numbers, when VoIP.ms already lets this server in; otherwise with a later check.
+            self::refreshDids($app, $connection);
+            return Response::json(['account' => self::find($app, $id), 'connection' => $connection], 201);
         });
 
         $r->admin('PATCH', '/api/accounts/{id}', function (Request $req) use ($app): Response {
@@ -62,12 +43,75 @@ final class AccountRoutes
             if (!$app->repo->updateAccount($id, $label)) {
                 throw new HttpError(404, 'not_found');
             }
-            foreach ($app->accounts->list() as $account) {
-                if ($account['id'] === $id) {
-                    return Response::json($account);
-                }
-            }
-            throw new HttpError(404, 'not_found');
+            return Response::json(self::find($app, $id));
         });
+
+        /** New credentials for an account (after a new API password), checked like a new account's. */
+        $r->admin('PUT', '/api/accounts/{id}/credentials', function (Request $req) use ($app): Response {
+            $id = Input::id($req->param('id'));
+            $account = $app->accounts->get($id) ?? throw new HttpError(404, 'not_found');
+            if ($app->credentials->source(accountId: $id) === 'env') {
+                throw new HttpError(409, 'credentials_env');
+            }
+            $credentials = self::credentials($app, new Input($req->json()), $id);
+            $connection = self::check($app, $credentials, $id);
+            $app->credentials->save($credentials, $id);
+            $account->resetClient();
+            self::refreshDids($app, $connection);
+            return Response::json(['account' => self::find($app, $id), 'connection' => $connection]);
+        });
+
+        /** Whether VoIP.ms lets this server in with the account's credentials (the IP to allow otherwise); fetches its numbers when it does. */
+        $r->admin('POST', '/api/accounts/{id}/test', function (Request $req) use ($app): Response {
+            $id = Input::id($req->param('id'));
+            $client = ($app->accounts->get($id) ?? throw new HttpError(404, 'not_found'))->client() ?? throw new HttpError(409, 'not_configured');
+            $connection = SetupRoutes::testConnection($client);
+            self::refreshDids($app, $connection);
+            return Response::json(['account' => self::find($app, $id), 'connection' => $connection]);
+        });
+    }
+
+    /** The username and API password of a request; 409 when another account has that username. */
+    private static function credentials(App $app, Input $body, ?int $exceptId): array
+    {
+        $credentials = ['username' => $body->string('username', 3, 200, trim: true), 'password' => $body->string('password', 1, 200)];
+        foreach ($app->accounts->list() as $account) {
+            if ($account['id'] !== $exceptId && $account['username'] !== null && strcasecmp($account['username'], $credentials['username']) === 0) {
+                throw new HttpError(409, 'account_exists');
+            }
+        }
+        return $credentials;
+    }
+
+    /** Asks VoIP.ms about the credentials: 400 when it refuses them outright (not only this server's IP). */
+    private static function check(App $app, array $credentials, ?int $accountId): array
+    {
+        $connection = SetupRoutes::testConnection($app->clientFor($credentials, $accountId ?? count($app->accounts->all()) + 1));
+        if ($connection['ip'] === null) {
+            throw new HttpError(400, $connection['status']);
+        }
+        return $connection;
+    }
+
+    private static function refreshDids(App $app, array $connection): void
+    {
+        if ($connection['status'] !== 'success') {
+            return;
+        }
+        try {
+            $app->accounts->refreshDids();
+        } catch (VoipMsError $e) {
+            Log::warn('Numbers not refreshed', ['err' => $e]);
+        }
+    }
+
+    private static function find(App $app, int $id): array
+    {
+        foreach ($app->accounts->list() as $account) {
+            if ($account['id'] === $id) {
+                return $account;
+            }
+        }
+        throw new HttpError(404, 'not_found');
     }
 }

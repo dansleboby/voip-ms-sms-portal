@@ -227,6 +227,14 @@ export interface AccountDto {
   username: string | null;
   credentialsSource: CredentialsSource;
   numbers: number;
+  /** Why its last check failed (ip_not_enabled after the server moved, say); null when it worked. */
+  error: string | null;
+}
+
+/** An account added, given new credentials or tested: and what VoIP.ms answered. */
+export interface AccountCheckDto {
+  account: AccountDto;
+  connection: ConnectionTestDto;
 }
 
 export interface SetupStatusDto {

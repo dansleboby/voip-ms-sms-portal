@@ -85,7 +85,7 @@ describe('PHP server: several VoIP.ms accounts', () => {
   });
 
   it('adds an account with its own numbers, once', async () => {
-    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'me@example.com', credentialsSource: 'env', numbers: 2 }]);
+    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'me@example.com', credentialsSource: 'env', numbers: 2, error: null }]);
     const added = await addOther();
     expect(added).toMatchObject({
       status: 201,

@@ -65,6 +65,8 @@ final class Accounts
             'username' => $this->credentials->get((int) $a['id'])['username'] ?? null,
             'credentialsSource' => $this->credentials->source(accountId: (int) $a['id']),
             'numbers' => (int) $a['numbers'],
+            // Why its last check failed (ip_not_enabled after a change of server, say); null when it worked.
+            'error' => $this->get((int) $a['id'])?->sync->status()['lastError'] ?? null,
         ], $this->repo->listAccounts());
     }
 

@@ -570,7 +570,7 @@ describe('The server with several VoIP.ms accounts', () => {
   });
 
   it('lists the account set up first', async () => {
-    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3 }]);
+    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3, error: null }]);
   });
 
   it('adds an account once, checking its credentials, with its own numbers', async () => {
@@ -611,6 +611,19 @@ describe('The server with several VoIP.ms accounts', () => {
       return messages.find((m) => m.id === id)?.status === 'sent';
     });
   }, 30_000);
+
+  it('tests an account, and takes new credentials for it', async () => {
+    expect((await client.post('/api/accounts/2/test')).json).toMatchObject({
+      account: { id: 2, error: null },
+      connection: { status: 'success', ip: '203.0.113.10' },
+    });
+    expect((await client.post('/api/accounts/9/test')).status).toBe(404);
+    const changed = await client.request('PUT', '/api/accounts/2/credentials', { username: 'boulangerie@example.com', password: 'new secret' });
+    expect(changed.json).toMatchObject({ account: { id: 2, username: 'boulangerie@example.com', credentialsSource: 'db', numbers: 1 }, connection: { status: 'success' } });
+    expect((await client.request('PUT', '/api/accounts/2/credentials', { username: 'DEMO@example.com', password: 'x' })).json).toEqual({ error: 'account_exists' });
+    // The first account's come from the server's settings here.
+    expect((await client.request('PUT', '/api/accounts/1/credentials', { username: 'x@example.com', password: 'x' })).json).toEqual({ error: 'credentials_env' });
+  });
 
   it('renames an account', async () => {
     expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });

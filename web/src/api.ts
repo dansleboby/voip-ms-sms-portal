@@ -1,4 +1,6 @@
 import type {
+  AccountCheckDto,
+  AccountDto,
   ConnectionTestDto,
   ContactBook,
   ContactDto,
@@ -91,6 +93,12 @@ export const api = {
   saveCredentials: (username: string, password: string) =>
     request<ConnectionTestDto>('POST', '/api/setup/credentials', { username, password }),
   testConnection: () => request<ConnectionTestDto>('POST', '/api/setup/test'),
+
+  accounts: () => request<AccountDto[]>('GET', '/api/accounts'),
+  addAccount: (a: { label: string | null; username: string; password: string }) => request<AccountCheckDto>('POST', '/api/accounts', a),
+  renameAccount: (id: number, label: string | null) => request<AccountDto>('PATCH', `/api/accounts/${id}`, { label }),
+  setAccountCredentials: (id: number, c: { username: string; password: string }) => request<AccountCheckDto>('PUT', `/api/accounts/${id}/credentials`, c),
+  testAccount: (id: number) => request<AccountCheckDto>('POST', `/api/accounts/${id}/test`),
   refreshDids: () => request<DidDto[]>('GET', '/api/setup/dids'),
   importHistory: (days: number) => request<{ ok: true }>('POST', '/api/setup/import', { days }),
   completeSetup: () => request<{ ok: true }>('POST', '/api/setup/complete'),
