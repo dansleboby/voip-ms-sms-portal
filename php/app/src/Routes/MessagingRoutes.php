@@ -50,7 +50,7 @@ final class MessagingRoutes
 
         $r->add('GET', '/api/dids', fn () => Response::json($repo->listDids()));
 
-        $r->add('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events): Response {
+        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events): Response {
             $did = $req->param('did');
             $body = new Input($req->json());
             $patch = [];
@@ -75,7 +75,7 @@ final class MessagingRoutes
         });
 
         /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
-        $r->add('POST', '/api/dids/{did}/enable-sms', function (Request $req) use ($app, $repo, $events): Response {
+        $r->admin('POST', '/api/dids/{did}/enable-sms', function (Request $req) use ($app, $repo, $events): Response {
             $did = $req->param('did');
             $current = $repo->getDid($did) ?? throw new HttpError(404, 'not_found');
             if (!$current['smsAvailable']) {

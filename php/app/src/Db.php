@@ -146,6 +146,36 @@ final class Db
             INSERT INTO voipms_accounts (id, label, created_at) VALUES (1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
             ALTER TABLE dids ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
             SQL,
+            <<<'SQL'
+            CREATE TABLE users (
+              -- AUTOINCREMENT: a deleted user's id never goes to someone else.
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              email         TEXT NOT NULL UNIQUE,
+              name          TEXT,
+              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (server/passwords.ts)
+              password_hash TEXT NOT NULL,
+              role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+              disabled_at   INTEGER,
+              created_at    INTEGER NOT NULL,
+              updated_at    INTEGER NOT NULL
+            );
+            CREATE TABLE user_dids (
+              user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              did      TEXT NOT NULL,
+              can_send INTEGER NOT NULL DEFAULT 1,
+              PRIMARY KEY (user_id, did)
+            );
+            CREATE TABLE sessions (
+              -- SHA-256 of the id in the cookie: the table alone signs nobody in.
+              id           TEXT PRIMARY KEY,
+              -- NULL: the owner, signed in with APP_PASSWORD.
+              user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
+              created_at   INTEGER NOT NULL,
+              last_seen_at INTEGER NOT NULL,
+              user_agent   TEXT
+            );
+            CREATE INDEX sessions_user ON sessions(user_id);
+            SQL,
         ];
     }
 

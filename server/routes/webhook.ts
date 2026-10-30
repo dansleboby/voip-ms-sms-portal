@@ -10,9 +10,9 @@ const EnableBody = z.object({
 const CallbackParams = z.object({ token: z.string().max(100) });
 
 export function registerWebhookRoutes(app: FastifyInstance, s: Services): void {
-  app.get('/api/webhook', async (): Promise<WebhookStatusDto> => s.webhook.status());
+  app.get('/api/webhook', { config: { admin: true } }, async (): Promise<WebhookStatusDto> => s.webhook.status());
 
-  app.post('/api/webhook/enable', async (req): Promise<WebhookStatusDto> => {
+  app.post('/api/webhook/enable', { config: { admin: true } }, async (req): Promise<WebhookStatusDto> => {
     const { replace = [] } = EnableBody.parse(req.body ?? {});
     const status = await s.webhook.enable(req.headers.origin ?? null, replace);
     // Checks change pace, and tabs learn the new state with the next status.
@@ -20,7 +20,7 @@ export function registerWebhookRoutes(app: FastifyInstance, s: Services): void {
     return status;
   });
 
-  app.post('/api/webhook/disable', async (): Promise<WebhookStatusDto> => {
+  app.post('/api/webhook/disable', { config: { admin: true } }, async (): Promise<WebhookStatusDto> => {
     const status = await s.webhook.disable();
     s.sync.trigger();
     return status;

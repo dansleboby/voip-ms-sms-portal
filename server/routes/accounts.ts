@@ -18,10 +18,10 @@ const IdParams = z.object({ id: z.coerce.number().int().positive() });
  * wizard; the others are added here (an agency keeps one per client).
  */
 export function registerAccountRoutes(app: FastifyInstance, s: Services): void {
-  app.get('/api/accounts', async (): Promise<AccountDto[]> => s.accounts.list());
+  app.get('/api/accounts', { config: { admin: true } }, async (): Promise<AccountDto[]> => s.accounts.list());
 
   /** Checks the credentials, keeps them encrypted like the first account's, and fetches the account's numbers. */
-  app.post('/api/accounts', async (req, reply): Promise<{ account: AccountDto; connection: ConnectionTestDto } | void> => {
+  app.post('/api/accounts', { config: { admin: true } }, async (req, reply): Promise<{ account: AccountDto; connection: ConnectionTestDto } | void> => {
     const body = AddBody.parse(req.body);
     const username = body.username.toLowerCase();
     if (s.accounts.list().some((a) => a.username?.toLowerCase() === username)) return reply.code(409).send({ error: 'account_exists' });
@@ -34,7 +34,7 @@ export function registerAccountRoutes(app: FastifyInstance, s: Services): void {
     return reply.code(201).send({ account: s.accounts.list().find((a) => a.id === id)!, connection });
   });
 
-  app.patch('/api/accounts/:id', async (req, reply): Promise<AccountDto | void> => {
+  app.patch('/api/accounts/:id', { config: { admin: true } }, async (req, reply): Promise<AccountDto | void> => {
     const { id } = IdParams.parse(req.params);
     const { label } = PatchBody.parse(req.body);
     if (!s.repo.updateAccount(id, label)) return reply.code(404).send({ error: 'not_found' });

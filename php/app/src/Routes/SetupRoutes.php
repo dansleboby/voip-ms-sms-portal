@@ -40,14 +40,14 @@ final class SetupRoutes
     {
         $r = $app->router;
 
-        $r->add('GET', '/api/setup/status', fn () => Response::json([
+        $r->admin('GET', '/api/setup/status', fn () => Response::json([
             'completed' => $app->isSetupCompleted(),
             'credentialsSource' => $app->credentials->source(),
             'username' => $app->credentials->get()['username'] ?? null,
         ]));
 
         /** Checks and stores credentials entered in the wizard, then reports whether the IP is allowed. */
-        $r->add('POST', '/api/setup/credentials', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/setup/credentials', function (Request $req) use ($app): Response {
             if ($app->credentials->source() === 'env') {
                 throw new HttpError(409, 'credentials_from_env');
             }
@@ -62,17 +62,17 @@ final class SetupRoutes
             return Response::json($result);
         });
 
-        $r->add('POST', '/api/setup/test', fn () => Response::json(self::testConnection(self::client($app))));
+        $r->admin('POST', '/api/setup/test', fn () => Response::json(self::testConnection(self::client($app))));
 
         /** Refreshes the numbers of every VoIP.ms account and returns them with their local names and colors. */
-        $r->add('GET', '/api/setup/dids', function () use ($app): Response {
+        $r->admin('GET', '/api/setup/dids', function () use ($app): Response {
             self::client($app);
             $app->accounts->refreshDids();
             return Response::json($app->repo->listDids());
         });
 
         /** Queues the last `days` of history; progress shows in the sync status. */
-        $r->add('POST', '/api/setup/import', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/setup/import', function (Request $req) use ($app): Response {
             $days = (new Input($req->json()))->int('days', 0, 3650);
             self::client($app);
             if ($days > 0) {
@@ -84,7 +84,7 @@ final class SetupRoutes
             return Response::json(['ok' => true], 202);
         });
 
-        $r->add('POST', '/api/setup/complete', function () use ($app): Response {
+        $r->admin('POST', '/api/setup/complete', function () use ($app): Response {
             self::client($app);
             $app->setSetupCompleted(true);
             $app->defer(function () use ($app): void {

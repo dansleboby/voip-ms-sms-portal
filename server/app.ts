@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
-import { Auth, SESSION_COOKIE } from './auth.js';
+import { Auth, SESSION_COOKIE, type SessionUser } from './auth.js';
 import { ConfigError, type Config } from './config.js';
 import { openDatabase, PRIMARY_ACCOUNT, Repo } from './db.js';
 import { Accounts } from './accounts.js';
@@ -29,10 +29,22 @@ import { VERSION } from './version.js';
 import { registerSetupRoutes } from './routes/setup.js';
 import { registerWebhookRoutes } from './routes/webhook.js';
 import { registerAccountRoutes } from './routes/accounts.js';
+import { registerUserRoutes } from './routes/users.js';
 import type { WebhookReceiver } from './webhook.js';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../shared/message.js';
 
 const SETUP_COMPLETED_KEY = 'setup.completed';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Who signed the request in (the /api routes' onRequest hook sets it). */
+    user: SessionUser | null;
+  }
+  interface FastifyContextConfig {
+    /** Only the owner and admins may call the route; users get 403. */
+    admin?: boolean;
+  }
+}
 
 export interface Services {
   config: Config;
@@ -210,6 +222,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
 
   const publicRoutes = new Set(['/api/health', '/api/session', '/api/auth/login', '/api/auth/logout', '/api/voipms/callback/:token']);
+  app.decorateRequest('user', null);
   app.addHook('onRequest', async (req, reply) => {
     // Decide on the route the router matched, never on the raw URL: "/%61pi/..." or an
     // absolute-form request line would otherwise reach /api handlers unauthenticated.
@@ -218,10 +231,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req, config.publicOrigin)) {
       return reply.code(403).send({ error: 'bad_origin' });
     }
+    req.user = auth.verify(req.cookies[SESSION_COOKIE]);
     if (publicRoutes.has(route)) return;
-    if (!auth.verify(req.cookies[SESSION_COOKIE])) {
-      return reply.code(401).send({ error: 'unauthorized' });
-    }
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    if (req.routeOptions.config.admin && req.user.role === 'user') return reply.code(403).send({ error: 'forbidden' });
   });
 
   app.setErrorHandler((err, req, reply) => {
@@ -248,6 +261,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   registerSetupRoutes(app, services);
   registerWebhookRoutes(app, services);
   registerAccountRoutes(app, services);
+  registerUserRoutes(app, services);
   registerMessagingRoutes(app, services);
   registerContactRoutes(app, services);
   registerPushRoutes(app, services);

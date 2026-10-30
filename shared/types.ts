@@ -26,6 +26,48 @@ export interface SessionDto {
   liveUpdates: LiveUpdates;
   /** Whether the server's configuration leaves some of the account's numbers out (ALLOWED_DIDS, EXCLUDED_DIDS). */
   didsRestricted: boolean;
+  /** simple: one password (APP_PASSWORD). team: users who sign in with their email, each with their numbers. */
+  mode: PortalMode;
+  /** Who is signed in; null when nobody is. */
+  user: SessionUserDto | null;
+}
+
+export type PortalMode = 'simple' | 'team';
+
+/**
+ * owner: signed in with APP_PASSWORD, can do everything (the only role of
+ * the simple mode). admin: a user who manages the portal. user: a user who
+ * texts from the numbers given to them.
+ */
+export type Role = 'owner' | 'admin' | 'user';
+
+export interface SessionUserDto {
+  /** Null for the owner, who has no user account. */
+  id: number | null;
+  email: string | null;
+  name: string | null;
+  role: Role;
+}
+
+/** A user of the Team mode, as the admins manage them. */
+export interface UserDto {
+  id: number;
+  email: string;
+  name: string | null;
+  role: Exclude<Role, 'owner'>;
+  disabled: boolean;
+  createdAt: number;
+  /** The numbers the user texts from; canSend: false for a number they may only read. */
+  numbers: { did: string; canSend: boolean }[];
+}
+
+/** A signed-in browser, which its user can sign out from elsewhere. */
+export interface SessionInfoDto {
+  id: string;
+  createdAt: number;
+  lastSeenAt: number;
+  userAgent: string | null;
+  current: boolean;
 }
 
 export interface DidDto {

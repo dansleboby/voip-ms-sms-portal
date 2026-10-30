@@ -28,14 +28,14 @@ export async function testConnection(client: VoipMsApi): Promise<ConnectionTestD
 }
 
 export function registerSetupRoutes(app: FastifyInstance, s: Services): void {
-  app.get('/api/setup/status', async (): Promise<SetupStatusDto> => ({
+  app.get('/api/setup/status', { config: { admin: true } }, async (): Promise<SetupStatusDto> => ({
     completed: s.isSetupCompleted(),
     credentialsSource: s.credentials.source(),
     username: s.credentials.get()?.username ?? null,
   }));
 
   /** Validates and stores credentials entered in the wizard, then reports whether the IP is allowed. */
-  app.post('/api/setup/credentials', async (req, reply) => {
+  app.post('/api/setup/credentials', { config: { admin: true } }, async (req, reply) => {
     if (s.credentials.source() === 'env') return reply.code(409).send({ error: 'credentials_from_env' });
     const creds = CredentialsBody.parse(req.body);
     const result = await testConnection(s.clientFor(creds));
@@ -45,21 +45,21 @@ export function registerSetupRoutes(app: FastifyInstance, s: Services): void {
     return result;
   });
 
-  app.post('/api/setup/test', async (_req, reply): Promise<ConnectionTestDto | void> => {
+  app.post('/api/setup/test', { config: { admin: true } }, async (_req, reply): Promise<ConnectionTestDto | void> => {
     const client = s.client();
     if (!client) return reply.code(409).send({ error: 'not_configured' });
     return testConnection(client);
   });
 
   /** Refreshes the numbers of every VoIP.ms account and returns them with local labels/colors. */
-  app.get('/api/setup/dids', async (_req, reply): Promise<DidDto[] | void> => {
+  app.get('/api/setup/dids', { config: { admin: true } }, async (_req, reply): Promise<DidDto[] | void> => {
     if (!s.client()) return reply.code(409).send({ error: 'not_configured' });
     await s.accounts.refreshDids();
     return s.repo.listDids();
   });
 
   /** Starts importing the last `days` of history in the background; progress comes through sync status. */
-  app.post('/api/setup/import', async (req, reply) => {
+  app.post('/api/setup/import', { config: { admin: true } }, async (req, reply) => {
     const { days } = ImportBody.parse(req.body);
     if (!s.client()) return reply.code(409).send({ error: 'not_configured' });
     if (days > 0) {
@@ -68,7 +68,7 @@ export function registerSetupRoutes(app: FastifyInstance, s: Services): void {
     return reply.code(202).send({ ok: true });
   });
 
-  app.post('/api/setup/complete', async (_req, reply) => {
+  app.post('/api/setup/complete', { config: { admin: true } }, async (_req, reply) => {
     if (!s.client()) return reply.code(409).send({ error: 'not_configured' });
     s.setSetupCompleted(true);
     s.sync.trigger(0);

@@ -102,6 +102,10 @@ Rename or recolor numbers, turn off the ones you do not use, sync now or import 
 
 ![Settings page](docs/screenshots/en/settings.png)
 
+### Team mode
+
+For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. Users see only their own settings. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can.
+
 ### On a phone, and in the dark
 
 The layout adapts to small screens (numbers become filter chips). On a phone, a banner offers to install the app on the home screen, then to turn on notifications. The dark theme follows the system or can be forced.
@@ -157,7 +161,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `APP_PASSWORD` | *(required)* | Password protecting the interface. Changing it signs everyone out. |
+| `APP_PASSWORD` | *(required)* | Password protecting the interface; in Team mode, the owner's. Changing it signs everyone out. |
 | `VOIPMS_API_USERNAME` / `VOIPMS_API_PASSWORD` | | VoIP.ms account email and API password. Optional: otherwise they are entered in the wizard and stored encrypted with a key derived from `APP_PASSWORD`. |
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
@@ -185,7 +189,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 - The VoIP.ms API password **gives access to the whole account** (ordering and cancelling numbers, call routing, voicemail…) and cannot be restricted. Keep this instance private and protected by a strong `APP_PASSWORD`.
 - Put it behind HTTPS if you open it to the Internet (see below) and set `TRUST_PROXY=true`. Then make sure the app's port is only reachable through the proxy (for example `127.0.0.1:8080:8080` in `docker-compose.yml`).
-- Sign-in attempts are rate limited, sessions are signed `HttpOnly`/`SameSite=Lax` cookies and cross-site writes are refused. Received files are served with a sandboxing CSP. The app's own CSP runs only its own scripts, plus WebAssembly (`'wasm-unsafe-eval'`), which decodes AMR voice messages.
+- Sign-in attempts are rate limited, sessions are signed `HttpOnly`/`SameSite=Lax` cookies and cross-site writes are refused. Sessions are kept in the database, which stores only a hash of their ids: signing out, or out of another device from *Settings* → *My account*, ends one for good. In Team mode, passwords are stored as PBKDF2-SHA256 hashes (600,000 rounds). Received files are served with a sandboxing CSP. The app's own CSP runs only its own scripts, plus WebAssembly (`'wasm-unsafe-eval'`), which decodes AMR voice messages.
 
 ### Behind a reverse proxy
 

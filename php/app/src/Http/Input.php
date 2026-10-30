@@ -52,6 +52,12 @@ final class Input
         return ($this->data[$key] ?? null) === null ? null : $this->string($key, 0, $max);
     }
 
+    /** The value as decoded from JSON, for shapes the other readers do not cover. */
+    public function raw(string $key): mixed
+    {
+        return $this->data[$key] ?? null;
+    }
+
     public function bool(string $key): bool
     {
         $value = $this->data[$key] ?? null;

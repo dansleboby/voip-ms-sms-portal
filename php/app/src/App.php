@@ -112,6 +112,7 @@ final class App
         Routes\UpdateRoutes::register($this);
         Routes\WebhookRoutes::register($this);
         Routes\AccountRoutes::register($this);
+        Routes\UserRoutes::register($this);
     }
 
     public static function boot(string $appDir, ?string $siteDir = null): self
@@ -262,8 +263,12 @@ final class App
             if (!in_array($request->method, ['GET', 'HEAD'], true) && !$this->sameOrigin($request)) {
                 throw new HttpError(403, 'bad_origin');
             }
-            if (!$match['public'] && !$this->auth->verify($request->cookies[Auth::COOKIE] ?? null)) {
+            $request->user = $this->auth->verify($request->cookies[Auth::COOKIE] ?? null);
+            if (!$match['public'] && $request->user === null) {
                 throw new HttpError(401, 'unauthorized');
+            }
+            if ($match['admin'] && $request->user['role'] === 'user') {
+                throw new HttpError(403, 'forbidden');
             }
             $response = ($match['handler'])($request);
         } catch (HttpError $e) {
@@ -280,10 +285,6 @@ final class App
         return self::secure($response);
     }
 
-    public function signedIn(Request $request): bool
-    {
-        return $this->auth->verify($request->cookies[Auth::COOKIE] ?? null);
-    }
 
     /** Rejects cross-site state-changing requests (on top of SameSite=Lax cookies). */
     private function sameOrigin(Request $request): bool

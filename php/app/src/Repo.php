@@ -135,6 +135,135 @@ final class Repo
         $this->run('DELETE FROM settings WHERE key = ?', [$key]);
     }
 
+    // -------------------------------------------------------------------- users
+
+    public function createUser(string $email, ?string $name, string $passwordHash, string $role): int
+    {
+        $now = Time::nowMs();
+        $this->run(
+            'INSERT INTO users (email, name, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [$email, $name, $passwordHash, $role, $now, $now],
+        );
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function getUserRow(int $id): ?array
+    {
+        return $this->one('SELECT * FROM users WHERE id = ?', [$id]);
+    }
+
+    public function findUserByEmail(string $email): ?array
+    {
+        return $this->one('SELECT * FROM users WHERE email = ?', [$email]);
+    }
+
+    public function listUsers(): array
+    {
+        $numbers = [];
+        foreach ($this->all('SELECT user_id, did, can_send FROM user_dids ORDER BY did') as $n) {
+            $numbers[$n['user_id']][] = ['did' => $n['did'], 'canSend' => $n['can_send'] === 1];
+        }
+        return array_map(static fn (array $r) => [
+            'id' => $r['id'],
+            'email' => $r['email'],
+            'name' => $r['name'],
+            'role' => $r['role'],
+            'disabled' => $r['disabled_at'] !== null,
+            'createdAt' => $r['created_at'],
+            'numbers' => $numbers[$r['id']] ?? [],
+        ], $this->all('SELECT * FROM users ORDER BY email'));
+    }
+
+    public function getUser(int $id): ?array
+    {
+        foreach ($this->listUsers() as $user) {
+            if ($user['id'] === $id) {
+                return $user;
+            }
+        }
+        return null;
+    }
+
+    /** @param array{name?: ?string, role?: string, passwordHash?: string, disabled?: bool} $patch */
+    public function updateUser(int $id, array $patch): bool
+    {
+        $sets = ['updated_at = ?'];
+        $values = [Time::nowMs()];
+        if (array_key_exists('name', $patch)) {
+            $sets[] = 'name = ?';
+            $values[] = $patch['name'];
+        }
+        if (isset($patch['role'])) {
+            $sets[] = 'role = ?';
+            $values[] = $patch['role'];
+        }
+        if (isset($patch['passwordHash'])) {
+            $sets[] = 'password_hash = ?';
+            $values[] = $patch['passwordHash'];
+        }
+        if (isset($patch['disabled'])) {
+            $sets[] = 'disabled_at = ?';
+            $values[] = $patch['disabled'] ? Time::nowMs() : null;
+        }
+        $values[] = $id;
+        return $this->run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $values)->rowCount() > 0;
+    }
+
+    public function deleteUser(int $id): bool
+    {
+        return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
+    }
+
+    /** @param list<array{did: string, canSend: bool}> $numbers in place of those the user had */
+    public function setUserNumbers(int $id, array $numbers): void
+    {
+        $this->transaction(function () use ($id, $numbers): void {
+            $this->run('DELETE FROM user_dids WHERE user_id = ?', [$id]);
+            foreach ($numbers as $n) {
+                $this->run('INSERT INTO user_dids (user_id, did, can_send) VALUES (?, ?, ?)', [$id, $n['did'], $n['canSend'] ? 1 : 0]);
+            }
+        });
+    }
+
+    // ----------------------------------------------------------------- sessions
+
+    public function createSession(string $id, ?int $userId, ?string $userAgent, int $now): void
+    {
+        $this->run('INSERT INTO sessions (id, user_id, created_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)', [$id, $userId, $now, $now, $userAgent]);
+    }
+
+    public function getSession(string $id): ?array
+    {
+        return $this->one('SELECT * FROM sessions WHERE id = ?', [$id]);
+    }
+
+    public function touchSession(string $id, int $now): void
+    {
+        $this->run('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [$now, $id]);
+    }
+
+    public function deleteSession(string $id): bool
+    {
+        return $this->run('DELETE FROM sessions WHERE id = ?', [$id])->rowCount() > 0;
+    }
+
+    /** Signs a user out everywhere but $exceptId (null user: the owner's sessions). */
+    public function deleteUserSessions(?int $userId, ?string $exceptId = null): void
+    {
+        $this->run('DELETE FROM sessions WHERE user_id IS ? AND id IS NOT ?', [$userId, $exceptId]);
+    }
+
+    /** A user's sessions, the latest first (null: the owner's). */
+    public function listSessions(?int $userId): array
+    {
+        return $this->all('SELECT * FROM sessions WHERE user_id IS ? ORDER BY last_seen_at DESC', [$userId]);
+    }
+
+    public function pruneSessions(int $createdBefore): void
+    {
+        $this->run('DELETE FROM sessions WHERE created_at < ?', [$createdBefore]);
+    }
+
     // ----------------------------------------------------------------- accounts
 
     /** The account set up first: the only one of a 1.x install, and the one the setup wizard is about. */

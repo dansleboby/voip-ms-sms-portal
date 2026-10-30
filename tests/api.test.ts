@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../server/config.js';
 import { backendNames, Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
 import { browserKeys } from '../server/test/webpush-helpers.js';
-import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent } from '../shared/types.js';
+import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
 
 /**
  * The HTTP API, as the web client uses it, checked against both servers in
@@ -77,10 +77,15 @@ describe.each(backendNames)('%s server', (name) => {
   it('signs in with a protected cookie, and refuses cross-site writes', async () => {
     const res = await client.login();
     const cookie = res.headers.get('set-cookie')!;
-    expect(cookie).toMatch(/^vsp_session=\d+\.[\w-]+;/);
+    // A session id and its signature.
+    expect(cookie).toMatch(/^vsp_session=[\w-]{32}\.[\w-]{43};/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
-    expect((await client.get('/api/session')).json.authenticated).toBe(true);
+    expect((await client.get('/api/session')).json).toMatchObject({
+      authenticated: true,
+      mode: 'simple',
+      user: { id: null, email: null, name: null, role: 'owner' },
+    });
     const evil = await client.post('/api/sync/now', undefined, { origin: 'https://evil.example' });
     expect(evil).toMatchObject({ status: 403, json: { error: 'bad_origin' } });
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
@@ -621,5 +626,139 @@ describe.each(backendNames)('%s server with several VoIP.ms accounts', (name) =>
   it('renames an account', async () => {
     expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
     expect((await client.request('PATCH', '/api/accounts/99', { label: 'x' })).status).toBe(404);
+  });
+});
+
+describe.each(backendNames)('%s server in the Team mode', (name) => {
+  let backend: Backend;
+  let owner: Client;
+  let admin: Client;
+  let marc: Client;
+  let marcId: number;
+
+  beforeAll(async () => {
+    backend = await startBackend(name);
+    owner = new Client(backend.url);
+    await owner.login();
+    await owner.get('/api/setup/dids');
+    await owner.post('/api/setup/complete');
+  }, 30_000);
+
+  afterAll(async () => {
+    await backend?.stop();
+  });
+
+  /** Signs in from a new browser. Sign-ins are limited to ten a minute: this file makes nine. */
+  async function signIn(email: string, password: string) {
+    const client = new Client(backend.url);
+    const res = await client.post('/api/auth/login', { email, password });
+    return { client, res };
+  }
+
+  it('starts in the simple mode, where only APP_PASSWORD signs in', async () => {
+    expect((await owner.get('/api/session')).json).toMatchObject({ mode: 'simple', user: { role: 'owner' } });
+    expect(await owner.get('/api/users')).toMatchObject({ status: 409, json: { error: 'team_mode_off' } });
+    expect((await signIn('julie@example.com', 'hunter2')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+  });
+
+  it('turns the Team mode on with a first admin, once, by the owner only', async () => {
+    expect((await owner.post('/api/team', { email: 'not-an-email', password: 'correct horse' })).status).toBe(400);
+    expect((await owner.post('/api/team', { email: 'julie@example.com', password: 'short' })).status).toBe(400);
+    const res = await owner.post('/api/team', { email: ' Julie@Example.com ', name: 'Julie', password: 'correct horse' });
+    expect(res).toMatchObject({ status: 201, json: { id: 1, email: 'julie@example.com', name: 'Julie', role: 'admin', disabled: false, numbers: [] } });
+    expect(await owner.post('/api/team', { email: 'other@example.com', password: 'correct horse' })).toMatchObject({ status: 409, json: { error: 'team_mode_on' } });
+    // The owner stays signed in, and can always come back with APP_PASSWORD.
+    expect((await owner.get('/api/session')).json).toMatchObject({ mode: 'team', user: { id: null, role: 'owner' } });
+  });
+
+  it('signs users in by email', async () => {
+    expect((await signIn('julie@example.com', 'wrong password')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+    expect((await signIn('nobody@example.com', 'correct horse')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+    admin = (await signIn('JULIE@example.com', 'correct horse')).client;
+    expect((await admin.get('/api/session')).json).toMatchObject({
+      authenticated: true,
+      mode: 'team',
+      user: { id: 1, email: 'julie@example.com', name: 'Julie', role: 'admin' },
+    });
+  });
+
+  it('lets admins add users, with the numbers each one texts from', async () => {
+    const numbers = [
+      { did: '4505550199', canSend: false },
+      { did: MONTREAL, canSend: true },
+    ];
+    const res = await admin.post('/api/users', { email: 'marc@example.com', name: 'Marc', password: 'marc password', role: 'user', numbers });
+    expect(res).toMatchObject({ status: 201, json: { email: 'marc@example.com', name: 'Marc', role: 'user', disabled: false, numbers } });
+    marcId = res.json.id;
+    expect(await admin.post('/api/users', { email: 'marc@example.com', password: 'another one', role: 'user' })).toMatchObject({ status: 409, json: { error: 'email_taken' } });
+    expect(
+      await admin.post('/api/users', { email: 'x@example.com', password: 'another one', role: 'user', numbers: [{ did: '9995550000', canSend: true }] }),
+    ).toMatchObject({ status: 400, json: { error: 'unknown_did', dids: ['9995550000'] } });
+    expect((await admin.post('/api/users', { email: 'x@example.com', password: 'another one', role: 'owner' })).status).toBe(400);
+    expect(((await admin.get('/api/users')).json as UserDto[]).map((u) => u.email)).toEqual(['julie@example.com', 'marc@example.com']);
+    const patched = await admin.request('PATCH', `/api/users/${marcId}`, { name: 'Marc-André', numbers: [{ did: MONTREAL, canSend: false }] });
+    expect(patched.json).toMatchObject({ name: 'Marc-André', numbers: [{ did: MONTREAL, canSend: false }] });
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { name: '  ' })).json).toMatchObject({ name: null });
+    expect((await admin.request('PATCH', '/api/users/99', { name: 'x' })).status).toBe(404);
+  });
+
+  it('keeps users out of what only admins change', async () => {
+    marc = (await signIn('marc@example.com', 'marc password')).client;
+    expect((await marc.get('/api/session')).json).toMatchObject({ user: { id: marcId, email: 'marc@example.com', role: 'user' } });
+    for (const url of ['/api/users', '/api/setup/status', '/api/accounts', '/api/webhook']) {
+      expect(await marc.get(url)).toMatchObject({ status: 403, json: { error: 'forbidden' } });
+    }
+    expect((await marc.request('PATCH', `/api/dids/${MONTREAL}`, { label: 'x' })).status).toBe(403);
+    expect((await marc.request('PATCH', '/api/users/1', { disabled: true })).status).toBe(403);
+    expect((await marc.post('/api/team', { email: 'y@example.com', password: 'correct horse' })).status).toBe(403);
+    expect((await admin.post('/api/team', { email: 'y@example.com', password: 'correct horse' })).status).toBe(403);
+    expect((await marc.get('/api/conversations')).status).toBe(200);
+  });
+
+  it('stops admins from locking themselves out', async () => {
+    expect((await admin.request('PATCH', '/api/users/1', { disabled: true })).json).toEqual({ error: 'cannot_change_self' });
+    expect((await admin.request('PATCH', '/api/users/1', { role: 'user' })).json).toEqual({ error: 'cannot_change_self' });
+    expect((await admin.request('DELETE', '/api/users/1')).json).toEqual({ error: 'cannot_change_self' });
+  });
+
+  it('lets users change their own name and password, signing their other browsers out', async () => {
+    const phone = (await signIn('marc@example.com', 'marc password')).client;
+    expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);
+    expect(await marc.request('PATCH', '/api/me', { password: { current: 'wrong', next: 'new marc password' } })).toMatchObject({ status: 400, json: { error: 'wrong_password' } });
+    expect((await marc.request('PATCH', '/api/me', { password: { current: 'marc password', next: 'short' } })).status).toBe(400);
+    const res = await marc.request('PATCH', '/api/me', { name: 'Marc', password: { current: 'marc password', next: 'new marc password' } });
+    expect(res.json).toMatchObject({ id: marcId, name: 'Marc' });
+    expect((await phone.get('/api/conversations')).status).toBe(401);
+    expect((await marc.get('/api/conversations')).status).toBe(200);
+    expect(await owner.request('PATCH', '/api/me', { name: 'x' })).toMatchObject({ status: 409, json: { error: 'owner_has_no_account' } });
+  });
+
+  it('lists and ends the sessions of whoever is signed in, and only theirs', async () => {
+    const phone = (await signIn('marc@example.com', 'new marc password')).client;
+    const sessions = (await marc.get('/api/sessions')).json as SessionInfoDto[];
+    expect(sessions).toHaveLength(2);
+    const other = sessions.find((s) => !s.current)!;
+    expect(other.id).toMatch(/^[\w-]{16}$/);
+    expect((await admin.request('DELETE', `/api/sessions/${other.id}`)).status).toBe(404);
+    expect((await marc.request('DELETE', `/api/sessions/${other.id}`)).json).toEqual({ ok: true });
+    expect((await phone.get('/api/conversations')).status).toBe(401);
+    expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+  });
+
+  it('turns a disabled user away, even signed in', async () => {
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { disabled: true })).json).toMatchObject({ disabled: true });
+    expect((await marc.get('/api/conversations')).status).toBe(401);
+    expect((await signIn('marc@example.com', 'new marc password')).res.status).toBe(401);
+    expect((await admin.request('DELETE', `/api/users/${marcId}`)).json).toEqual({ ok: true });
+    expect((await admin.request('DELETE', `/api/users/${marcId}`)).status).toBe(404);
+    expect(((await admin.get('/api/users')).json as UserDto[]).map((u) => u.email)).toEqual(['julie@example.com']);
+  });
+
+  it('ends the session on sign-out', async () => {
+    const cookie = admin.cookie;
+    expect((await admin.post('/api/auth/logout')).json).toEqual({ ok: true });
+    const replay = new Client(backend.url);
+    replay.cookie = cookie;
+    expect((await replay.get('/api/conversations')).status).toBe(401);
   });
 });
