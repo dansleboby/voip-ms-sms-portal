@@ -27,7 +27,10 @@ export interface Call {
 
 export class FakeVoipMsServer {
   readonly calls: Call[] = [];
-  /** Method -> VoIP.ms status to fail it with once, or "http_522" for a Cloudflare error page. */
+  /**
+   * Method -> VoIP.ms status to fail it with once, "http_522" for a Cloudflare
+   * error page, or "not_json" for a body that is not JSON.
+   */
   readonly failNext: Record<string, string> = {};
   /** Files served under /media/, for MMS links. */
   readonly files = new Map<string, { type: string; data: Buffer }>();
@@ -111,6 +114,10 @@ export class FakeVoipMsServer {
         res.writeHead(522).end('error code: 522');
         // Cloudflare can time out after VoIP.ms did the work.
         if (method === 'sendSMS') this.push({ direction: 'out', did: fields.did, contact: fields.dst!, message: fields.message! });
+        return;
+      }
+      if (failure === 'not_json') {
+        res.writeHead(200, { 'content-type': 'text/xml' }).end('<soap:Fault/>');
         return;
       }
       json({ status: failure });
