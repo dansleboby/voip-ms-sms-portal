@@ -97,17 +97,20 @@ final class Push
         if (!$subscriptions) {
             return;
         }
-        // VoIP.ms lists newest first: the last one stored is not necessarily the latest.
+        // VoIP.ms lists newest first: the last one stored is not necessarily the latest. Its dates
+        // stop at the second; within one (a long text split in parts, say), its ids, which only grow, tell.
         $latest = [];
         foreach ($items as ['messageId' => $messageId, 'conversationId' => $conversationId]) {
-            $sentAt = $this->repo->getMessageRow($messageId)['sent_at'] ?? 0;
+            $row = $this->repo->getMessageRow($messageId);
+            $sentAt = $row['sent_at'] ?? 0;
+            $remoteId = (int) Repo::voipmsId((string) ($row['remote_id'] ?? ''));
             $entry = $latest[$conversationId] ?? null;
-            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && $messageId > $entry['messageId']);
-            $latest[$conversationId] = [
-                'messageId' => $newer ? $messageId : $entry['messageId'],
-                'sentAt' => $newer ? $sentAt : $entry['sentAt'],
-                'count' => ($entry['count'] ?? 0) + 1,
-            ];
+            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && (
+                $remoteId > $entry['remoteId'] || ($remoteId === $entry['remoteId'] && $messageId > $entry['messageId'])
+            ));
+            $latest[$conversationId] = $newer
+                ? ['messageId' => $messageId, 'sentAt' => $sentAt, 'remoteId' => $remoteId, 'count' => ($entry['count'] ?? 0) + 1]
+                : ['count' => $entry['count'] + 1] + $entry;
         }
         $dids = array_values(array_filter($this->repo->listDids(), static fn (array $d) => $d['visible']));
         $multi = count($dids) > 1;

@@ -73,6 +73,12 @@ export class FakeVoipMsServer {
   private server: http.Server | null = null;
   url = '';
 
+  constructor(
+    /** The API credentials of this account: VoIP.ms refuses any other. */
+    readonly username = 'me@example.com',
+    readonly password = 'api-secret',
+  ) {}
+
   async start(): Promise<void> {
     this.server = http.createServer((req, res) => void this.handle(req, res));
     await new Promise<void>((resolve) => this.server!.listen(0, '127.0.0.1', resolve));
@@ -139,7 +145,7 @@ export class FakeVoipMsServer {
       json({ status: failure });
       return;
     }
-    if (fields.api_username !== 'me@example.com' || fields.api_password !== 'api-secret') {
+    if (fields.api_username !== this.username || fields.api_password !== this.password) {
       json({ status: 'invalid_credentials' });
       return;
     }
