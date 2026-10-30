@@ -144,7 +144,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 ![Wizard step giving the cron job to add](docs/screenshots/en/setup-cron.png)
 
-**Updating.** *Settings* → *Updates* says when a new version is out, with what changed, and installs it in one click: the server downloads the release's zip, checks it against the SHA-256 the release announces, and replaces its own files, keeping the ones it replaces in `sms-portal/data/update/backup/`. `config.php` and `sms-portal/data/` are never touched. On hosts where PHP cannot write to its own files, *Settings* says which ones; extract the new zip over the old folders instead.
+**Updating.** *Settings* → *Updates* says when a new version is out, with what changed, and installs it in one click: the server downloads the release's zip, checks it against the SHA-256 the release announces, and replaces its own files, keeping the ones it replaces in `sms-portal/data/update/backup/`. `config.php` and `sms-portal/data/` are never touched. On hosts where PHP cannot write to its own files, *Settings* says which ones; extract the new zip over the old folders instead. A version that needs a newer PHP than the site's waits until you choose one in cPanel (*MultiPHP Manager*): *Settings* says which.
 
 **Compared with Docker:**
 

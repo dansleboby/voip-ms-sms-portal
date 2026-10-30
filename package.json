@@ -1,12 +1,13 @@
 {
   "name": "voip-ms-sms-portal",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "A clean, modern self-hosted web interface for VoIP.ms SMS/MMS.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "php": ">=8.1"
   },
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
