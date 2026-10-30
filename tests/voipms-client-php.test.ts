@@ -2,19 +2,17 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { phpAvailable } from './backends.js';
 import { FakeVoipMsServer } from './fake-voipms.js';
 
 /**
- * The PHP version's VoIP.ms client (php/app/src/VoipMs/RestClient.php)
- * against the fake VoIP.ms over HTTP, one call at a time
- * (server/voipms/client.test.ts). Enabling SMS and pointing URL callbacks
+ * The VoIP.ms client (php/app/src/VoipMs/RestClient.php) against the fake
+ * VoIP.ms over HTTP, one call at a time. Enabling SMS and pointing URL callbacks
  * are checked through the API in tests/voipms-php.test.ts.
  */
 
 const exec = promisify(execFile);
 
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP RestClient', () => {
+describe('PHP RestClient', () => {
   let voipms: FakeVoipMsServer;
 
   beforeEach(async () => {

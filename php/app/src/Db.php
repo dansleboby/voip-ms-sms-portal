@@ -7,14 +7,14 @@ namespace SmsPortal;
 use PDO;
 
 /**
- * The SQLite database. Its schema is the one of the Docker version
- * (server/db.ts), migration for migration, so a database can move between
- * the two; the tables only the PHP version needs are created apart from
- * that numbering.
+ * The SQLite database. Its migrations are those of the Node server of 1.x
+ * (the Docker image before 2.0), migration for migration, so the databases
+ * it left behind carry on here; the tables it kept in memory instead are
+ * created apart from that numbering.
  */
 final class Db
 {
-    /** Same list, same order as MIGRATIONS in server/db.ts; the index + 1 is PRAGMA user_version. */
+    /** Appended, never edited: the index + 1 is PRAGMA user_version. */
     private static function migrations(): array
     {
         return [
@@ -152,7 +152,7 @@ final class Db
               id            INTEGER PRIMARY KEY AUTOINCREMENT,
               email         TEXT NOT NULL UNIQUE,
               name          TEXT,
-              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (server/passwords.ts)
+              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (Passwords)
               password_hash TEXT NOT NULL,
               role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
               disabled_at   INTEGER,
@@ -179,9 +179,13 @@ final class Db
         ];
     }
 
-    /** Tables of the PHP version only; the Docker version ignores them. */
+    /**
+     * Created on every open, outside the migrations: the Node server of 1.x
+     * (the Docker image before 2.0) kept these in memory, so the databases it
+     * left behind lack them.
+     */
     private const PHP_TABLES = <<<'SQL'
-        -- What the Docker version sends over Server-Sent Events, kept for tabs to poll.
+        -- What happened, kept for open tabs to poll.
         CREATE TABLE IF NOT EXISTS events (
           id         INTEGER PRIMARY KEY AUTOINCREMENT,
           data       TEXT NOT NULL,

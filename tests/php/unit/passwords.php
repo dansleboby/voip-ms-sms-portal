@@ -1,6 +1,6 @@
 <?php
 
-// Users' passwords (server/security.test.ts, "passwords").
+// Users' passwords.
 
 declare(strict_types=1);
 
@@ -11,13 +11,13 @@ use SmsPortal\Passwords;
 /**
  * Hashes as databases already hold them, so that the stored format never
  * changes under existing users: one from hash_pbkdf2('sha256', 'secret',
- * 'saltsaltsaltsalt', 1000, 32, true), one made by the Docker version
- * (server/passwords.ts) for "correct horse".
+ * 'saltsaltsaltsalt', 1000, 32, true), and one made with Node's own
+ * crypto.pbkdf2 for "correct horse", to check against another implementation.
  */
 const PHP_HASH = 'pbkdf2-sha256$1000$c2FsdHNhbHRzYWx0c2FsdA$dClvKSmj66n6MdMWNv3Go4mvH1Ym2WIGiJvquqa-mfE';
 const NODE_HASH = 'pbkdf2-sha256$1000$bQsxCvb1pmn7NQuvEtSEag$y1qxtByMnec4JKdbFi24D48ep-gNqg4doxsgYBLfjVw';
 
-test('hashes with PBKDF2 in a form both servers read, and checks in constant time', function (): void {
+test('hashes with PBKDF2 in the stored form, and checks in constant time', function (): void {
     $hash = Passwords::hash('correct horse', 1000);
     assertSame(1, preg_match('/^pbkdf2-sha256\$1000\$[\w-]{22}\$[\w-]{43}$/', $hash), "format of $hash");
     assertTrue(Passwords::verify('correct horse', $hash));

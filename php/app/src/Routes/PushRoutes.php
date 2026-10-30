@@ -13,7 +13,7 @@ use SmsPortal\Http\Request;
 use SmsPortal\Http\Response;
 use SmsPortal\WebPush;
 
-/** server/routes/push.ts */
+/** Push subscriptions of the browsers, and the test notification. */
 final class PushRoutes
 {
     private const BASE64URL = '/^[\w-]+={0,2}$/';

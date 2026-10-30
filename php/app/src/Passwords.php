@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace SmsPortal;
 
 /**
- * Users' passwords, hashed with PBKDF2-SHA256 (server/passwords.ts): both
- * servers have it built in, so a database moved between them keeps its
- * users. Stored as "pbkdf2-sha256$<iterations>$<salt>$<hash>", base64url.
+ * Users' passwords, hashed with PBKDF2-SHA256, which PHP has built in.
+ * Stored as "pbkdf2-sha256$<iterations>$<salt>$<hash>", base64url.
  */
 final class Passwords
 {

@@ -1,6 +1,6 @@
 <?php
 
-// Sign-ins and their sessions (server/security.test.ts, "Auth").
+// Sign-ins and their sessions.
 
 declare(strict_types=1);
 

@@ -1,6 +1,6 @@
 <?php
 
-// What the migrations do to the databases of earlier releases (server/security.test.ts, "database migrations").
+// What the migrations do to the databases of earlier releases.
 
 declare(strict_types=1);
 

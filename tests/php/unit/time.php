@@ -1,6 +1,6 @@
 <?php
 
-// VoIP.ms dates: US Eastern wall-clock time, daylight saving included (server/time.test.ts).
+// VoIP.ms dates: US Eastern wall-clock time, daylight saving included.
 
 declare(strict_types=1);
 
@@ -50,7 +50,7 @@ test('moves the clock for tests', function (): void {
     assertTrue(abs(Time::nowMs() - 1_000_000) < 1000);
 });
 
-// Sync windows: VoIP.ms is asked for at most a month at a time (server/sync.ts).
+// Sync windows: VoIP.ms is asked for at most a month at a time.
 
 test('covers the whole range with windows of at most N days', function (): void {
     $from = utc('2026-01-01T12:00:00Z');

@@ -407,7 +407,7 @@ function catchUp(): void {
 export function connectEvents(): void {
   if (closeLive) return;
   document.addEventListener('visibilitychange', reportVisibility);
-  closeLive = openLiveUpdates(state.session?.liveUpdates ?? 'stream', { device: deviceId(), tab: tabId, visible }, {
+  closeLive = openLiveUpdates({ device: deviceId(), tab: tabId, visible }, {
     onOpen: () => {
       const wasDisconnected = !state.connected;
       setState({ connected: true });
@@ -418,7 +418,7 @@ export function connectEvents(): void {
     onEvent: handleEvent,
     onError: () => {
       setState({ connected: false });
-      // EventSource hides the status code: check whether the session expired.
+      // A poll that fails may mean the session expired.
       loadSession()
         .then((session) => {
           if (!session.authenticated) disconnectEvents();

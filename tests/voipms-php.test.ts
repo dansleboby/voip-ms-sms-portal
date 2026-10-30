@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Client, phpAvailable, startBackend, waitFor, type Backend } from './backends.js';
+import { Client, startBackend, waitFor, type Backend } from './backends.js';
 import { FakeVoipMsServer } from './fake-voipms.js';
 import type { ConversationDto, MessageDto } from '../shared/types.js';
 
@@ -15,7 +15,7 @@ const PNG = Buffer.from(
 const DID = '4506575294';
 const MARIE = '4383980707';
 
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.ms account', () => {
+describe('PHP server with a VoIP.ms account', () => {
   const voipms = new FakeVoipMsServer();
   let backend: Backend;
   let client: Client;
@@ -35,7 +35,7 @@ describe.runIf(phpAvailable || process.env.REQUIRE_PHP)('PHP server with a VoIP.
     await voipms.start();
     // The first check looks one day back; older history is the import's job.
     voipms.push({ direction: 'in', contact: MARIE, message: 'Ancien message', at: Date.now() - 2 * 3_600_000 });
-    backend = await startBackend('php', {
+    backend = await startBackend({
       DEMO_MODE: 'false',
       VOIPMS_API_URL: `${voipms.url}/api/v1/rest.php`,
       VOIPMS_API_USERNAME: 'me@example.com',

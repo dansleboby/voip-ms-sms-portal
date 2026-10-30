@@ -8,7 +8,7 @@ use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
- * The VoIP.ms accounts the portal uses (server/accounts.ts). Each one is
+ * The VoIP.ms accounts the portal uses. Each one is
  * checked on its own (its own credentials, watermark, lock and webhook), and
  * a number belongs to the account whose history it came from. To the rest of
  * the server, their checks look like one, reported together.

@@ -13,42 +13,29 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [22, 24]
-    env:
-      # The runner's PHP also runs the PHP server's tests; never skip them.
-      REQUIRE_PHP: '1'
+        include:
+          # The oldest PHP shared hosting may have, with the oldest Node the tooling supports.
+          - { php: '8.1', node: 22 }
+          # What the Docker image runs.
+          - { php: '8.4', node: 24 }
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, openssl, curl, mbstring, intl
+          coverage: none
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      - run: find php tests -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
-
-  php:
-    # The shared hosting (cPanel) version, on the oldest PHP it supports.
-    runs-on: ubuntu-latest
-    env:
-      REQUIRE_PHP: '1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.1'
-          extensions: pdo_sqlite, openssl, curl, mbstring, intl
-          coverage: none
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: find php tests -name '*.php' -print0 | xargs -0 -n1 php -l
-      - run: npx vitest run tests/
       - run: npm run build:cpanel
-      - uses: actions/upload-artifact@v4
+      - if: matrix.php == '8.1'
+        uses: actions/upload-artifact@v4
         with:
           name: sms-portal-cpanel
           path: dist/sms-portal-cpanel-*.zip
@@ -62,4 +49,23 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: voip-ms-sms-portal:ci
+      - name: Start the image and sign in
+        run: |
+          docker run -d --name portal -p 8080:8080 -e APP_PASSWORD=ci -e DEMO_MODE=true -e TRUST_PROXY=true voip-ms-sms-portal:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/api/health && break; sleep 1; done
+          curl -sf -c cookies -H 'content-type: application/json' -d '{"password":"ci"}' http://127.0.0.1:8080/api/auth/login
+          curl -sf -b cookies http://127.0.0.1:8080/api/session | grep -q '"authenticated":true'
+          curl -sf -b cookies http://127.0.0.1:8080/api/update | grep -q '"install":"docker"'
+          # The app's pages are index.html, as on shared hosting.
+          curl -sf http://127.0.0.1:8080/settings | grep -q 'id="root"'
+          # The checks of VoIP.ms run on their own, as the data folder's owner.
+          sleep 12
+          docker exec portal sh -c 'test "$(stat -c %u /data/cron.lock)" = 1000'
+      - name: Refuse to start without APP_PASSWORD
+        run: |
+          if docker run --rm voip-ms-sms-portal:ci > out.txt 2>&1; then cat out.txt; exit 1; fi
+          grep -q 'APP_PASSWORD' out.txt
+      - if: always()
+        run: docker logs portal || true

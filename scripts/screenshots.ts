@@ -22,7 +22,7 @@ const DEMO_NOW = '2026-09-29T21:30:00-04:00';
 const BROWSER_NOW = new Date(Date.parse(DEMO_NOW) + 60_000);
 const DESKTOP = { width: 1280, height: 800 };
 const MOBILE = { width: 390, height: 780 };
-/** The cron job's line, as shared hosting shows it (the demo server has none). */
+/** The cron job's line, as shared hosting shows it (the demo server runs as in Docker, with none). */
 const CRON_COMMAND = '/usr/local/bin/php /home/you/sms-portal/cron.php';
 
 interface Language {
@@ -74,7 +74,7 @@ function freePort(): Promise<number> {
 async function startServer(): Promise<{ url: string; stop: () => void }> {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'screenshots-'));
   const port = await freePort();
-  const child = spawn(process.execPath, ['--import', 'tsx', path.join(root, 'scripts/demo-at.ts')], {
+  const child = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', path.join(root, 'dist/web'), path.join(root, 'php/dev-router.php')], {
     cwd: root,
     env: {
       ...process.env,
@@ -82,10 +82,10 @@ async function startServer(): Promise<{ url: string; stop: () => void }> {
       APP_PASSWORD: 'demo',
       DEMO_MODE: 'true',
       DATA_DIR: dataDir,
-      WEB_DIR: path.join(root, 'dist/web'),
-      HOST: '127.0.0.1',
-      PORT: String(port),
-      LOG_LEVEL: 'error',
+      SMS_PORTAL_DIR: path.join(root, 'php/app'),
+      PHP_CLI_SERVER_WORKERS: '4',
+      // As in the Docker image: no cron job to set up, until the wizard is shown the shared hosting's.
+      SMS_PORTAL_INSTALL: 'docker',
       // The address VoIP.ms would call back: the wizard can then show the webhook turned on.
       PUBLIC_URL: 'https://sms.example.com',
       // No check of the account while shooting: nothing should move.
@@ -93,7 +93,8 @@ async function startServer(): Promise<{ url: string; stop: () => void }> {
       POLL_INTERVAL_IDLE: '3600',
       UPDATE_CHECK: 'false',
     },
-    stdio: ['ignore', 'ignore', 'inherit'],
+    // PHP's built-in server logs every request there.
+    stdio: 'ignore',
   });
   const url = `http://127.0.0.1:${port}`;
   for (let i = 0; ; i++) {

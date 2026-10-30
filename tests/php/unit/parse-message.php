@@ -1,6 +1,6 @@
 <?php
 
-// The rows of getSMS and getMMS, read into messages (server/voipms/client.test.ts, "parseMessage").
+// The rows of getSMS and getMMS, read into messages.
 
 declare(strict_types=1);
 

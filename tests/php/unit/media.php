@@ -1,6 +1,6 @@
 <?php
 
-// Downloads of the pictures and files received by MMS (server/vcard.test.ts, "media downloads").
+// Downloads of the pictures and files received by MMS.
 
 declare(strict_types=1);
 

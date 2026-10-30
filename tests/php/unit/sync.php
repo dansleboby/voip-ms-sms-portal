@@ -1,6 +1,6 @@
 <?php
 
-// Keeping the database in step with VoIP.ms (server/sync.test.ts), against a
+// Keeping the database in step with VoIP.ms, against a
 // scripted VoIP.ms account instead of the HTTP one.
 
 declare(strict_types=1);
@@ -17,7 +17,7 @@ use SmsPortal\VoipMs\VoipMsError;
 
 const TZ = 'America/New_York';
 
-/** A scriptable VoIP.ms account (server/test/fake-client.ts). */
+/** A scriptable VoIP.ms account. */
 final class FakeVoipMs implements VoipMsApi
 {
     /** @var list<array> the account's history, as getMessages gives it */

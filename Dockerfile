@@ -3,11 +3,11 @@
 # The same package as for shared hosting (npm run build:cpanel), served by
 # Apache with its .htaccess, as on a cPanel host: one server to maintain.
 
-# Fully qualified, so Podman builds without asking which registry to use.
-FROM docker.io/library/node:24-bookworm-slim AS build
+# Fully qualified, so Podman builds without asking which registry to use. Built on the
+# machine that builds, whatever the image's platform: the package is the same for all.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24-bookworm-slim AS build
 WORKDIR /app
-# zip for the package; the toolchain only if better-sqlite3 (used by the tests) has no prebuilt binary.
-RUN apt-get update && apt-get install -y --no-install-recommends zip python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends zip && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .

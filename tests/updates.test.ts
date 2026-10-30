@@ -6,13 +6,13 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { backendNames, Client, freePort, phpAvailable, startBackend, type Backend } from './backends.js';
+import { Client, freePort, startBackend, type Backend } from './backends.js';
 import { writeFileList } from '../scripts/package-files.mjs';
 
 /**
- * New versions: both servers read the release.json of the newest release
- * (scripts/release-manifest.mjs) and say whether to update; the PHP one
- * also installs it in place.
+ * New versions: the server reads the release.json of the newest release
+ * (scripts/release-manifest.mjs), says whether to update, and installs it
+ * in place on shared hosting.
  */
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -59,14 +59,14 @@ class FakeReleases {
   }
 }
 
-describe.each(backendNames)('%s server: update check', (name) => {
+describe('Update check', () => {
   const releases = new FakeReleases();
   let backend: Backend;
   let client: Client;
 
   beforeAll(async () => {
     await releases.start();
-    backend = await startBackend(name, { UPDATE_MANIFEST_URL: `${releases.url}/release.json` });
+    backend = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json` });
     client = new Client(backend.url);
   }, 30_000);
 
@@ -84,7 +84,7 @@ describe.each(backendNames)('%s server: update check', (name) => {
   it('says when nothing is published yet', async () => {
     const status = (await client.get('/api/update')).json;
     expect(status).toMatchObject({ current: version, enabled: true, latest: null, available: false, error: null });
-    expect(status.install).toBe(name === 'php' ? 'php' : 'source');
+    expect(status.install).toBe('php');
   });
 
   it('offers a newer release, with its notes', async () => {
@@ -108,8 +108,8 @@ describe.each(backendNames)('%s server: update check', (name) => {
     const install = await client.post('/api/update/install');
     expect(install.status).toBe(409);
     // A checkout of the project updates with git, not with a package.
-    expect(install.json.error).toBe(name === 'php' ? 'not_packaged' : 'install_unsupported');
-    if (name === 'php') expect(status.blocked).toBe('not_packaged');
+    expect(install.json.error).toBe('not_packaged');
+    expect(status.blocked).toBe('not_packaged');
   });
 
   it('keeps the last answer when the release cannot be read, and reports why', async () => {
@@ -124,7 +124,7 @@ describe.each(backendNames)('%s server: update check', (name) => {
   });
 
   it('asks nothing when update checks are off', async () => {
-    const off = await startBackend(name, { UPDATE_MANIFEST_URL: `${releases.url}/release.json`, UPDATE_CHECK: 'false' });
+    const off = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json`, UPDATE_CHECK: 'false' });
     try {
       const offClient = new Client(off.url);
       await offClient.login();
@@ -133,6 +133,20 @@ describe.each(backendNames)('%s server: update check', (name) => {
       expect(releases.hits).toBe(hits);
     } finally {
       await off.stop();
+    }
+  });
+
+  it('leaves updates to a new image in Docker, which runs its own cron job', async () => {
+    // As the image sets it; --env-file keeps the quotes of a value written "docker".
+    const docker = await startBackend({ UPDATE_MANIFEST_URL: `${releases.url}/release.json`, SMS_PORTAL_INSTALL: '"docker"' });
+    try {
+      const dockerClient = new Client(docker.url);
+      await dockerClient.login();
+      expect((await dockerClient.get('/api/update')).json).toMatchObject({ install: 'docker', canInstall: false, blocked: null });
+      expect(await dockerClient.post('/api/update/install')).toMatchObject({ status: 409, json: { error: 'install_unsupported' } });
+      expect((await dockerClient.get('/api/sync/status')).json.cron).toBeUndefined();
+    } finally {
+      await docker.stop();
     }
   });
 });
@@ -166,7 +180,7 @@ function packageZip(v: string, extra: (dir: string) => void = () => {}, after: (
 }
 
 // Hosts without PHP's zip extension, or with ZipArchive disabled, unpack with PharData instead.
-describe.runIf(phpAvailable || process.env.REQUIRE_PHP).each(['ZipArchive', 'PharData'])('PHP server: installing an update with %s', (extractor) => {
+describe.each(['ZipArchive', 'PharData'])('PHP server: installing an update with %s', (extractor) => {
   const releases = new FakeReleases();
   let home: string;
   let app: string;

@@ -1,6 +1,6 @@
 <?php
 
-// Which attachments the portal lets a browser show inline (server/vcard.test.ts, "isInlineSafe").
+// Which attachments the portal lets a browser show inline.
 
 declare(strict_types=1);
 

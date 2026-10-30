@@ -16,7 +16,7 @@ use SmsPortal\VoipMs\VoipMsError;
 /**
  * The services of one request (or one cron run), and the request's life:
  * routing, the checks every API call goes through, errors, and the work
- * left for after the response (server/app.ts).
+ * left for after the response.
  */
 final class App
 {
@@ -154,7 +154,7 @@ final class App
     private function buildAccount(Account $account, Config $config, string $dataDir): array
     {
         // A call from VoIP.ms checks the account after the answer, once a check already running is
-        // done, then fetches the pictures of the MMS it found, as the Docker version does right away.
+        // done, then fetches the pictures of the MMS it found.
         $webhook = new Webhook(
             $this->repo,
             fn () => $account->client(),

@@ -15,7 +15,7 @@ use SmsPortal\Passwords;
 use SmsPortal\Repo;
 
 /**
- * The Team mode (server/routes/users.ts): the owner turns it on by creating
+ * The Team mode: the owner turns it on by creating
  * the first admin, admins manage the users and the numbers each one texts
  * from, and everyone sees and ends their own sessions.
  */

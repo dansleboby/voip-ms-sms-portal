@@ -12,7 +12,7 @@ use SmsPortal\Http\Response;
 use SmsPortal\Phone;
 use SmsPortal\VCard;
 
-/** server/routes/contacts.ts */
+/** The address book: contacts, vCard imports, deleting in bulk. */
 final class ContactRoutes
 {
     /** shared/contact.ts */

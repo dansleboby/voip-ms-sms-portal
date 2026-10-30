@@ -10,8 +10,8 @@ use SmsPortal\Repo;
 use SmsPortal\Time;
 
 /**
- * Stand-in for a VoIP.ms account (DEMO_MODE): the sample numbers,
- * conversations and auto-reply of server/voipms/demo.ts. Every PHP request
+ * Stand-in for a VoIP.ms account (DEMO_MODE): sample numbers, made-up
+ * conversations, and a reply to whatever is sent. Every PHP request
  * starts afresh, so the account lives in its own table, and the auto-reply
  * is a message dated 4 s in the future that stays hidden until then.
  */
@@ -30,7 +30,7 @@ final class DemoClient implements VoipMsApi
         ['did' => '8195550123', 'description' => 'Gatineau, QC', 'smsAvailable' => true, 'smsEnabled' => false, 'mmsAvailable' => false],
     ];
 
-    /** A second VoIP.ms account, as an agency keeps one per client (server/voipms/demo.ts). */
+    /** A second VoIP.ms account, as an agency keeps one per client. */
     public const OTHER_DIDS = [
         ['did' => '4185550142', 'description' => 'Québec, QC', 'smsAvailable' => true, 'smsEnabled' => true, 'mmsAvailable' => true],
     ];
@@ -136,7 +136,7 @@ final class DemoClient implements VoipMsApi
     private const ENABLED_KEY = 'demo.smsEnabled';
     /** Each number's URL callback, once the portal changed one, kept between requests. */
     private const CALLBACKS_KEY = 'demo.callbacks';
-    /** Laval already sends its texts to another system, as numbers wired to a CRM do (server/voipms/demo.ts). */
+    /** Laval already sends its texts to another system, as numbers wired to a CRM do. */
     private const OTHER_CALLBACK = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
 
     public function getDids(): array

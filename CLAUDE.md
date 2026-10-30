@@ -1,69 +1,70 @@
 # SMS Portal for VoIP.ms
 
-A web app for sending and receiving the texts of a VoIP.ms account. The same
-React client runs on two servers that answer the same API:
+A web app for sending and receiving the texts of a VoIP.ms account: a React client and one server, in PHP.
 
-- **Node** (`server/`): Node 22+, Fastify, SQLite (better-sqlite3). It is shipped as the Docker image.
-- **PHP** (`php/`): PHP 8.1+ with no Composer packages, for cPanel shared hosting. It uses the same
-  database schema. There is no long-running process, so what Node keeps in memory (live updates,
-  open tabs, sync state) lives in the database, and file locks keep jobs from overlapping.
+- **Server** (`php/`): PHP 8.1+ with no Composer packages, and SQLite. Each request is a process of its own,
+  so live updates, open tabs and sync state live in the database, and file locks keep jobs from overlapping.
+  VoIP.ms is checked after requests and by `php/app/cron.php`.
+- **One package, two ways to host it** (`npm run build:cpanel`):
+  - cPanel shared hosting runs the zip, with a cron job.
+  - The Docker image serves the same files with Apache and the same `.htaccess`, and runs `cron.php` every
+    10 seconds. `SMS_PORTAL_INSTALL=docker` tells the server it runs there.
+- Until 2.0 the Docker image ran a Node server. Its databases open as they are; what it encrypted with
+  scrypt is read once (`Scrypt.php`) and stored again the PHP way.
 
 `DEMO_MODE=true` swaps VoIP.ms for made-up numbers and conversations, and no real texts are sent.
 
 ## Layout
 
-- `server/`: the Node server.
-  - `routes/`: the API.
-  - `voipms/`: the REST client and the demo client.
-  - `db.ts`: migrations and `Repo`.
-  - `accounts.ts`: the VoIP.ms accounts, each with its client, `SyncEngine` and `WebhookReceiver`.
-  - `auth.ts`, `passwords.ts`: sessions (stored in the database) and the Team mode's user passwords.
-  - `sync.ts`, `send.ts`, `deletions.ts`, `webhook.ts`: background work, per account where it talks to VoIP.ms.
-- `php/app/src/`: the PHP server, one class per Node module.
-  - `Routes/`, `VoipMs/`, `Http/`, `Db.php`, `Repo.php`, `Auth.php`, `Passwords.php`, `Accounts.php`, `Sync.php`, `Webhook.php`, `Sender.php`, `RemoteDeletions.php`.
-  - `php/app/cron.php` runs the checks while no tab is open.
-  - `php/www/` is the public entry point. `php/dev-router.php` stands in for its `.htaccess` under `php -S`.
-- `shared/`: code both the client and the Node server import: phone formatting, SMS/MMS rules, API types.
+- `php/app/src/`: the server.
+  - `Routes/`: the API.
+  - `VoipMs/`: the REST client and the demo client.
+  - `Db.php`: migrations. `Repo.php`: reads and writes.
+  - `Accounts.php`: the VoIP.ms accounts, each with its client, `Sync` and `Webhook`.
+  - `Auth.php`, `Passwords.php`: sessions (stored in the database) and the Team mode's user passwords.
+  - `Sync.php`, `Sender.php`, `RemoteDeletions.php`, `Media.php`, `Push.php`, `Webhook.php`: work done after responses and by the cron job.
+- `php/app/cron.php` runs the checks while no tab is open; `cron.php --check` only checks the settings.
+- `php/www/` is the public entry point. `php/dev-router.php` stands in for its `.htaccess` under `php -S`.
+- `Dockerfile`, `docker/`, `docker-entrypoint.sh`: the image.
+- `shared/`: code the client imports, which the tests use too: phone formatting, SMS/MMS rules, and the
+  API's JSON shapes (`types.ts`).
 - `web/src/`: the React client.
   - `components/`.
   - `lib/`.
   - `store.ts`: state and live updates.
   - `i18n/`: `fr.ts` is the source of the `MessageKey` type, and `en.ts` must have the same keys.
-- `tests/`: contract tests.
-  - `api.test.ts` runs every case against both servers.
-  - `backends.ts` starts them in demo mode.
-  - `fake-voipms.ts` stands in for VoIP.ms over HTTP for the PHP client.
-- `scripts/`: build of the cPanel zip, release preparation, the release manifest, README screenshots.
+- `tests/`:
+  - `api.test.ts`: the API as the client uses it, in demo mode.
+  - `backends.ts` starts the server under `php -S`.
+  - `fake-voipms.ts` stands in for VoIP.ms over HTTP.
+  - `php/unit/*.php`: the server's classes, tested in PHP (`php/harness.php`), run by `php-unit.test.ts`.
+- `scripts/`: the dev server, the cPanel zip, release preparation, the release manifest, README screenshots.
 
 ## Commands
 
 ```bash
-DEMO_MODE=true APP_PASSWORD=dev npm run dev   # API on :8080, UI on http://localhost:5173
-npm test                                      # vitest: unit tests, and the API tests on both servers
-npm run typecheck                             # tsc for the server and the client (no ESLint here)
-npm run build                                 # dist/web and dist/node
+DEMO_MODE=true APP_PASSWORD=dev npm run dev   # API (php -S) on :8080, UI on http://localhost:5173
+npm test                                      # vitest: client units, the API, and the PHP tests
+npm run typecheck                             # tsc for the client and shared/ (no ESLint here)
 npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
+docker build -t sms-portal .                  # the Docker image
 npm run screenshots                           # README screenshots; lists the ones that changed
 ```
 
-To run the PHP server locally, first run `npm run build:web`, then:
-`SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php`
-
-`npm test` skips the PHP server when `php` is missing. CI sets `REQUIRE_PHP` and runs PHP 8.1. Run the
+The tests need PHP 8.1+ on the PATH; CI runs them on PHP 8.1 and 8.4, and starts the Docker image. Run the
 whole `tests/api.test.ts` file rather than filtering with `-t`, because its cases share the setup in
 `beforeAll`.
 
 ## Conventions
 
-- **Keep the two servers in parity.** An API change goes into both `server/` and `php/app/src/`,
-  with a case in `tests/api.test.ts`.
-- **Migrations** are appended, never edited. Add each one to both `MIGRATIONS` in `server/db.ts`
-  and `php/app/src/Db.php`, in the same order.
+- **An API change** goes into `php/app/src/` with a case in `tests/api.test.ts`, and its JSON shape into
+  `shared/types.ts`. Logic below the API gets a PHP test in `tests/php/unit/`.
+- **Migrations** are appended to `MIGRATIONS` in `php/app/src/Db.php`, never edited.
 - **VoIP.ms accounts.** The first one (id 1, `PRIMARY_ACCOUNT`) keeps the settings keys of 1.x;
   the others' go through `accountKey()`, and their message ids through `storedRemoteId()`.
-- **Who may call a route.** Every `/api` route needs a session unless it is public. One that
-  changes the portal itself (numbers, VoIP.ms, users, updates) is for admins: `{ config: { admin: true } }`
-  in Node, `admin: true` or `$r->admin()` in PHP. The owner (`APP_PASSWORD`) passes both checks.
+- **Who may call a route.** Every `/api` route needs a session unless it is public. One that changes the
+  portal itself (numbers, VoIP.ms, users, updates) is for admins: `admin: true` or `$r->admin()`. The owner
+  (`APP_PASSWORD`) passes that check.
 - **PHP code must run on 8.1.** That rules out typed class constants, `readonly` classes and
   `json_validate`.
 - **Every user-visible string goes through i18n**, in `fr.ts` and `en.ts`.

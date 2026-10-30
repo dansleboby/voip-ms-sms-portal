@@ -1,8 +1,7 @@
 <?php
 
-// Live updates for polling tabs (server/events.test.ts). The Docker version
-// kept them in memory; here the events and the tabs live in the database,
-// since each request is a process of its own.
+// Live updates for polling tabs: the events and the tabs live in the
+// database, since each request is a process of its own.
 
 declare(strict_types=1);
 
@@ -35,7 +34,7 @@ test('get the events after their cursor, once', function (): void {
 });
 
 test('start over with a cursor of another database, a malformed cursor or after falling too far behind', function (): void {
-    // The Docker version started over after a restart; here the cursors die with the database they came from.
+    // A cursor dies with the database it came from.
     $events = new Events(freshRepo());
     $elsewhere = (new Events(freshRepo()))->poll(null, null, null, true)['cursor'];
     assertTrue($events->poll($elsewhere, null, null, true)['reset']);

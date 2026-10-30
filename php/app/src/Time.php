@@ -7,7 +7,7 @@ namespace SmsPortal;
 /**
  * VoIP.ms dates are wall-clock "YYYY-MM-DD HH:mm:ss" in US Eastern time
  * (DST-aware), and it filters by calendar dates in that zone
- * (server/time.ts). Times are epoch milliseconds everywhere else.
+ *. Times are epoch milliseconds everywhere else.
  */
 final class Time
 {

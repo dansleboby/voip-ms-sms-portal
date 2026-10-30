@@ -1,6 +1,6 @@
 <?php
 
-// Contacts imported from a .vcf export (server/vcard.test.ts).
+// Contacts imported from a .vcf export.
 
 declare(strict_types=1);
 

@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Web Push notifications for new incoming texts, to the browsers that asked
- * for them, skipping those where the app is on screen (server/push.ts).
+ * for them, skipping those where the app is on screen.
  */
 final class Push
 {

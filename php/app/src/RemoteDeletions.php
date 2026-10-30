@@ -9,7 +9,7 @@ use SmsPortal\VoipMs\VoipMsError;
 
 /**
  * Deletes at VoIP.ms the messages deleted "at VoIP.ms too", one call each,
- * after responses and from the cron job (server/deletions.ts). A failure
+ * after responses and from the cron job. A failure
  * that may pass (network, rate limit) waits for the next run; the message
  * stays deleted in the portal whatever happens.
  */

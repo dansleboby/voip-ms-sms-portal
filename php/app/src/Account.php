@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 use SmsPortal\VoipMs\VoipMsApi;
 
-/** One VoIP.ms account: its client, the checks of its numbers, and VoIP.ms calling back for them (server/accounts.ts). */
+/** One VoIP.ms account: its client, the checks of its numbers, and VoIP.ms calling back for them. */
 final class Account
 {
     public readonly Sync $sync;

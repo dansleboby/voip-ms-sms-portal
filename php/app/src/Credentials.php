@@ -7,7 +7,7 @@ namespace SmsPortal;
 /**
  * VoIP.ms credentials entered in the setup wizard are stored encrypted
  * (AES-256-GCM) with a key derived from APP_PASSWORD, so a copy of the
- * database alone does not reveal the API password (server/secrets.ts).
+ * database alone does not reveal the API password.
  *
  * The key comes from PBKDF2. The Node server of 1.x (the Docker image
  * before 2.0) derived it with scrypt: what it stored is read once with

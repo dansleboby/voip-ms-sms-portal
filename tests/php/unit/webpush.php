@@ -1,7 +1,7 @@
 <?php
 
 // Web Push: the payload encrypted for the browser, the request signed for the
-// push service (server/webpush.test.ts).
+// push service.
 
 declare(strict_types=1);
 

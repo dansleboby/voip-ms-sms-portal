@@ -8,7 +8,7 @@ use SmsPortal\Http\HttpError;
 
 /**
  * New versions: whether one was published (from the release.json each
- * release carries, as server/updates.ts reads it), and installing it in
+ * release carries), and installing it in
  * place from Settings. The update replaces the files of the sms-portal
  * folder and of the site; config.php and the data folder are never touched.
  *

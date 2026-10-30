@@ -8,11 +8,11 @@ use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
- * Keeps the database in step with VoIP.ms by polling getSMS/getMMS
- * (server/sync.ts). There is no process of its own to run a timer: checks
- * happen when an open tab polls (every POLL_INTERVAL_ACTIVE) and when the
- * cron job runs (every POLL_INTERVAL_IDLE, at most once a minute). What the
- * Docker version keeps in memory lives in the settings table.
+ * Keeps the database in step with VoIP.ms by polling getSMS/getMMS. There
+ * is no process of its own to run a timer: checks happen when an open tab
+ * polls (every POLL_INTERVAL_ACTIVE) and when the cron job runs (every
+ * POLL_INTERVAL_IDLE; at most once a minute on shared hosting, every 10 s
+ * in Docker). Its state lives in the settings table.
  *
  * VoIP.ms keeps the history, so polling never loses anything: after a
  * downtime the next check widens its window back to the last success.

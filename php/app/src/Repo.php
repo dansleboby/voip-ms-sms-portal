@@ -7,8 +7,8 @@ namespace SmsPortal;
 use PDO;
 
 /**
- * Reads and writes the database; port of Repo in server/db.ts. Methods
- * returning "Dto" arrays give the JSON shapes of shared/types.ts.
+ * Reads and writes the database. Methods returning "Dto" arrays give the
+ * JSON shapes of shared/types.ts.
  */
 final class Repo
 {
@@ -271,8 +271,7 @@ final class Repo
 
     /**
      * The settings key of something each VoIP.ms account has (credentials,
-     * sync state, webhook): the first account keeps the plain keys of 1.x
-     * (server/db.ts).
+     * sync state, webhook): the first account keeps the plain keys of 1.x.
      */
     public static function accountKey(int $accountId, string $key): string
     {

@@ -16,7 +16,7 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 - **Push notifications**, even when the app is closed or the phone locked, on every device where you turn them on.
 - **Archive** the conversations you are done with; they come back as soon as a new text arrives. **Delete** messages or whole conversations, in the portal only or at VoIP.ms too.
 - **Contacts** with vCard import (Google Contacts, iCloud, Android…), an emoji picker, search that ignores accents ("belanger" finds "Bélanger"), light/dark themes, French and English, installable as an app on phones.
-- **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: no Node.js needed there. See [Shared hosting](#shared-hosting-cpanel).
+- **Docker or shared hosting.** One container, or ordinary PHP web hosting (cPanel) with a cron job: the same server either way. See [Shared hosting](#shared-hosting-cpanel).
 
 ## A quick tour
 
@@ -137,13 +137,13 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 
 ## Shared hosting (cPanel)
 
-The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a PHP version of the server answers the same API, and a cron job checks VoIP.ms while the app is closed.
+The same app runs on ordinary PHP web hosting, without Docker: the server is the same as the Docker image's, and a cron job checks VoIP.ms while the app is closed.
 
 **You need** PHP 8.1 or later with `pdo_sqlite`, `openssl`, `curl` and `mbstring` (all on by default in cPanel), a subdomain with HTTPS, and cron jobs. The steps below are the short version; the [step-by-step guide](docs/install.md#2a-install-on-cpanel-web-hosting) gives every click.
 
 1. Get `sms-portal-cpanel-<version>.zip`, attached to each [release](https://github.com/dansleboby/voip-ms-sms-portal/releases) (or build it: `npm run build:cpanel`), and extract it in your home folder (cPanel → *File Manager* → *Upload*, then *Extract*). You get two folders side by side: `sms-portal/`, the server with its settings and data, never served, and `sms-portal-site/`, what the browser loads.
 2. Create the subdomain (cPanel → *Domains* → *Create A New Domain*) with `sms-portal-site` as its document root, and make sure it has HTTPS (cPanel → *SSL/TLS Status* → *Run AutoSSL*). Keep the two folders side by side: if every page answers *Forbidden*, the document root is `sms-portal` or a folder inside it, or the web server cannot read the site's files (they need permissions 644, and folders 755).
-3. In `sms-portal/`, copy `config.sample.php` to `config.php` and set `APP_PASSWORD`. The other settings are those of the [table below](#configuration), apart from the Docker ones (`PORT`, `TRUST_PROXY`, `LIVE_UPDATES`, `PUID`/`PGID`).
+3. In `sms-portal/`, copy `config.sample.php` to `config.php` and set `APP_PASSWORD`. The other settings are those of the [table below](#configuration), apart from the Docker ones (`PORT`, `TRUST_PROXY`, `PUID`/`PGID`).
 4. Open the subdomain, sign in and follow the wizard. Its last step gives the cron job to add (cPanel → *Cron Jobs*), once per minute, such as `/usr/local/bin/php /home/you/sms-portal/cron.php`, and sees it start; you can skip it, at the cost of texts and notifications only coming in while the app is open. *Settings* shows the line too, and whether the job runs.
 
 ![Wizard step giving the cron job to add](docs/screenshots/en/setup-cron.png)
@@ -152,10 +152,9 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 **Compared with Docker:**
 
-- Open tabs ask for updates every 3 s instead of keeping a connection open: a reply or a send's outcome can take a few seconds to show.
-- While the app is closed, the cron job checks VoIP.ms: new texts and push notifications can come up to a minute late, more on hosts that only allow cron jobs every 5 or 15 minutes. With the [webhook](#receiving-texts) on, they come right away.
+- While the app is closed, the cron job checks VoIP.ms: new texts and push notifications can come up to a minute late, more on hosts that only allow cron jobs every 5 or 15 minutes (Docker runs it every 10 seconds). With the [webhook](#receiving-texts) on, they come right away.
 - The IP address to allow in VoIP.ms is the server's, shared with the other sites it hosts: the API password does all the protecting. If the host moves your account to another server, sync stops until the new address is allowed; *Settings* → *Test connection* shows it.
-- Moving from Docker: copy `data/portal.db` and `data/media/` into `sms-portal/data/`. Everything carries over except the VoIP.ms API password, which the wizard asks for again (the two versions derive their encryption key differently), and push notifications, to turn on again on each device.
+- Moving from Docker, or to it: copy `data/portal.db` and `data/media/` into the other's data folder (`sms-portal/data/` here, `./data` with Docker), with the same `APP_PASSWORD`. Everything carries over, sign-ins included.
 
 ## Configuration
 
@@ -166,10 +165,9 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 | `POLL_INTERVAL_ACTIVE` | `10` | Seconds between checks while a browser tab is open. |
 | `POLL_INTERVAL_IDLE` | `60` | Seconds between checks when nobody is looking. |
 | `PUBLIC_URL` | | Address of the app, like `https://sms.example.com`. Recommended behind a reverse proxy: one that does not pass the original `Host` and protocol along would otherwise get sign-ins refused. Also the address VoIP.ms calls when texts are announced by webhook. |
-| `LIVE_UPDATES` | `stream` | How open tabs receive new texts and changes. `stream` keeps one connection open per tab (Server-Sent Events); `poll` has each tab ask every 3 s instead, for proxies or hosts that cannot pass a stream through. |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy terminating HTTPS (secure cookies, real client IP). `true` trusts proxies on loopback and private networks only; you can also list addresses/subnets (`10.0.0.5, 172.16.0.0/12`). |
 | `DATA_DIR` | `./data` (`/data` in Docker, `sms-portal/data` on shared hosting) | Database and media location. |
-| `PORT` | `8080` | HTTP port. |
+| `PORT` | `8080` | Docker: the port the server listens on in the container. |
 | `SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `VOIPMS_TIMEZONE` | `America/New_York` | Time zone of the dates VoIP.ms returns. Leave as is. |
 | `VAPID_SUBJECT` | project URL | Contact (`mailto:you@example.com` or an `https://` URL) sent to browser push services with each notification. |
@@ -177,7 +175,7 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 | `EXCLUDED_DIDS` | | Numbers of the account the portal leaves alone, in the same form; they win over `ALLOWED_DIDS`. Texts already stored from a number left out stay in the database, hidden: they come back if it is allowed again. |
 | `DEMO_MODE` | `false` | Sample data instead of a real account. |
 | `UPDATE_CHECK` | `true` | Look for new releases (*Settings* → *Updates* reads the newest one's `release.json` on GitHub, at most every 6 hours). `UPDATE_MANIFEST_URL` points a fork at its own releases. |
-| `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner, then drops privileges). |
+| `PUID` / `PGID` | `1000` | Docker only: user/group that owns `./data` and runs the app (the container starts as root just to fix the folder's owner and start Apache, whose workers and the checks of VoIP.ms then run as this user). |
 
 ## Preparing your VoIP.ms account
 
@@ -193,15 +191,13 @@ The same app also runs on ordinary PHP web hosting, without Docker or Node.js: a
 
 ### Behind a reverse proxy
 
-Live updates use Server-Sent Events (`/api/events`): disable response buffering for that path. If your proxy cannot do that, set `LIVE_UPDATES=poll`.
+Pass the original host and protocol along (or set `PUBLIC_URL`), and set `TRUST_PROXY=true`, so that the sign-in limit counts each client rather than the proxy.
 
 **Caddy**
 
 ```caddy
 sms.example.com {
-    reverse_proxy localhost:8080 {
-        flush_interval -1
-    }
+    reverse_proxy localhost:8080
 }
 ```
 
@@ -213,8 +209,7 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;   # Server-Sent Events
-    client_max_body_size 5m;
+    client_max_body_size 16m;   # vCard imports with photos
 }
 ```
 
@@ -232,29 +227,23 @@ location / {
 - **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread. With the webhook on, a call from VoIP.ms (`/api/voipms/callback/<secret>`) only starts a check; what it says is never stored, since nothing proves it comes from VoIP.ms.
 - **Media.** VoIP.ms media links are public and can answer 404 for a while after a message is sent, so downloads are retried with backoff for about 6 hours (and on demand from the conversation).
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
-- **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using Node's crypto, without a third-party library.
+- **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using PHP's openssl, without a third-party library.
 - **Sending.** A message is saved immediately and delivered in the background; if VoIP.ms fails ambiguously (timeout, Cloudflare 5xx) and the message still went out, it is matched with the history instead of appearing twice. Failed messages can be retried.
-- **Stack.** Node.js 22+, Fastify, SQLite (better-sqlite3), React + Vite, TypeScript everywhere. A single container, no external service.
-- **Shared hosting.** `php/` holds the PHP version of the server: PHP 8.1+, no Composer package, the same database schema. With no process of its own, it keeps in the database what the Node server keeps in memory: the live updates tabs poll for, the open tabs, sync state; file locks keep a check and a send from overlapping. `tests/` runs the same API checks against both servers, and the PHP one against a fake VoIP.ms over HTTP.
+- **Stack.** The server is PHP 8.1+ with no Composer package and SQLite; the client, React + Vite in TypeScript. One server for both ways of hosting it: Docker runs it under Apache with the same `.htaccess` as shared hosting, plus its cron job every 10 seconds, in a single container with no external service.
+- **No process of its own.** Each request is a PHP process, so the server keeps in the database the live updates open tabs poll for (every 3 s), the open tabs and the sync state; file locks keep a check and a send from overlapping. `tests/` checks the API in demo mode, the VoIP.ms client against a fake VoIP.ms over HTTP, and the server's classes in PHP.
 
 ## Development
 
+It takes Node.js 22+ for the client and the tools, and PHP 8.1+ (with `pdo_sqlite`, `openssl`, `curl` and `mbstring`) for the server and the tests.
+
 ```bash
 npm install
-DEMO_MODE=true APP_PASSWORD=dev npm run dev   # API on :8080, UI on http://localhost:5173
+DEMO_MODE=true APP_PASSWORD=dev npm run dev   # API on :8080 (PHP's built-in server), UI on http://localhost:5173
 npm test                                      # unit and API tests
 npm run typecheck
-npm run build && APP_PASSWORD=dev npm start   # production build
-```
-
-The PHP version, after `npm run build:web` (needs PHP 8.1+; `npm test` also tests it when `php` is installed):
-
-```bash
-SMS_PORTAL_DIR=php/app DEMO_MODE=true APP_PASSWORD=dev php -S 127.0.0.1:8090 -t dist/web php/dev-router.php
 npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
+docker build -t sms-portal .                  # the Docker image
 ```
-
-If your network goes through an HTTP proxy, Node's `fetch` needs `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) to use `HTTPS_PROXY`.
 
 **Screenshots.** `npm run screenshots` takes the ones in this README again (`docs/screenshots/en` and `fr`) from the demo mode, on a fixed date, and lists those whose look changed: run it after changing the interface, and commit what moved. It needs a Chromium for Playwright, once: `npx playwright-core install chromium`. Fonts differ between systems: compare runs made on the same machine.
 
@@ -266,10 +255,6 @@ The version lives in `package.json` ([Semantic Versioning](https://semver.org/))
 2. Commit, open a pull request, merge it.
 
 On `main`, the *Release* workflow sees a version without a tag and publishes it: it runs the tests, tags `vX.Y.Z`, creates the GitHub release with the changelog section as notes, attaches the cPanel zip and `release.json` (what running servers read to offer the update), and pushes the Docker image to `ghcr.io` (`X.Y.Z`, `X.Y` and `latest`). The first time, make the image public: on GitHub, *Packages* → *voip-ms-sms-portal* → *Package settings* → *Change visibility*. After an update, tabs that were already open offer to reload.
-
-## Roadmap ideas
-
-- Optional VoIP.ms webhook/URL callback for instant delivery (and instant notifications) when the instance is reachable from the Internet
 
 ## License
 

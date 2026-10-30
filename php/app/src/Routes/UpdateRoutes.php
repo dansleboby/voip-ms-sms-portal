@@ -9,7 +9,7 @@ use SmsPortal\Http\Input;
 use SmsPortal\Http\Request;
 use SmsPortal\Http\Response;
 
-/** server/routes/update.ts, plus installing, which only this version does. */
+/** New releases, and installing them where the server can replace its own files (not in Docker). */
 final class UpdateRoutes
 {
     public static function register(App $app): void

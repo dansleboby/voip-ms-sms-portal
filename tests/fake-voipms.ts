@@ -1,11 +1,27 @@
 import http from 'node:http';
 import type net from 'node:net';
-import { epochToZonedDateTime } from '../server/time.js';
+
+/** The wall-clock time VoIP.ms writes its dates in ("2026-10-02 14:24:20"), in `timeZone`. */
+function epochToZonedDateTime(epochMs: number, timeZone: string): string {
+  const parts: Record<string, string> = {};
+  const format = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  for (const p of format.formatToParts(new Date(epochMs))) parts[p.type] = p.value;
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
 
 /**
  * A stand-in for the VoIP.ms REST API over HTTP, answering the way the live
  * API does (multipart bodies, "no_sms" for no results, dates in Eastern
- * time), for servers that call it for real: the PHP version.
+ * time), for the server's REST client, which demo mode skips.
  */
 
 interface Row {

@@ -12,7 +12,7 @@ use SmsPortal\Http\Response;
 use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
-/** server/routes/setup.ts */
+/** The setup wizard: VoIP.ms credentials, numbers, history import. */
 final class SetupRoutes
 {
     /** getIP works from any address (it only checks credentials); getBalance needs a whitelisted IP. */

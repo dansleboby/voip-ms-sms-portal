@@ -1,6 +1,6 @@
 <?php
 
-// The VoIP.ms credentials entered in the setup wizard (server/security.test.ts, "CredentialStore").
+// The VoIP.ms credentials entered in the setup wizard.
 
 declare(strict_types=1);
 
