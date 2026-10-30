@@ -13,8 +13,13 @@ use SmsPortal\Http\Response;
 use SmsPortal\Media;
 use SmsPortal\MessageRules;
 use SmsPortal\Phone;
+use SmsPortal\Repo;
 
-/** Numbers, conversations, messages, attachments, and the live updates tabs poll for. */
+/**
+ * Numbers, conversations, messages, attachments, and the live updates tabs poll for.
+ * A user of the Team mode sees the numbers given to them only, and texts (or deletes)
+ * from those they may send from.
+ */
 final class MessagingRoutes
 {
     private const CLIENT_ID = '/^[\w-]{8,64}$/';
@@ -26,6 +31,25 @@ final class MessagingRoutes
         $r = $app->router;
         $repo = $app->repo;
         $events = $app->events;
+
+        /** The database as the person signed in sees it: their numbers, and their own state where a number keeps one per person. */
+        $scoped = static fn (Request $req): Repo => $repo->forViewer($req->viewer);
+
+        /** A conversation they see, or 404; with $send, on a number they may text from, or 403. */
+        $conversation = static function (Request $req, int $id, bool $send = false) use ($scoped): array {
+            $conversation = $scoped($req)->getConversation($id) ?? throw new HttpError(404, 'not_found');
+            if ($send && !$req->viewer?->canSend($conversation['did'])) {
+                throw new HttpError(403, 'read_only');
+            }
+            return $conversation;
+        };
+
+        /** The attachment, if it belongs to a conversation they see. */
+        $attachment = static function (Request $req, int $id) use ($repo, $conversation): array {
+            $row = $repo->getAttachment($id) ?? throw new HttpError(404, 'not_found');
+            $conversation($req, $repo->getMessageRow($row['message_id'])['conversation_id'] ?? 0);
+            return $row;
+        };
 
         /**
          * Deletes messages of a conversation (all of them when $ids is null); voipms=1 in the
@@ -48,9 +72,9 @@ final class MessagingRoutes
 
         // ---------------------------------------------------------------- numbers
 
-        $r->add('GET', '/api/dids', fn () => Response::json($repo->listDids()));
+        $r->add('GET', '/api/dids', fn (Request $req) => Response::json($scoped($req)->listDids()));
 
-        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events): Response {
+        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events, $scoped): Response {
             $did = $req->param('did');
             $body = new Input($req->json());
             $patch = [];
@@ -66,16 +90,19 @@ final class MessagingRoutes
             if ($body->has('position')) {
                 $patch['position'] = $body->int('position', 0, 1000);
             }
+            if ($body->has('sharedState')) {
+                $patch['sharedState'] = $body->bool('sharedState');
+            }
             if (!$repo->updateDid($did, $patch)) {
                 throw new HttpError(404, 'not_found');
             }
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
-            return Response::json($repo->getDid($did));
+            return Response::json($scoped($req)->getDid($did));
         });
 
         /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
-        $r->admin('POST', '/api/dids/{did}/enable-sms', function (Request $req) use ($app, $repo, $events): Response {
+        $r->admin('POST', '/api/dids/{did}/enable-sms', function (Request $req) use ($app, $repo, $events, $scoped): Response {
             $did = $req->param('did');
             $current = $repo->getDid($did) ?? throw new HttpError(404, 'not_found');
             if (!$current['smsAvailable']) {
@@ -100,55 +127,52 @@ final class MessagingRoutes
             });
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
-            return Response::json($repo->getDid($did));
+            return Response::json($scoped($req)->getDid($did));
         });
 
         // ---------------------------------------------------------- conversations
 
-        $r->add('GET', '/api/conversations', function (Request $req) use ($repo): Response {
+        $r->add('GET', '/api/conversations', function (Request $req) use ($scoped): Response {
             $query = new Input($req->query);
             $q = $query->optionalString('q', 200);
             $archived = $query->choice('archived', ['0', '1']);
-            return Response::json($repo->listConversations(
+            return Response::json($scoped($req)->listConversations(
                 did: $query->optionalString('did') ?: null,
                 query: $q,
                 archived: $archived === null ? null : $archived === '1',
             ));
         });
 
-        $r->add('GET', '/api/conversations/lookup', function (Request $req) use ($repo): Response {
+        $r->add('GET', '/api/conversations/lookup', function (Request $req) use ($scoped): Response {
             $query = new Input($req->query);
+            $repo = $scoped($req);
             $id = $repo->findConversation(Phone::normalize($query->string('did')), Phone::normalize($query->string('phone')));
             return Response::json(['conversation' => $id ? $repo->getConversation($id) : null]);
         });
 
-        $r->add('GET', '/api/conversations/{id}', function (Request $req) use ($repo): Response {
-            return Response::json($repo->getConversation(Input::id($req->param('id'))) ?? throw new HttpError(404, 'not_found'));
-        });
+        $r->add('GET', '/api/conversations/{id}', fn (Request $req) => Response::json($conversation($req, Input::id($req->param('id')))));
 
-        $r->add('PATCH', '/api/conversations/{id}', function (Request $req) use ($repo, $events): Response {
+        /** Archives for everyone, or for them only where the number keeps an archive per person. */
+        $r->add('PATCH', '/api/conversations/{id}', function (Request $req) use ($events, $scoped, $conversation): Response {
             $id = Input::id($req->param('id'));
             $archived = (new Input($req->json()))->bool('archived');
-            if (!$repo->getConversation($id)) {
-                throw new HttpError(404, 'not_found');
-            }
+            $conversation($req, $id);
+            $repo = $scoped($req);
             $repo->setArchived($id, $archived);
-            $conversation = $repo->getConversation($id);
-            $events->broadcast(['type' => 'conversation', 'conversation' => $conversation]);
+            $result = $repo->getConversation($id);
+            $events->broadcast(['type' => 'conversation', 'conversation' => $result]);
             $events->broadcast(['type' => 'dids']);
-            return Response::json($conversation);
+            return Response::json($result);
         });
 
         /** Deletes the whole conversation; a new text brings it back, with that text only. */
-        $r->add('DELETE', '/api/conversations/{id}', function (Request $req) use ($repo, $deleteMessages): Response {
+        $r->add('DELETE', '/api/conversations/{id}', function (Request $req) use ($deleteMessages, $conversation): Response {
             $id = Input::id($req->param('id'));
-            if (!$repo->getConversation($id)) {
-                throw new HttpError(404, 'not_found');
-            }
+            $conversation($req, $id, send: true);
             return Response::json(['ok' => true, 'deleted' => count($deleteMessages($id, null, $req))]);
         });
 
-        $r->add('GET', '/api/conversations/{id}/messages', function (Request $req) use ($repo): Response {
+        $r->add('GET', '/api/conversations/{id}/messages', function (Request $req) use ($repo, $conversation): Response {
             $id = Input::id($req->param('id'));
             $query = new Input($req->query);
             $before = $query->has('before') ? Input::id((string) $query->string('before')) : null;
@@ -159,17 +183,14 @@ final class MessagingRoutes
                     throw new InvalidRequest('limit: expected 1 to 200');
                 }
             }
-            if (!$repo->getConversation($id)) {
-                throw new HttpError(404, 'not_found');
-            }
+            $conversation($req, $id);
             return Response::json($repo->listMessages($id, $before, $limit));
         });
 
-        $r->add('POST', '/api/conversations/{id}/read', function (Request $req) use ($repo, $events): Response {
+        $r->add('POST', '/api/conversations/{id}/read', function (Request $req) use ($events, $scoped, $conversation): Response {
             $id = Input::id($req->param('id'));
-            if (!$repo->getConversation($id)) {
-                throw new HttpError(404, 'not_found');
-            }
+            $conversation($req, $id);
+            $repo = $scoped($req);
             if ($repo->markConversationRead($id)) {
                 $events->broadcast(['type' => 'conversation', 'conversation' => $repo->getConversation($id)]);
                 $events->broadcast(['type' => 'dids']);
@@ -180,19 +201,28 @@ final class MessagingRoutes
         // --------------------------------------------------------------- messages
 
         /** multipart/form-data: did, to, body and up to 3 "files[]". */
-        $r->add('POST', '/api/messages', function (Request $req) use ($app): Response {
+        $r->add('POST', '/api/messages', function (Request $req) use ($app, $scoped): Response {
             $files = self::uploadedFiles($req);
             $field = static fn (string $name) => is_string($req->post[$name] ?? null) ? $req->post[$name] : '';
-            $result = $app->sender->queue($field('did'), $field('to'), $field('body'), $files);
+            $did = Phone::normalize($field('did'));
+            $repo = $scoped($req);
+            if ($repo->getDid($did) === null) {
+                throw new HttpError(400, 'unknown_did');
+            }
+            if (!$req->viewer?->canSend($did)) {
+                throw new HttpError(403, 'read_only');
+            }
+            // The owner has no name: the client says "the owner".
+            $sentBy = ['key' => $req->viewer->key, 'name' => $req->user['userId'] === null ? null : ($req->user['name'] ?? $req->user['email'])];
+            $result = $app->sender->queue($did, $field('to'), $field('body'), $files, $sentBy);
+            $result['conversation'] = $repo->getConversation($result['conversation']['id']) ?? $result['conversation'];
             return Response::json($result, 202);
         });
 
-        $r->add('DELETE', '/api/messages/{id}', function (Request $req) use ($repo, $deleteMessages): Response {
+        $r->add('DELETE', '/api/messages/{id}', function (Request $req) use ($repo, $deleteMessages, $conversation): Response {
             $id = Input::id($req->param('id'));
-            $row = $repo->getMessageRow($id);
-            if (!$row || !$repo->getConversation($row['conversation_id'])) {
-                throw new HttpError(404, 'not_found');
-            }
+            $row = $repo->getMessageRow($id) ?? throw new HttpError(404, 'not_found');
+            $conversation($req, $row['conversation_id'], send: true);
             // Its outcome is not known yet: VoIP.ms may be sending it right now.
             if ($row['status'] === 'sending') {
                 throw new HttpError(409, 'still_sending');
@@ -201,12 +231,17 @@ final class MessagingRoutes
             return Response::json(['ok' => true]);
         });
 
-        $r->add('POST', '/api/messages/{id}/retry', fn (Request $req) => Response::json($app->sender->retry(Input::id($req->param('id')))));
-
-        $r->add('GET', '/api/media/{id}', function (Request $req) use ($app, $repo): Response {
+        $r->add('POST', '/api/messages/{id}/retry', function (Request $req) use ($app, $repo, $conversation): Response {
             $id = Input::id($req->param('id'));
-            $row = $repo->getAttachment($id);
-            if (!$row || $row['status'] !== 'ready' || !$row['file_name'] || !is_file($file = $app->media->filePath($row['file_name']))) {
+            $row = $repo->getMessageRow($id) ?? throw new HttpError(404, 'not_found');
+            $conversation($req, $row['conversation_id'], send: true);
+            return Response::json($app->sender->retry($id));
+        });
+
+        $r->add('GET', '/api/media/{id}', function (Request $req) use ($app, $attachment): Response {
+            $id = Input::id($req->param('id'));
+            $row = $attachment($req, $id);
+            if ($row['status'] !== 'ready' || !$row['file_name'] || !is_file($file = $app->media->filePath($row['file_name']))) {
                 throw new HttpError(404, 'not_found');
             }
             $ext = pathinfo($row['file_name'], PATHINFO_EXTENSION);
@@ -219,8 +254,9 @@ final class MessagingRoutes
             ], file: $file);
         });
 
-        $r->add('POST', '/api/media/{id}/retry', function (Request $req) use ($app, $repo): Response {
+        $r->add('POST', '/api/media/{id}/retry', function (Request $req) use ($app, $repo, $attachment): Response {
             $id = Input::id($req->param('id'));
+            $attachment($req, $id);
             if (!$repo->resetAttachment($id)) {
                 throw new HttpError(404, 'not_found');
             }
@@ -250,13 +286,14 @@ final class MessagingRoutes
         });
 
         /** The events since the tab's last poll; checking VoIP.ms when due comes after the response. */
-        $r->add('GET', '/api/events/poll', function (Request $req) use ($app, $events): Response {
+        $r->add('GET', '/api/events/poll', function (Request $req) use ($app, $events, $scoped): Response {
             $query = new Input($req->query);
             $device = $query->matching('device', self::CLIENT_ID);
             $tab = $query->matching('tab', self::CLIENT_ID);
             $visible = $query->choice('visible', ['0', '1']) !== '0';
             $after = $query->optionalString('after', 100);
             $result = $events->poll($after, $tab, $device, $visible);
+            $result['events'] = self::forViewer($result['events'], $scoped($req));
             // Like the stream's first frame: a tab starting over learns the sync state.
             if ($after === null || $result['reset']) {
                 array_unshift($result['events'], ['type' => 'sync', 'status' => $app->accounts->status()]);
@@ -264,6 +301,34 @@ final class MessagingRoutes
             $app->background(active: true, opening: $after === null);
             return Response::json($result);
         });
+    }
+
+    /**
+     * The events as the one polling sees them: about the conversations on their numbers
+     * only, each conversation as it is now for them (their own unread count and archive,
+     * where its number keeps them per person).
+     *
+     * @param list<array> $events
+     * @return list<array>
+     */
+    private static function forViewer(array $events, Repo $repo): array
+    {
+        $conversations = [];
+        $visible = [];
+        foreach ($events as $event) {
+            if (isset($event['conversation']['id'])) {
+                $id = $event['conversation']['id'];
+                if (!array_key_exists($id, $conversations)) {
+                    $conversations[$id] = $repo->getConversation($id);
+                }
+                if ($conversations[$id] === null) {
+                    continue;
+                }
+                $event['conversation'] = $conversations[$id];
+            }
+            $visible[] = $event;
+        }
+        return $visible;
     }
 
     /**

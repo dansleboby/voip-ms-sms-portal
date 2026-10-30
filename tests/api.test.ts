@@ -710,6 +710,106 @@ describe('The server in the Team mode', () => {
     expect((await admin.request('DELETE', '/api/users/1')).json).toEqual({ error: 'cannot_change_self' });
   });
 
+  /** A tab's poll as `client`: its events since its last one. The server checks VoIP.ms after answering. */
+  const cursors = new Map<Client, string>();
+  async function poll(client: Client): Promise<ServerEvent[]> {
+    const after = cursors.get(client);
+    const query = new URLSearchParams({ tab: 'tab-00000002', visible: '1', ...(after ? { after } : {}) });
+    const body = (await client.get(`/api/events/poll?${query}`)).json as EventsPollDto;
+    cursors.set(client, body.cursor);
+    return body.events;
+  }
+
+  function send(client: Client, fields: Record<string, string>, files: { type: string; data: Buffer }[] = []) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f.data)], { type: f.type }), 'file');
+    return client.post('/api/messages', form);
+  }
+
+  it('shows users the numbers given to them only, and lets them text from those they may send from', async () => {
+    const all = await waitFor(async () => {
+      await poll(owner);
+      const list = (await owner.get('/api/conversations')).json as ConversationDto[];
+      return list.length === 4 && list;
+    });
+    await poll(marc);
+    expect(((await marc.get('/api/dids')).json as DidDto[]).map((d) => [d.did, d.canSend])).toEqual([[MONTREAL, false]]);
+    expect(((await admin.get('/api/dids')).json as DidDto[]).every((d) => d.canSend)).toBe(true);
+    const mine = (await marc.get('/api/conversations')).json as ConversationDto[];
+    expect(mine.map((c) => c.id)).toEqual(all.filter((c) => c.did === MONTREAL).map((c) => c.id));
+    expect(((await marc.get('/api/conversations?q=BELANGER')).json as ConversationDto[])).toEqual([]);
+
+    const garage = all.find((c) => c.did === '4505550199' && c.phone === '4505550111')!;
+    expect((await marc.get(`/api/conversations/${garage.id}`)).status).toBe(404);
+    expect((await marc.get(`/api/conversations/${garage.id}/messages`)).status).toBe(404);
+    expect((await marc.post(`/api/conversations/${garage.id}/read`)).status).toBe(404);
+    expect((await marc.request('PATCH', `/api/conversations/${garage.id}`, { archived: true })).status).toBe(404);
+    expect((await marc.get('/api/conversations/lookup?did=4505550199&phone=4505550111')).json).toEqual({ conversation: null });
+    expect(await send(marc, { did: '4505550199', to: '4505550111', body: 'x' })).toMatchObject({ status: 400, json: { error: 'unknown_did' } });
+
+    // Nor what is sent from the others, its pictures included.
+    const sent = await send(owner, { did: '4505550199', to: '4505550111', body: '' }, [{ type: 'image/png', data: PNG }]);
+    expect(sent.json.message.sentBy).toEqual({ userId: null, name: null });
+    const picture = (sent.json as { message: MessageDto }).message.attachments[0]!;
+    expect((await owner.get(picture.url!)).status).toBe(200);
+    expect((await marc.get(picture.url!)).status).toBe(404);
+    expect((await marc.post(`/api/media/${picture.id}/retry`)).status).toBe(404);
+    const events = await waitFor(async () => {
+      const batch = await poll(owner);
+      return batch.some((e) => e.type === 'message' && e.message.status === 'sent') && batch;
+    });
+    expect(events.some((e) => e.type === 'message' && e.conversation.id === garage.id)).toBe(true);
+    expect((await poll(marc)).filter((e) => 'conversation' in e)).toEqual([]);
+
+    // A number they may only read.
+    const marie = mine.find((c) => c.phone === MARIE)!;
+    const thread = (await marc.get(`/api/conversations/${marie.id}/messages`)).json as MessageDto[];
+    expect(thread.every((m) => m.sentBy === null)).toBe(true);
+    expect(await send(marc, { did: MONTREAL, to: MARIE, body: 'x' })).toMatchObject({ status: 403, json: { error: 'read_only' } });
+    expect((await marc.request('DELETE', `/api/messages/${thread[0]!.id}`)).json).toEqual({ error: 'read_only' });
+    expect((await marc.request('DELETE', `/api/conversations/${marie.id}`)).json).toEqual({ error: 'read_only' });
+    expect((await marc.post(`/api/messages/${thread[0]!.id}/retry`)).json).toEqual({ error: 'read_only' });
+  }, 30_000);
+
+  it('keeps unread counts and archives per person on the numbers set so, and says who sent each text', async () => {
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { numbers: [{ did: MONTREAL, canSend: true }] })).status).toBe(200);
+    const patched = await admin.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: false });
+    expect(patched.json).toMatchObject({ did: MONTREAL, sharedState: false });
+    expect((await marc.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: true })).status).toBe(403);
+
+    const res = await send(marc, { did: MONTREAL, to: MARIE, body: 'Je regarde ça.' });
+    expect(res.status).toBe(202);
+    const { message, conversation } = res.json as { message: MessageDto; conversation: ConversationDto };
+    // Their name, or their email without one.
+    expect(message.sentBy).toEqual({ userId: marcId, name: 'marc@example.com' });
+    expect(conversation.lastMessage?.sentBy).toEqual(message.sentBy);
+    const unread = async (client: Client) => ((await client.get(`/api/conversations/${conversation.id}`)).json as ConversationDto).unreadCount;
+    // The demo answers each text.
+    await waitFor(async () => (await poll(marc), (await unread(marc)) === 1));
+    expect(await unread(owner)).toBe(1);
+    expect(((await owner.get(`/api/conversations/${conversation.id}/messages?limit=2`)).json as MessageDto[])[0]!.sentBy).toEqual({ userId: marcId, name: 'marc@example.com' });
+
+    expect((await marc.post(`/api/conversations/${conversation.id}/read`)).json).toEqual({ ok: true });
+    expect(await unread(marc)).toBe(0);
+    expect(await unread(owner)).toBe(1);
+    expect(((await owner.get('/api/dids')).json as DidDto[]).find((d) => d.did === MONTREAL)!.unreadCount).toBe(1);
+    expect(((await marc.get('/api/dids')).json as DidDto[])[0]!.unreadCount).toBe(0);
+    // Each tab hears of the conversation as it is for its person.
+    const seen = (await poll(owner)).flatMap((e) => (e.type === 'conversation' && e.conversation.id === conversation.id ? [e.conversation.unreadCount] : []));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set([1]));
+
+    expect((await marc.request('PATCH', `/api/conversations/${conversation.id}`, { archived: true })).json).toMatchObject({ archived: true });
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).not.toContain(conversation.id);
+    expect(((await owner.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
+
+    // Shared again: what someone read is read.
+    expect((await admin.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: true })).json).toMatchObject({ sharedState: true });
+    expect(await unread(owner)).toBe(0);
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
+  }, 30_000);
+
   it('lets users change their own name and password, signing their other browsers out', async () => {
     const phone = (await signIn('marc@example.com', 'marc password')).client;
     expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);

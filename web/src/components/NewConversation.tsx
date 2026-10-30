@@ -21,7 +21,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
   const dids = useStore((s) => s.dids);
   const contacts = useStore((s) => s.contacts);
   const didFilter = useStore((s) => s.didFilter);
-  const sendable = useMemo(() => dids.filter((d) => d.visible && d.smsEnabled), [dids]);
+  const sendable = useMemo(() => dids.filter((d) => d.visible && d.smsEnabled && d.canSend), [dids]);
   const [from, setFrom] = useState<string | null>(null);
   const [query, setQuery] = useState(initialPhone ? formatPhone(initialPhone) : '');
   const [recipient, setRecipient] = useState<Suggestion | null>(null);
@@ -131,7 +131,10 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
       </div>
 
       {sendable.length === 0 ? (
-        <div className="placeholder-pane">{t('new.noDid')}</div>
+        <div className="placeholder-pane">
+          {/* Team mode: numbers they may only read. */}
+          {dids.some((d) => d.visible && d.smsEnabled) ? t('new.readOnly') : t('new.noDid')}
+        </div>
       ) : recipient ? (
         <div className="thread-empty" />
       ) : (

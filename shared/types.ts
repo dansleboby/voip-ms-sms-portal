@@ -81,6 +81,13 @@ export interface DidDto {
   unreadCount: number;
   /** The VoIP.ms account the number belongs to (1: the one set up first). */
   accountId: number;
+  /**
+   * Everyone shares its unread counts and archive (true), or each person has
+   * their own (false). unreadCount is the one of whoever asks.
+   */
+  sharedState: boolean;
+  /** Whether whoever asks may text from it (false: read only, in the Team mode). */
+  canSend: boolean;
 }
 
 export interface AttachmentDto {
@@ -104,6 +111,12 @@ export interface MessageDto {
   error: string | null;
   carrierStatus: string | null;
   attachments: AttachmentDto[];
+  /**
+   * Who sent it from the portal: a user (their name, or their email without
+   * one), or the owner (userId and name null). Null for texts received, and
+   * for those sent before 2.0 or from another app.
+   */
+  sentBy: { userId: number | null; name: string | null } | null;
 }
 
 export interface ContactRef {
@@ -129,6 +142,7 @@ export interface ConversationDto {
     direction: Direction;
     status: MessageStatus;
     attachmentCount: number;
+    sentBy: MessageDto['sentBy'];
   } | null;
 }
 

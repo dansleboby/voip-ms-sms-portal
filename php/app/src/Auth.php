@@ -121,4 +121,32 @@ final class Auth
     {
         $this->repo->deleteSession($sessionId);
     }
+
+    /** What the person signed in as $user (verify) sees and may do; null for nobody. */
+    public function viewer(?array $user): ?Viewer
+    {
+        if ($user === null) {
+            return null;
+        }
+        if ($user['userId'] === null) {
+            return new Viewer(Viewer::OWNER);
+        }
+        return new Viewer($user['userId'], $user['role'] === 'user' ? $this->repo->userNumbers($user['userId']) : null);
+    }
+
+    /**
+     * The same for a Viewer key, out of any request (push notifications): null
+     * for a user deleted, disabled, or out since the Team mode is off.
+     */
+    public function viewerForKey(int $key): ?Viewer
+    {
+        if ($key === Viewer::OWNER) {
+            return new Viewer(Viewer::OWNER);
+        }
+        $row = $this->repo->getUserRow($key);
+        if ($row === null || $row['disabled_at'] !== null || $this->mode() !== 'team') {
+            return null;
+        }
+        return $this->viewer(['userId' => $row['id'], 'role' => $row['role']]);
+    }
 }

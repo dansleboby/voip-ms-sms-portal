@@ -11,9 +11,10 @@ export const DID_COLORS = ['#1a73e8', '#e8710a', '#188038', '#a142f4', '#d93025'
 
 /**
  * Label, color and visibility of one number; every change is saved right
- * away. Turning on a number without SMS enables SMS for it in VoIP.ms.
+ * away. Turning on a number without SMS enables SMS for it in VoIP.ms. In
+ * the Team mode, whether its users share their unread counts and archive.
  */
-export function DidEditor({ did, onChange }: { did: DidDto; onChange?: (did: DidDto) => void }) {
+export function DidEditor({ did, team, onChange }: { did: DidDto; team?: boolean; onChange?: (did: DidDto) => void }) {
   const [label, setLabel] = useState(did.label ?? '');
   const [enabling, setEnabling] = useState(false);
   useEffect(() => setLabel(did.label ?? ''), [did.label]);
@@ -31,7 +32,7 @@ export function DidEditor({ did, onChange }: { did: DidDto; onChange?: (did: Did
     }
   };
 
-  const save = async (patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible'>>) => {
+  const save = async (patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'sharedState'>>) => {
     try {
       onChange?.(await api.updateDid(did.did, patch));
     } catch (err) {
@@ -97,6 +98,15 @@ export function DidEditor({ did, onChange }: { did: DidDto; onChange?: (did: Did
               />
             ))}
           </div>
+          {team && (
+            <div className="did-shared">
+              <div className="row-main">
+                <div className="row-title">{t('settings.sharedState')}</div>
+                <div className="row-sub">{t(did.sharedState ? 'settings.sharedStateOn' : 'settings.sharedStateOff')}</div>
+              </div>
+              <Switch checked={did.sharedState} label={t('settings.sharedState')} onChange={(sharedState) => void save({ sharedState })} />
+            </div>
+          )}
         </>
       )}
     </div>

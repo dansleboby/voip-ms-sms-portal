@@ -95,7 +95,7 @@ export const api = {
   completeSetup: () => request<{ ok: true }>('POST', '/api/setup/complete'),
 
   dids: () => request<DidDto[]>('GET', '/api/dids'),
-  updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position'>>) =>
+  updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position' | 'sharedState'>>) =>
     request<DidDto>('PATCH', `/api/dids/${did}`, patch),
   enableSms: (did: string) => request<DidDto>('POST', `/api/dids/${did}/enable-sms`),
 

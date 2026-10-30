@@ -52,7 +52,8 @@ final class PushRoutes
             $app->push->checkOwner();
             $previous = $replaces !== null ? $repo->getPushSubscription($replaces) : null;
             $current = $repo->getPushSubscription($endpoint);
-            $repo->transaction(function () use ($repo, $endpoint, $p256dh, $auth, $device, $lang, $replaces, $previous, $current): void {
+            $userKey = $req->viewer->key;
+            $repo->transaction(function () use ($repo, $endpoint, $p256dh, $auth, $device, $lang, $replaces, $previous, $current, $userKey): void {
                 if ($previous && $replaces !== $endpoint) {
                     $repo->deletePushSubscription($previous['endpoint']);
                 }
@@ -62,6 +63,8 @@ final class PushRoutes
                     'auth' => rtrim($auth, '='),
                     'device' => $device ?? $previous['device'] ?? $current['device'] ?? null,
                     'lang' => $lang ?? $previous['lang'] ?? $current['lang'] ?? 'fr',
+                    // Whoever signed in on the browser last gets its notifications.
+                    'userKey' => $userKey,
                 ]);
             });
             return Response::json(['ok' => true]);

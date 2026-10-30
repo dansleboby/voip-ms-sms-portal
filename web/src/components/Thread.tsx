@@ -63,6 +63,8 @@ export function Thread({ id }: { id: number }) {
   if (!conversation) return <div className="placeholder-pane">{t('common.loading')}</div>;
 
   const did = dids.find((d) => d.did === conversation.did);
+  // Team mode: a number given to them to read only.
+  const readOnly = did ? !did.canSend : false;
   const name = displayName(conversation.phone, conversation.contact);
   const contact = conversation.contact ? contacts.find((c) => c.id === conversation.contact!.id) ?? null : null;
   const shortCode = !isValidNanp(conversation.phone);
@@ -99,7 +101,7 @@ export function Thread({ id }: { id: number }) {
       label: conversation.archived ? t('thread.unarchive') : t('thread.archive'),
       onSelect: () => void toggleArchive(),
     },
-    { icon: <Trash2 size={22} />, label: t('thread.delete'), danger: true, onSelect: () => setDeleting(true) },
+    ...(readOnly ? [] : [{ icon: <Trash2 size={22} />, label: t('thread.delete'), danger: true, onSelect: () => setDeleting(true) }]),
   ];
 
   return (
@@ -140,17 +142,30 @@ export function Thread({ id }: { id: number }) {
         </div>
       </header>
 
-      <MessageList conversationId={id} messages={thread.items} hasMore={thread.hasMore} loading={thread.loading} loaded={thread.loaded} />
-
-      {shortCode && <div className="banner info" style={{ margin: '0 16px 4px' }}>{t('thread.noReply')}</div>}
-      <Composer
-        key={id}
-        did={conversation.did}
-        to={conversation.phone}
-        mmsAvailable={did?.mmsAvailable ?? true}
-        disabled={did ? !did.smsEnabled : false}
-        autoFocus={!window.matchMedia('(pointer: coarse)').matches}
+      <MessageList
+        conversationId={id}
+        messages={thread.items}
+        hasMore={thread.hasMore}
+        loading={thread.loading}
+        loaded={thread.loaded}
+        readOnly={readOnly}
       />
+
+      {readOnly ? (
+        <div className="banner info read-only-note">{t('thread.readOnly')}</div>
+      ) : (
+        <>
+          {shortCode && <div className="banner info" style={{ margin: '0 16px 4px' }}>{t('thread.noReply')}</div>}
+          <Composer
+            key={id}
+            did={conversation.did}
+            to={conversation.phone}
+            mmsAvailable={did?.mmsAvailable ?? true}
+            disabled={did ? !did.smsEnabled : false}
+            autoFocus={!window.matchMedia('(pointer: coarse)').matches}
+          />
+        </>
+      )}
 
       {editingContact && (
         <ContactDialog contact={contact} initialPhone={conversation.phone} onClose={() => setEditingContact(false)} />
@@ -176,13 +191,18 @@ function MessageList({
   hasMore,
   loading,
   loaded,
+  readOnly,
 }: {
   conversationId: number;
   messages: MessageDto[];
   hasMore: boolean;
   loading: boolean;
   loaded: boolean;
+  readOnly: boolean;
 }) {
+  const session = useStore((s) => s.session);
+  // The Team mode says who sent each text; the simple mode has only one person.
+  const team = session?.mode === 'team';
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const previousHeight = useRef<number | null>(null);
@@ -229,6 +249,11 @@ function MessageList({
   }, [onMediaLoad]);
 
   const lastOutgoingId = useMemo(() => [...messages].reverse().find((m) => m.direction === 'out')?.id, [messages]);
+  const senderName = (m: MessageDto): string | null => {
+    if (!team || m.direction !== 'out' || !m.sentBy) return null;
+    if (m.sentBy.userId === (session?.user?.id ?? null)) return t('thread.sentByYou');
+    return m.sentBy.name ?? t('team.owner');
+  };
 
   return (
     <div className="messages" ref={scroller} onScroll={onScroll}>
@@ -250,9 +275,16 @@ function MessageList({
           const prev = messages[i - 1];
           const next = messages[i + 1];
           const newDay = !prev || !isSameDay(prev.sentAt, m.sentAt);
-          const first = newDay || prev!.direction !== m.direction || m.sentAt - prev!.sentAt > GROUP_GAP_MS;
+          const sender = senderName(m);
+          // Texts sent by two people one after the other are two groups, each with its name.
+          const first =
+            newDay || prev!.direction !== m.direction || m.sentAt - prev!.sentAt > GROUP_GAP_MS || senderName(prev!) !== sender;
           const last =
-            !next || !isSameDay(next.sentAt, m.sentAt) || next.direction !== m.direction || next.sentAt - m.sentAt > GROUP_GAP_MS;
+            !next ||
+            !isSameDay(next.sentAt, m.sentAt) ||
+            next.direction !== m.direction ||
+            next.sentAt - m.sentAt > GROUP_GAP_MS ||
+            senderName(next) !== sender;
           return (
             <Fragment key={m.id}>
               {newDay && <div className="day-sep">{formatDayHeader(m.sentAt)}</div>}
@@ -261,6 +293,8 @@ function MessageList({
                 first={first}
                 last={last}
                 showStatus={m.id === lastOutgoingId}
+                sender={sender}
+                readOnly={readOnly}
                 selected={m.id === selected}
                 onSelect={() => setSelected((current) => (current === m.id ? null : m.id))}
                 onDelete={() => setDeleting(m)}
@@ -292,6 +326,8 @@ function MessageView({
   first,
   last,
   showStatus,
+  sender,
+  readOnly,
   selected,
   onSelect,
   onDelete,
@@ -302,6 +338,9 @@ function MessageView({
   first: boolean;
   last: boolean;
   showStatus: boolean;
+  /** Who sent it, in the Team mode. */
+  sender: string | null;
+  readOnly: boolean;
   selected: boolean;
   onSelect: () => void;
   onDelete: () => void;
@@ -352,12 +391,14 @@ function MessageView({
       {m.status === 'failed' ? (
         <div className="msg-meta error" role="alert">
           <AlertCircle size={14} />
+          {sender && <span>{sender} ·</span>}
           {t('status.failed')} {m.error && errorText(m.error)}
-          <button onClick={() => void retryMessage(m.id)}>{t('status.tapRetry')}</button>
+          {!readOnly && <button onClick={() => void retryMessage(m.id)}>{t('status.tapRetry')}</button>}
         </div>
       ) : (
         (last || selected || (showStatus && m.status === 'sending')) && (
           <div className="msg-meta">
+            {sender && <span>{sender} ·</span>}
             {formatTime(m.sentAt)}
             {m.kind === 'mms' && <span>· MMS</span>}
             {showStatus && m.direction === 'out' && (
@@ -366,7 +407,7 @@ function MessageView({
           </div>
         )
       )}
-      {selected && m.status !== 'sending' && (
+      {selected && !readOnly && m.status !== 'sending' && (
         <div className="msg-actions">
           <button type="button" className="btn danger small" onClick={onDelete}>
             <Trash2 size={16} />

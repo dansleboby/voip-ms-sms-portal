@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SmsPortal\Http;
 
+use SmsPortal\Viewer;
+
 final class Request
 {
     private ?array $json = null;
@@ -14,6 +16,9 @@ final class Request
      * @var ?array{sessionId: string, userId: ?int, email: ?string, name: ?string, role: string}
      */
     public ?array $user = null;
+
+    /** What they see and may do (App::handle sets it, with $user). */
+    public ?Viewer $viewer = null;
 
     /**
      * @param array<string, string> $headers lowercase names
