@@ -1,4 +1,4 @@
-/** Shapes exchanged between the server's REST/SSE API and the web client. */
+/** Shapes exchanged between the server's API and the web client. */
 
 import type { ContactIcon } from './contact.js';
 import type { MessageKind } from './message.js';
@@ -7,12 +7,6 @@ export type Direction = 'in' | 'out';
 export type MessageStatus = 'received' | 'sending' | 'sent' | 'failed';
 export type AttachmentStatus = 'pending' | 'ready' | 'failed';
 export type CredentialsSource = 'env' | 'db' | null;
-/**
- * How open tabs receive live updates: one Server-Sent Events stream each, or
- * by polling /api/events/poll, for proxies and hosts that cannot hold a
- * stream open (shared PHP hosting).
- */
-export type LiveUpdates = 'stream' | 'poll';
 
 export interface SessionDto {
   authenticated: boolean;
@@ -23,9 +17,103 @@ export interface SessionDto {
   /** Polling periods, in seconds, shown in the UI. */
   pollActiveSeconds: number;
   pollIdleSeconds: number;
-  liveUpdates: LiveUpdates;
+  /** Tabs poll /api/events/poll for live updates. Said for tabs opened before 2.0, which would otherwise open an event stream. */
+  liveUpdates: 'poll';
   /** Whether the server's configuration leaves some of the account's numbers out (ALLOWED_DIDS, EXCLUDED_DIDS). */
   didsRestricted: boolean;
+  /** simple: one password (APP_PASSWORD). team: users who sign in with their email, each with their numbers. */
+  mode: PortalMode;
+  /** Who is signed in; null when nobody is. */
+  user: SessionUserDto | null;
+}
+
+export type PortalMode = 'simple' | 'team';
+
+/**
+ * owner: signed in with APP_PASSWORD, can do everything (the only role of
+ * the simple mode). admin: a user who manages the portal. user: a user who
+ * texts from the numbers given to them.
+ */
+export type Role = 'owner' | 'admin' | 'user';
+
+export interface SessionUserDto {
+  /** Null for the owner, who has no user account. */
+  id: number | null;
+  email: string | null;
+  name: string | null;
+  role: Role;
+}
+
+/** A user of the Team mode, as the admins manage them. */
+export interface UserDto {
+  id: number;
+  email: string;
+  name: string | null;
+  role: Exclude<Role, 'owner'>;
+  disabled: boolean;
+  createdAt: number;
+  /** The numbers the user texts from; canSend: false for a number they may only read. */
+  numbers: { did: string; canSend: boolean }[];
+}
+
+/** What someone did, in the activity log the admins see. */
+export interface ActivityDto {
+  id: number;
+  at: number;
+  /** Who: a user, or the owner (userId and name null); null when nobody was signed in (a refused sign-in). */
+  actor: { userId: number | null; name: string | null } | null;
+  action: ActivityAction;
+  /** What it was about: an email, a number, a phone, a browser's user agent (sign_in, session_ended)... */
+  target: string | null;
+  detail: {
+    /** The fields a change touched. */
+    changes?: string[];
+    count?: number;
+    /** Deleted at VoIP.ms too. */
+    voipms?: boolean;
+    did?: string | null;
+    days?: number;
+    role?: string;
+  } | null;
+  ip: string | null;
+}
+
+export type ActivityAction =
+  | 'sign_in'
+  | 'sign_in_failed'
+  | 'session_ended'
+  | 'password_changed'
+  | 'team_enabled'
+  | 'user_added'
+  | 'user_changed'
+  | 'user_deleted'
+  | 'number_changed'
+  | 'sms_enabled'
+  | 'account_added'
+  | 'account_changed'
+  | 'credentials_changed'
+  | 'history_imported'
+  | 'webhook_enabled'
+  | 'webhook_disabled'
+  | 'update_installed'
+  | 'conversation_deleted'
+  | 'message_deleted'
+  | 'contact_deleted'
+  | 'contacts_deleted';
+
+/** GET /api/activity: the latest first, a page at a time (before: the last id of the previous page). */
+export interface ActivityPageDto {
+  entries: ActivityDto[];
+  more: boolean;
+}
+
+/** A signed-in browser, which its user can sign out from elsewhere. */
+export interface SessionInfoDto {
+  id: string;
+  createdAt: number;
+  lastSeenAt: number;
+  userAgent: string | null;
+  current: boolean;
 }
 
 export interface DidDto {
@@ -42,6 +130,19 @@ export interface DidDto {
   description: string | null;
   position: number;
   unreadCount: number;
+  /** The VoIP.ms account the number belongs to (1: the one set up first). */
+  accountId: number;
+  /**
+   * Everyone shares its unread counts and archive (true), or each person has
+   * their own (false). unreadCount is the one of whoever asks.
+   */
+  sharedState: boolean;
+  /** Whether whoever asks may text from it (false: read only, in the Team mode). */
+  canSend: boolean;
+  /** Hidden by whoever asks, for themselves (visible is the admins' choice, for everyone). */
+  hidden: boolean;
+  /** Whoever asks gets no notifications for it. */
+  muted: boolean;
 }
 
 export interface AttachmentDto {
@@ -65,6 +166,12 @@ export interface MessageDto {
   error: string | null;
   carrierStatus: string | null;
   attachments: AttachmentDto[];
+  /**
+   * Who sent it from the portal: a user (their name, or their email without
+   * one), or the owner (userId and name null). Null for texts received, and
+   * for those sent before 2.0 or from another app.
+   */
+  sentBy: { userId: number | null; name: string | null } | null;
 }
 
 export interface ContactRef {
@@ -90,13 +197,25 @@ export interface ConversationDto {
     direction: Direction;
     status: MessageStatus;
     attachmentCount: number;
+    sentBy: MessageDto['sentBy'];
   } | null;
 }
 
 export interface ContactDto extends ContactRef {
   notes: string | null;
   phones: string[];
+  book: ContactBook;
+  /** Whether whoever asks may change or delete it. */
+  editable: boolean;
 }
+
+/**
+ * Where a contact is: its creator's own book (only they see it), every
+ * number's, or the books of some numbers (seen by whoever sees one of them).
+ * A conversation takes its name from the viewer's own book first, then from
+ * its number's.
+ */
+export type ContactBook = { kind: 'personal' } | { kind: 'all' } | { kind: 'numbers'; dids: string[] };
 
 export interface SyncStatusDto {
   state: 'disabled' | 'idle' | 'syncing' | 'error';
@@ -149,6 +268,24 @@ export interface WebhookStatusDto {
   /** Minutes between the checks that still run, for callbacks VoIP.ms never made and texts sent from other apps. */
   safetyMinutes: number;
   numbers: WebhookNumberDto[];
+}
+
+/** A VoIP.ms account the portal uses; the first one (id 1) is the one the setup wizard sets up. */
+export interface AccountDto {
+  id: number;
+  label: string | null;
+  /** The account's email at VoIP.ms; null when its credentials cannot be read (APP_PASSWORD changed). */
+  username: string | null;
+  credentialsSource: CredentialsSource;
+  numbers: number;
+  /** Why its last check failed (ip_not_enabled after the server moved, say); null when it worked. */
+  error: string | null;
+}
+
+/** An account added, given new credentials or tested: and what VoIP.ms answered. */
+export interface AccountCheckDto {
+  account: AccountDto;
+  connection: ConnectionTestDto;
 }
 
 export interface SetupStatusDto {

@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Web Push notifications for new incoming texts, to the browsers that asked
- * for them, skipping those where the app is on screen (server/push.ts).
+ * for them, skipping those where the app is on screen.
  */
 final class Push
 {
@@ -35,12 +35,17 @@ final class Push
 
     /**
      * @param \Closure(): string $ownerFingerprint changes with APP_PASSWORD (slow to compute: only asked when needed)
+     * @param ?\Closure(): string $legacyOwnerFingerprint the same, as the Node server of 1.x computed it
+     * @param ?\Closure(int): ?Viewer $viewerForKey what the person a browser belongs to sees (Auth::viewerForKey);
+     *   null when they no longer sign in. Without it, every browser is the owner's.
      */
     public function __construct(
         private readonly Repo $repo,
         private readonly Events $events,
         private readonly string $subject,
         private readonly \Closure $ownerFingerprint,
+        private readonly ?\Closure $legacyOwnerFingerprint = null,
+        private readonly ?\Closure $viewerForKey = null,
     ) {
     }
 
@@ -71,8 +76,11 @@ final class Push
         }
         $this->ownerChecked = true;
         $owner = ($this->ownerFingerprint)();
-        if ($this->repo->getSetting(self::OWNER_KEY) !== $owner) {
-            $dropped = $this->repo->deleteAllPushSubscriptions();
+        $stored = $this->repo->getSetting(self::OWNER_KEY);
+        if ($stored !== $owner) {
+            // A Docker install from before 2.0 computed it another way: the same APP_PASSWORD keeps its browsers.
+            $sameOwner = $stored !== null && $this->legacyOwnerFingerprint !== null && $stored === ($this->legacyOwnerFingerprint)();
+            $dropped = $sameOwner ? 0 : $this->repo->deleteAllPushSubscriptions();
             if ($dropped) {
                 Log::info('APP_PASSWORD changed: push subscriptions removed', ['count' => $dropped]);
             }
@@ -81,7 +89,8 @@ final class Push
     }
 
     /**
-     * New texts from a check, grouped into one notification per conversation.
+     * New texts from a check, grouped into one notification per conversation, to
+     * the browsers of those who see its number, each with their own unread count.
      *
      * @param list<array{messageId: int, conversationId: int}> $items
      */
@@ -92,45 +101,66 @@ final class Push
         if (!$subscriptions) {
             return;
         }
-        // VoIP.ms lists newest first: the last one stored is not necessarily the latest.
+        // VoIP.ms lists newest first: the last one stored is not necessarily the latest. Its dates
+        // stop at the second; within one (a long text split in parts, say), its ids, which only grow, tell.
         $latest = [];
         foreach ($items as ['messageId' => $messageId, 'conversationId' => $conversationId]) {
-            $sentAt = $this->repo->getMessageRow($messageId)['sent_at'] ?? 0;
+            $row = $this->repo->getMessageRow($messageId);
+            $sentAt = $row['sent_at'] ?? 0;
+            $remoteId = (int) Repo::voipmsId((string) ($row['remote_id'] ?? ''));
             $entry = $latest[$conversationId] ?? null;
-            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && $messageId > $entry['messageId']);
-            $latest[$conversationId] = [
-                'messageId' => $newer ? $messageId : $entry['messageId'],
-                'sentAt' => $newer ? $sentAt : $entry['sentAt'],
-                'count' => ($entry['count'] ?? 0) + 1,
-            ];
+            $newer = $entry === null || $sentAt > $entry['sentAt'] || ($sentAt === $entry['sentAt'] && (
+                $remoteId > $entry['remoteId'] || ($remoteId === $entry['remoteId'] && $messageId > $entry['messageId'])
+            ));
+            $latest[$conversationId] = $newer
+                ? ['messageId' => $messageId, 'sentAt' => $sentAt, 'remoteId' => $remoteId, 'count' => ($entry['count'] ?? 0) + 1]
+                : ['count' => $entry['count'] + 1] + $entry;
         }
-        $dids = array_values(array_filter($this->repo->listDids(), static fn (array $d) => $d['visible']));
-        $multi = count($dids) > 1;
-        // Archived conversations are already left out of these counts.
-        $unread = array_sum(array_column($dids, 'unreadCount'));
-        foreach ($latest as $conversationId => ['messageId' => $messageId, 'count' => $count]) {
-            $message = $this->repo->getMessage($messageId);
-            $conversation = $this->repo->getConversation($conversationId);
-            if (!$message || !$conversation) {
-                continue;
-            }
-            $did = null;
-            foreach ($dids as $d) {
-                if ($d['did'] === $conversation['did']) {
-                    $did = $d;
+        $byPerson = [];
+        foreach ($subscriptions as $sub) {
+            $byPerson[$sub['user_key']][] = $sub;
+        }
+        $messages = [];
+        foreach ($byPerson as $key => $subs) {
+            $viewer = $this->viewerForKey === null ? new Viewer(Viewer::OWNER) : ($this->viewerForKey)($key);
+            if ($viewer === null) {
+                // A user deleted or disabled: their browsers have nothing more to show.
+                foreach ($subs as $sub) {
+                    $this->repo->deletePushSubscription($sub['endpoint']);
                 }
-            }
-            if ($did === null) {
-                // Hidden number.
                 continue;
             }
-            $didLabel = $multi ? ($did['label'] ?: Phone::format($conversation['did'])) : null;
-            foreach ($subscriptions as $sub) {
-                if ($sub['device'] && $this->events->isOnScreen($sub['device'])) {
+            $repo = $this->repo->forViewer($viewer);
+            // The numbers they have on screen: not hidden, by an admin for everyone or by them for themselves.
+            $dids = array_values(array_filter($repo->listDids(), static fn (array $d) => $d['visible'] && !$d['hidden']));
+            $multi = count($dids) > 1;
+            // Archived conversations are already left out of these counts.
+            $unread = array_sum(array_column($dids, 'unreadCount'));
+            foreach ($latest as $conversationId => ['messageId' => $messageId, 'count' => $count]) {
+                $message = $messages[$messageId] ??= $this->repo->getMessage($messageId);
+                $conversation = $repo->getConversation($conversationId);
+                if (!$message || !$conversation) {
+                    // Gone, or on a number they do not see.
                     continue;
                 }
-                $payload = self::messagePayload($message, $conversation, $count, $didLabel, self::lang($sub['lang'])) + ['unread' => $unread];
-                $this->deliver($sub, $payload, "c$conversationId");
+                $did = null;
+                foreach ($dids as $d) {
+                    if ($d['did'] === $conversation['did']) {
+                        $did = $d;
+                    }
+                }
+                if ($did === null || $did['muted']) {
+                    // A hidden number, or one they muted.
+                    continue;
+                }
+                $didLabel = $multi ? ($did['label'] ?: Phone::format($conversation['did'])) : null;
+                foreach ($subs as $sub) {
+                    if ($sub['device'] && $this->events->isOnScreen($sub['device'])) {
+                        continue;
+                    }
+                    $payload = self::messagePayload($message, $conversation, $count, $didLabel, self::lang($sub['lang'])) + ['unread' => $unread];
+                    $this->deliver($sub, $payload, "c$conversationId");
+                }
             }
         }
     }

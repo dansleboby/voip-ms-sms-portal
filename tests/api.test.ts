@@ -2,17 +2,14 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadConfig } from '../server/config.js';
-import { backendNames, Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
-import { browserKeys } from '../server/test/webpush-helpers.js';
-import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent } from '../shared/types.js';
+import { Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
+import { browserKeys } from './webpush-helpers.js';
+import type { ActivityPageDto, ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
 
 /**
- * The HTTP API, as the web client uses it, checked against both servers in
- * demo mode: whatever passes here works the same in Docker and on shared
- * PHP hosting.
+ * The HTTP API, as the web client uses it, in demo mode. Docker and shared
+ * hosting run the same server, so whatever passes here works on both.
  */
 
 const PNG = Buffer.from(
@@ -25,7 +22,7 @@ const MONTREAL = '5145550100';
 const GATINEAU = '8195550123';
 const MARIE = '4385550142';
 
-describe.each(backendNames)('%s server', (name) => {
+describe('The server', () => {
   let backend: Backend;
   let client: Client;
   let cursor: string | undefined;
@@ -43,12 +40,12 @@ describe.each(backendNames)('%s server', (name) => {
   function sendForm(fields: Record<string, string>, files: { type: string; data: Buffer }[] = []) {
     const form = new FormData();
     for (const [k, v] of Object.entries(fields)) form.set(k, v);
-    for (const f of files) form.append('files[]', new Blob([f.data], { type: f.type }), 'file');
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f.data)], { type: f.type }), 'file');
     return client.post('/api/messages', form);
   }
 
   beforeAll(async () => {
-    backend = await startBackend(name);
+    backend = await startBackend();
     client = new Client(backend.url);
   }, 30_000);
 
@@ -59,7 +56,7 @@ describe.each(backendNames)('%s server', (name) => {
   it('reports its state before sign-in, and asks for it', async () => {
     const session = await client.get('/api/session');
     expect(session.json).toMatchObject({ authenticated: false, setupCompleted: false, credentialsSource: 'env', demo: true, version, pollActiveSeconds: 3 });
-    expect(['stream', 'poll']).toContain(session.json.liveUpdates);
+    expect(session.json.liveUpdates).toBe('poll');
     expect((await client.get('/api/conversations')).status).toBe(401);
     expect((await client.get('/api/events/poll')).status).toBe(401);
     expect((await client.post('/api/auth/login', { password: 'nope' })).json).toEqual({ error: 'wrong_password' });
@@ -77,10 +74,15 @@ describe.each(backendNames)('%s server', (name) => {
   it('signs in with a protected cookie, and refuses cross-site writes', async () => {
     const res = await client.login();
     const cookie = res.headers.get('set-cookie')!;
-    expect(cookie).toMatch(/^vsp_session=\d+\.[\w-]+;/);
+    // A session id and its signature.
+    expect(cookie).toMatch(/^vsp_session=[\w-]{32}\.[\w-]{43};/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
-    expect((await client.get('/api/session')).json.authenticated).toBe(true);
+    expect((await client.get('/api/session')).json).toMatchObject({
+      authenticated: true,
+      mode: 'simple',
+      user: { id: null, email: null, name: null, role: 'owner' },
+    });
     const evil = await client.post('/api/sync/now', undefined, { origin: 'https://evil.example' });
     expect(evil).toMatchObject({ status: 403, json: { error: 'bad_origin' } });
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
@@ -322,13 +324,9 @@ describe.each(backendNames)('%s server', (name) => {
     const status = (await client.get('/api/sync/status')).json;
     expect(status).toMatchObject({ state: 'idle', lastError: null, importing: null });
     expect(status.lastCheckAt).toBeGreaterThanOrEqual(status.lastSyncAt);
-    if (name === 'php') {
-      expect(status.cron).toEqual({ lastRunAt: null, command: expect.stringMatching(/php .*cron\.php$/) });
-      runCron(backend);
-      expect((await client.get('/api/sync/status')).json.cron.lastRunAt).toBeGreaterThan(Date.now() - 10_000);
-    } else {
-      expect(status.cron).toBeUndefined();
-    }
+    expect(status.cron).toEqual({ lastRunAt: null, command: expect.stringMatching(/php .*cron\.php$/) });
+    runCron(backend);
+    expect((await client.get('/api/sync/status')).json.cron.lastRunAt).toBeGreaterThan(Date.now() - 10_000);
   });
 
   it('imports older history in the background', async () => {
@@ -354,7 +352,7 @@ describe.each(backendNames)('%s server', (name) => {
   });
 });
 
-describe.each(backendNames)('%s server with numbers left out by its settings', (name) => {
+describe('The server with numbers left out by its settings', () => {
   const LAVAL = '4505550199';
   const GARAGE = '4505550111';
   let dataDir: string;
@@ -362,7 +360,7 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
 
   async function start(env: Record<string, string>): Promise<Client> {
     await backend?.stop();
-    backend = await startBackend(name, { DATA_DIR: dataDir, ...env });
+    backend = await startBackend({ DATA_DIR: dataDir, ...env });
     const client = new Client(backend.url);
     await client.login();
     return client;
@@ -378,7 +376,7 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
   }
 
   beforeAll(() => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `contract-${name}-dids-`));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'contract-dids-'));
   });
 
   afterAll(async () => {
@@ -393,9 +391,9 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
     await client.post('/api/setup/complete');
     await waitFor(async () => (await client.get('/api/sync/status')).json.lastSyncAt);
     expect(await conversations(client)).toEqual(['4385550142', '5145550187']);
-    const db = new Database(path.join(dataDir, 'portal.db'), { readonly: true });
-    expect(db.prepare('SELECT DISTINCT did FROM conversations UNION SELECT did FROM dids').pluck().all()).toEqual([MONTREAL]);
-    db.close();
+    const query = `echo json_encode((new PDO('sqlite:' . $argv[1]))->query('SELECT DISTINCT did FROM conversations UNION SELECT did FROM dids')->fetchAll(PDO::FETCH_COLUMN));`;
+    const stored = spawnSync('php', ['-r', query, '--', path.join(dataDir, 'portal.db')], { encoding: 'utf8' }).stdout;
+    expect(JSON.parse(stored)).toEqual([MONTREAL]);
   }, 30_000);
 
   it('hides what was stored before a number was left out, until it is allowed again', async () => {
@@ -437,24 +435,20 @@ describe.each(backendNames)('%s server with numbers left out by its settings', (
   }, 30_000);
 
   it('refuses a setting that is not a list of numbers', async () => {
-    if (name === 'node') {
-      expect(() => loadConfig({ APP_PASSWORD: 'x', EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
-    } else {
-      expect(() => runCron(backend!, { EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
-      // config.php takes a list too.
-      const load = (list: string) => {
-        fs.writeFileSync(path.join(dataDir, 'config.php'), `<?php return ['APP_PASSWORD' => 'x', 'ALLOWED_DIDS' => ${list}];`);
-        const script = `require '${path.resolve('php/app/bootstrap.php')}';
-          try { echo json_encode(SmsPortal\\Config::load('${dataDir}')->allowedDids); } catch (SmsPortal\\ConfigError $e) { echo $e->getMessage(); }`;
-        return spawnSync('php', ['-r', script], { encoding: 'utf8' }).stdout;
-      };
-      expect(load(`['514-555-0100', 4505550199]`)).toBe('["5145550100","4505550199"]');
-      expect(load(`['514-555-0100', 'office']`)).toBe('ALLOWED_DIDS: "office" is not a 10-digit phone number.');
-    }
+    expect(() => runCron(backend!, { EXCLUDED_DIDS: '514555, 4505550199' })).toThrow('EXCLUDED_DIDS: "514555" is not a 10-digit phone number.');
+    // config.php takes a list too.
+    const load = (list: string) => {
+      fs.writeFileSync(path.join(dataDir, 'config.php'), `<?php return ['APP_PASSWORD' => 'x', 'ALLOWED_DIDS' => ${list}];`);
+      const script = `require '${path.resolve('php/app/bootstrap.php')}';
+        try { echo json_encode(SmsPortal\\Config::load('${dataDir}')->allowedDids); } catch (SmsPortal\\ConfigError $e) { echo $e->getMessage(); }`;
+      return spawnSync('php', ['-r', script], { encoding: 'utf8' }).stdout;
+    };
+    expect(load(`['514-555-0100', 4505550199]`)).toBe('["5145550100","4505550199"]');
+    expect(load(`['514-555-0100', 'office']`)).toBe('ALLOWED_DIDS: "office" is not a 10-digit phone number.');
   }, 30_000);
 });
 
-describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) => {
+describe('The server with texts announced by VoIP.ms', () => {
   const LAVAL = '4505550199';
   const GATINEAU = '8195550123';
   /** Laval's callback in the demo account, to another system. */
@@ -463,7 +457,7 @@ describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) 
   let client: Client;
 
   beforeAll(async () => {
-    backend = await startBackend(name, { PUBLIC_URL: 'https://sms.example.com' });
+    backend = await startBackend({ PUBLIC_URL: 'https://sms.example.com' });
     client = new Client(backend.url);
     await client.login();
     await client.get('/api/setup/dids');
@@ -528,9 +522,9 @@ describe.each(backendNames)('%s server with texts announced by VoIP.ms', (name) 
   });
 });
 
-describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name) => {
+describe('The server asked for webhooks without HTTPS', () => {
   it('refuses: VoIP.ms could not reach it, and the secret would travel in clear', async () => {
-    const backend = await startBackend(name);
+    const backend = await startBackend();
     try {
       const client = new Client(backend.url);
       await client.login();
@@ -541,4 +535,421 @@ describe.each(backendNames)('%s server asked for webhooks without HTTPS', (name)
       await backend.stop();
     }
   }, 30_000);
+});
+
+describe('The server with several VoIP.ms accounts', () => {
+  /** The demo's second sample account: a bakery in Québec. */
+  const QUEBEC = '4185550142';
+  let backend: Backend;
+  let client: Client;
+
+  beforeAll(async () => {
+    backend = await startBackend();
+    client = new Client(backend.url);
+    await client.login();
+    await client.get('/api/setup/dids');
+    await client.post('/api/setup/complete');
+  }, 30_000);
+
+  afterAll(async () => {
+    await backend?.stop();
+  });
+
+  /** A tab's poll: the PHP server checks VoIP.ms after answering it. */
+  const tick = () => client.get('/api/events/poll?tab=tab-00000001&visible=1');
+  const send = (fields: Record<string, string>) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    return client.post('/api/messages', form);
+  };
+
+  it('needs a session', async () => {
+    const stranger = new Client(backend.url);
+    expect((await stranger.get('/api/accounts')).status).toBe(401);
+    expect((await stranger.post('/api/accounts', { username: 'b@example.com', password: 'x' })).status).toBe(401);
+  });
+
+  it('lists the account set up first', async () => {
+    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3, error: null }]);
+  });
+
+  it('adds an account once, checking its credentials, with its own numbers', async () => {
+    const added = await client.post('/api/accounts', { label: 'Boulangerie', username: 'b@example.com', password: 'secret' });
+    expect(added).toMatchObject({
+      status: 201,
+      json: {
+        account: { id: 2, label: 'Boulangerie', username: 'b@example.com', credentialsSource: 'db', numbers: 1 },
+        connection: { status: 'success', ip: '203.0.113.10' },
+      },
+    });
+    expect((await client.post('/api/accounts', { username: 'b@example.com', password: 'other' })).json).toEqual({ error: 'account_exists' });
+    expect((await client.post('/api/accounts', { username: 'DEMO@example.com', password: 'x' })).json).toEqual({ error: 'account_exists' });
+    expect((await client.post('/api/accounts', { username: 'b', password: 'x' })).status).toBe(400);
+    const dids = (await client.get('/api/dids')).json as DidDto[];
+    expect(dids.map((d) => [d.did, d.accountId])).toEqual([
+      [MONTREAL, 1],
+      ['4505550199', 1],
+      ['8195550123', 1],
+      [QUEBEC, 2],
+    ]);
+  });
+
+  it('checks the new account, and sends from its number', async () => {
+    // Its first check looks a day back, like the first account's: older texts are the history import's.
+    const quebec = await waitFor(async () => {
+      await tick();
+      const conversations = ((await client.get('/api/conversations')).json as ConversationDto[]).filter((c) => c.did === QUEBEC);
+      return conversations.length > 0 && conversations;
+    });
+    expect(quebec.map((c) => c.phone)).toEqual(['4185550123']);
+    const res = await send({ did: QUEBEC, to: '4185550177', body: 'Merci, à vendredi!' });
+    expect(res.status).toBe(202);
+    const id = (res.json as { message: MessageDto }).message.id;
+    await waitFor(async () => {
+      await tick();
+      const messages = (await client.get(`/api/conversations/${(res.json as { conversation: ConversationDto }).conversation.id}/messages`)).json as MessageDto[];
+      return messages.find((m) => m.id === id)?.status === 'sent';
+    });
+  }, 30_000);
+
+  it('tests an account, and takes new credentials for it', async () => {
+    expect((await client.post('/api/accounts/2/test')).json).toMatchObject({
+      account: { id: 2, error: null },
+      connection: { status: 'success', ip: '203.0.113.10' },
+    });
+    expect((await client.post('/api/accounts/9/test')).status).toBe(404);
+    const changed = await client.request('PUT', '/api/accounts/2/credentials', { username: 'boulangerie@example.com', password: 'new secret' });
+    expect(changed.json).toMatchObject({ account: { id: 2, username: 'boulangerie@example.com', credentialsSource: 'db', numbers: 1 }, connection: { status: 'success' } });
+    expect((await client.request('PUT', '/api/accounts/2/credentials', { username: 'DEMO@example.com', password: 'x' })).json).toEqual({ error: 'account_exists' });
+    // The first account's come from the server's settings here.
+    expect((await client.request('PUT', '/api/accounts/1/credentials', { username: 'x@example.com', password: 'x' })).json).toEqual({ error: 'credentials_env' });
+  });
+
+  it('renames an account', async () => {
+    expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
+    expect((await client.request('PATCH', '/api/accounts/99', { label: 'x' })).status).toBe(404);
+  });
+});
+
+describe('The server in the Team mode', () => {
+  let backend: Backend;
+  let owner: Client;
+  let admin: Client;
+  let marc: Client;
+  let marcId: number;
+
+  beforeAll(async () => {
+    backend = await startBackend();
+    owner = new Client(backend.url);
+    await owner.login();
+    await owner.get('/api/setup/dids');
+    await owner.post('/api/setup/complete');
+  }, 30_000);
+
+  afterAll(async () => {
+    await backend?.stop();
+  });
+
+  /** Signs in from a new browser. Sign-ins are limited to ten a minute: this file makes nine. */
+  async function signIn(email: string, password: string) {
+    const client = new Client(backend.url);
+    const res = await client.post('/api/auth/login', { email, password });
+    return { client, res };
+  }
+
+  it('starts in the simple mode, where only APP_PASSWORD signs in', async () => {
+    expect((await owner.get('/api/session')).json).toMatchObject({ mode: 'simple', user: { role: 'owner' } });
+    expect(await owner.get('/api/users')).toMatchObject({ status: 409, json: { error: 'team_mode_off' } });
+    expect((await signIn('julie@example.com', 'hunter2')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+  });
+
+  it('turns the Team mode on with a first admin, once, by the owner only', async () => {
+    expect((await owner.post('/api/team', { email: 'not-an-email', password: 'correct horse' })).status).toBe(400);
+    expect((await owner.post('/api/team', { email: 'julie@example.com', password: 'short' })).status).toBe(400);
+    const res = await owner.post('/api/team', { email: ' Julie@Example.com ', name: 'Julie', password: 'correct horse' });
+    expect(res).toMatchObject({ status: 201, json: { id: 1, email: 'julie@example.com', name: 'Julie', role: 'admin', disabled: false, numbers: [] } });
+    expect(await owner.post('/api/team', { email: 'other@example.com', password: 'correct horse' })).toMatchObject({ status: 409, json: { error: 'team_mode_on' } });
+    // The owner stays signed in, and can always come back with APP_PASSWORD.
+    expect((await owner.get('/api/session')).json).toMatchObject({ mode: 'team', user: { id: null, role: 'owner' } });
+  });
+
+  it('signs users in by email', async () => {
+    expect((await signIn('julie@example.com', 'wrong password')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+    expect((await signIn('nobody@example.com', 'correct horse')).res).toMatchObject({ status: 401, json: { error: 'wrong_password' } });
+    admin = (await signIn('JULIE@example.com', 'correct horse')).client;
+    expect((await admin.get('/api/session')).json).toMatchObject({
+      authenticated: true,
+      mode: 'team',
+      user: { id: 1, email: 'julie@example.com', name: 'Julie', role: 'admin' },
+    });
+  });
+
+  it('lets admins add users, with the numbers each one texts from', async () => {
+    const numbers = [
+      { did: '4505550199', canSend: false },
+      { did: MONTREAL, canSend: true },
+    ];
+    const res = await admin.post('/api/users', { email: 'marc@example.com', name: 'Marc', password: 'marc password', role: 'user', numbers });
+    expect(res).toMatchObject({ status: 201, json: { email: 'marc@example.com', name: 'Marc', role: 'user', disabled: false, numbers } });
+    marcId = res.json.id;
+    expect(await admin.post('/api/users', { email: 'marc@example.com', password: 'another one', role: 'user' })).toMatchObject({ status: 409, json: { error: 'email_taken' } });
+    expect(
+      await admin.post('/api/users', { email: 'x@example.com', password: 'another one', role: 'user', numbers: [{ did: '9995550000', canSend: true }] }),
+    ).toMatchObject({ status: 400, json: { error: 'unknown_did', dids: ['9995550000'] } });
+    expect((await admin.post('/api/users', { email: 'x@example.com', password: 'another one', role: 'owner' })).status).toBe(400);
+    expect(((await admin.get('/api/users')).json as UserDto[]).map((u) => u.email)).toEqual(['julie@example.com', 'marc@example.com']);
+    const patched = await admin.request('PATCH', `/api/users/${marcId}`, { name: 'Marc-André', numbers: [{ did: MONTREAL, canSend: false }] });
+    expect(patched.json).toMatchObject({ name: 'Marc-André', numbers: [{ did: MONTREAL, canSend: false }] });
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { name: '  ' })).json).toMatchObject({ name: null });
+    expect((await admin.request('PATCH', '/api/users/99', { name: 'x' })).status).toBe(404);
+  });
+
+  it('keeps users out of what only admins change', async () => {
+    marc = (await signIn('marc@example.com', 'marc password')).client;
+    expect((await marc.get('/api/session')).json).toMatchObject({ user: { id: marcId, email: 'marc@example.com', role: 'user' } });
+    for (const url of ['/api/users', '/api/setup/status', '/api/accounts', '/api/webhook']) {
+      expect(await marc.get(url)).toMatchObject({ status: 403, json: { error: 'forbidden' } });
+    }
+    expect((await marc.request('PATCH', `/api/dids/${MONTREAL}`, { label: 'x' })).status).toBe(403);
+    expect((await marc.request('PATCH', '/api/users/1', { disabled: true })).status).toBe(403);
+    expect((await marc.post('/api/team', { email: 'y@example.com', password: 'correct horse' })).status).toBe(403);
+    expect((await admin.post('/api/team', { email: 'y@example.com', password: 'correct horse' })).status).toBe(403);
+    expect((await marc.get('/api/conversations')).status).toBe(200);
+  });
+
+  it('stops admins from locking themselves out', async () => {
+    expect((await admin.request('PATCH', '/api/users/1', { disabled: true })).json).toEqual({ error: 'cannot_change_self' });
+    expect((await admin.request('PATCH', '/api/users/1', { role: 'user' })).json).toEqual({ error: 'cannot_change_self' });
+    expect((await admin.request('DELETE', '/api/users/1')).json).toEqual({ error: 'cannot_change_self' });
+  });
+
+  /** A tab's poll as `client`: its events since its last one. The server checks VoIP.ms after answering. */
+  const cursors = new Map<Client, string>();
+  async function poll(client: Client): Promise<ServerEvent[]> {
+    const after = cursors.get(client);
+    const query = new URLSearchParams({ tab: 'tab-00000002', visible: '1', ...(after ? { after } : {}) });
+    const body = (await client.get(`/api/events/poll?${query}`)).json as EventsPollDto;
+    cursors.set(client, body.cursor);
+    return body.events;
+  }
+
+  function send(client: Client, fields: Record<string, string>, files: { type: string; data: Buffer }[] = []) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f.data)], { type: f.type }), 'file');
+    return client.post('/api/messages', form);
+  }
+
+  it('shows users the numbers given to them only, and lets them text from those they may send from', async () => {
+    const all = await waitFor(async () => {
+      await poll(owner);
+      const list = (await owner.get('/api/conversations')).json as ConversationDto[];
+      return list.length === 4 && list;
+    });
+    await poll(marc);
+    expect(((await marc.get('/api/dids')).json as DidDto[]).map((d) => [d.did, d.canSend])).toEqual([[MONTREAL, false]]);
+    expect(((await admin.get('/api/dids')).json as DidDto[]).every((d) => d.canSend)).toBe(true);
+    const mine = (await marc.get('/api/conversations')).json as ConversationDto[];
+    expect(mine.map((c) => c.id)).toEqual(all.filter((c) => c.did === MONTREAL).map((c) => c.id));
+    expect(((await marc.get('/api/conversations?q=BELANGER')).json as ConversationDto[])).toEqual([]);
+
+    const garage = all.find((c) => c.did === '4505550199' && c.phone === '4505550111')!;
+    expect((await marc.get(`/api/conversations/${garage.id}`)).status).toBe(404);
+    expect((await marc.get(`/api/conversations/${garage.id}/messages`)).status).toBe(404);
+    expect((await marc.post(`/api/conversations/${garage.id}/read`)).status).toBe(404);
+    expect((await marc.request('PATCH', `/api/conversations/${garage.id}`, { archived: true })).status).toBe(404);
+    expect((await marc.get('/api/conversations/lookup?did=4505550199&phone=4505550111')).json).toEqual({ conversation: null });
+    expect(await send(marc, { did: '4505550199', to: '4505550111', body: 'x' })).toMatchObject({ status: 400, json: { error: 'unknown_did' } });
+
+    // Nor what is sent from the others, its pictures included.
+    const sent = await send(owner, { did: '4505550199', to: '4505550111', body: '' }, [{ type: 'image/png', data: PNG }]);
+    expect(sent.json.message.sentBy).toEqual({ userId: null, name: null });
+    const picture = (sent.json as { message: MessageDto }).message.attachments[0]!;
+    expect((await owner.get(picture.url!)).status).toBe(200);
+    expect((await marc.get(picture.url!)).status).toBe(404);
+    expect((await marc.post(`/api/media/${picture.id}/retry`)).status).toBe(404);
+    const events = await waitFor(async () => {
+      const batch = await poll(owner);
+      return batch.some((e) => e.type === 'message' && e.message.status === 'sent') && batch;
+    });
+    expect(events.some((e) => e.type === 'message' && e.conversation.id === garage.id)).toBe(true);
+    expect((await poll(marc)).filter((e) => 'conversation' in e)).toEqual([]);
+
+    // A number they may only read.
+    const marie = mine.find((c) => c.phone === MARIE)!;
+    const thread = (await marc.get(`/api/conversations/${marie.id}/messages`)).json as MessageDto[];
+    expect(thread.every((m) => m.sentBy === null)).toBe(true);
+    expect(await send(marc, { did: MONTREAL, to: MARIE, body: 'x' })).toMatchObject({ status: 403, json: { error: 'read_only' } });
+    expect((await marc.request('DELETE', `/api/messages/${thread[0]!.id}`)).json).toEqual({ error: 'read_only' });
+    expect((await marc.request('DELETE', `/api/conversations/${marie.id}`)).json).toEqual({ error: 'read_only' });
+    expect((await marc.post(`/api/messages/${thread[0]!.id}/retry`)).json).toEqual({ error: 'read_only' });
+  }, 30_000);
+
+  it('keeps unread counts and archives per person on the numbers set so, and says who sent each text', async () => {
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { numbers: [{ did: MONTREAL, canSend: true }] })).status).toBe(200);
+    const patched = await admin.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: false });
+    expect(patched.json).toMatchObject({ did: MONTREAL, sharedState: false });
+    expect((await marc.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: true })).status).toBe(403);
+
+    const res = await send(marc, { did: MONTREAL, to: MARIE, body: 'Je regarde ça.' });
+    expect(res.status).toBe(202);
+    const { message, conversation } = res.json as { message: MessageDto; conversation: ConversationDto };
+    // Their name, or their email without one.
+    expect(message.sentBy).toEqual({ userId: marcId, name: 'marc@example.com' });
+    expect(conversation.lastMessage?.sentBy).toEqual(message.sentBy);
+    const unread = async (client: Client) => ((await client.get(`/api/conversations/${conversation.id}`)).json as ConversationDto).unreadCount;
+    // The demo answers each text.
+    await waitFor(async () => (await poll(marc), (await unread(marc)) === 1));
+    expect(await unread(owner)).toBe(1);
+    expect(((await owner.get(`/api/conversations/${conversation.id}/messages?limit=2`)).json as MessageDto[])[0]!.sentBy).toEqual({ userId: marcId, name: 'marc@example.com' });
+
+    expect((await marc.post(`/api/conversations/${conversation.id}/read`)).json).toEqual({ ok: true });
+    expect(await unread(marc)).toBe(0);
+    expect(await unread(owner)).toBe(1);
+    expect(((await owner.get('/api/dids')).json as DidDto[]).find((d) => d.did === MONTREAL)!.unreadCount).toBe(1);
+    expect(((await marc.get('/api/dids')).json as DidDto[])[0]!.unreadCount).toBe(0);
+    // Each tab hears of the conversation as it is for its person.
+    const seen = (await poll(owner)).flatMap((e) => (e.type === 'conversation' && e.conversation.id === conversation.id ? [e.conversation.unreadCount] : []));
+    expect(seen.length).toBeGreaterThan(0);
+    expect(new Set(seen)).toEqual(new Set([1]));
+
+    expect((await marc.request('PATCH', `/api/conversations/${conversation.id}`, { archived: true })).json).toMatchObject({ archived: true });
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).not.toContain(conversation.id);
+    expect(((await owner.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
+
+    // Shared again: what someone read is read.
+    expect((await admin.request('PATCH', `/api/dids/${MONTREAL}`, { sharedState: true })).json).toMatchObject({ sharedState: true });
+    expect(await unread(owner)).toBe(0);
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
+  }, 30_000);
+
+  it('lets each person hide a number from their list and mute it, for themselves only', async () => {
+    const LAVAL = '4505550199';
+    const numbers = [{ did: MONTREAL, canSend: true }, { did: LAVAL, canSend: false }];
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { numbers })).status).toBe(200);
+    await poll(admin);
+    await poll(marc);
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: true, muted: true })).json).toMatchObject({
+      did: LAVAL,
+      visible: true,
+      hidden: true,
+      muted: true,
+    });
+    expect((await marc.request('PATCH', `/api/me/dids/${GATINEAU}`, { muted: true })).status).toBe(404);
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: 'yes' })).status).toBe(400);
+    const mine = (await marc.get('/api/conversations')).json as ConversationDto[];
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((c) => c.did === MONTREAL)).toBe(true);
+    // Still there when asked for.
+    expect(((await marc.get(`/api/conversations?did=${LAVAL}`)).json as ConversationDto[]).length).toBeGreaterThan(0);
+
+    // Nobody else's choice changes, nor their tabs.
+    expect(((await admin.get('/api/dids')).json as DidDto[]).find((d) => d.did === LAVAL)).toMatchObject({ hidden: false, muted: false });
+    expect(((await admin.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+    expect((await poll(admin)).filter((e) => e.type === 'reload')).toEqual([]);
+    expect((await poll(marc)).map((e) => e.type)).toEqual(expect.arrayContaining(['dids', 'reload']));
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: false })).json).toMatchObject({ hidden: false, muted: true });
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+  });
+
+  it('keeps an address book per number, and one of their own for each person', async () => {
+    const LAVAL = '4505550199';
+    // Marc's own: it names his conversations, and nobody else sees it.
+    const own = await marc.post('/api/contacts', { name: 'Ma sœur', phones: [MARIE], book: { kind: 'personal' } });
+    expect(own).toMatchObject({ status: 201, json: { book: { kind: 'personal' }, editable: true } });
+    const marie = ((await marc.get('/api/conversations')).json as ConversationDto[]).find((c) => c.phone === MARIE)!;
+    expect(marie.contact?.name).toBe('Ma sœur');
+    expect(((await admin.get(`/api/conversations/${marie.id}`)).json as ConversationDto).contact?.name).toBe('Marie Tremblay');
+    expect(((await admin.get('/api/contacts')).json as ContactDto[]).map((c) => c.name)).not.toContain('Ma sœur');
+
+    // Every number's book is the admins'; a number's, theirs and that of whoever may text from it.
+    const book = (b: object) => ({ name: 'Pharmacie', phones: ['5145550199'], book: b });
+    expect(await marc.post('/api/contacts', book({ kind: 'all' }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [LAVAL] }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [MONTREAL] }))).toMatchObject({
+      status: 201,
+      json: { book: { kind: 'numbers', dids: [MONTREAL] }, editable: true },
+    });
+    const garage = await admin.post('/api/contacts', { name: 'Garage du coin', phones: ['4505550188'], book: { kind: 'numbers', dids: [LAVAL] } });
+    expect(garage.status).toBe(201);
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Garage du coin')).toMatchObject({ editable: false });
+    expect((await marc.request('PUT', `/api/contacts/${garage.json.id}`, { name: 'x', phones: ['4505550188'] })).json).toEqual({ error: 'read_only' });
+    expect((await marc.request('DELETE', `/api/contacts/${garage.json.id}`)).json).toEqual({ error: 'read_only' });
+    // Alex is in every number's book, which Marc may not change.
+    expect(await marc.post('/api/contacts', { name: 'Alex', phones: ['5145550187'], book: { kind: 'numbers', dids: [MONTREAL] }, force: true })).toMatchObject({
+      status: 409,
+      json: { error: 'phone_locked', phones: ['5145550187'] },
+    });
+
+    // Imports go to their own book.
+    const imported = await marc.post('/api/contacts/import', { vcard: 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Paul\r\nTEL:514-555-0166\r\nEND:VCARD\r\n' });
+    expect(imported.json).toMatchObject({ imported: 1 });
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Paul')).toMatchObject({ book: { kind: 'personal' } });
+  });
+
+  it('lets users change their own name and password, signing their other browsers out', async () => {
+    const phone = (await signIn('marc@example.com', 'marc password')).client;
+    expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);
+    expect(await marc.request('PATCH', '/api/me', { password: { current: 'wrong', next: 'new marc password' } })).toMatchObject({ status: 400, json: { error: 'wrong_password' } });
+    expect((await marc.request('PATCH', '/api/me', { password: { current: 'marc password', next: 'short' } })).status).toBe(400);
+    const res = await marc.request('PATCH', '/api/me', { name: 'Marc', password: { current: 'marc password', next: 'new marc password' } });
+    expect(res.json).toMatchObject({ id: marcId, name: 'Marc' });
+    expect((await phone.get('/api/conversations')).status).toBe(401);
+    expect((await marc.get('/api/conversations')).status).toBe(200);
+    expect(await owner.request('PATCH', '/api/me', { name: 'x' })).toMatchObject({ status: 409, json: { error: 'owner_has_no_account' } });
+  });
+
+  it('lists and ends the sessions of whoever is signed in, and only theirs', async () => {
+    const phone = (await signIn('marc@example.com', 'new marc password')).client;
+    const sessions = (await marc.get('/api/sessions')).json as SessionInfoDto[];
+    expect(sessions).toHaveLength(2);
+    const other = sessions.find((s) => !s.current)!;
+    expect(other.id).toMatch(/^[\w-]{16}$/);
+    expect((await admin.request('DELETE', `/api/sessions/${other.id}`)).status).toBe(404);
+    expect((await marc.request('DELETE', `/api/sessions/${other.id}`)).json).toEqual({ ok: true });
+    expect((await phone.get('/api/conversations')).status).toBe(401);
+    expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+  });
+
+  it('keeps a log of sign-ins and changes for the admins', async () => {
+    const page = (await admin.get('/api/activity')).json as ActivityPageDto;
+    const seen = page.entries.map((e) => [e.action, e.actor?.name ?? null, e.target]);
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        ['sign_in_failed', null, 'nobody@example.com'],
+        ['team_enabled', null, 'julie@example.com'],
+        ['user_added', 'Julie', 'marc@example.com'],
+        ['number_changed', 'Julie', MONTREAL],
+        // He had no name yet: his email, as it was then.
+        ['password_changed', 'marc@example.com', null],
+      ]),
+    );
+    // The latest first, with who did it and from where.
+    expect(page.entries[0]!.id).toBeGreaterThan(page.entries[1]!.id);
+    expect(page.entries.find((e) => e.action === 'sign_in_failed')).toMatchObject({ actor: null, ip: '127.0.0.1' });
+    expect(page.entries.find((e) => e.action === 'team_enabled')!.actor).toEqual({ userId: null, name: null });
+    expect(page.entries.find((e) => e.action === 'user_changed')!.detail).toMatchObject({ changes: expect.arrayContaining(['numbers']) });
+    expect(page.entries.find((e) => e.action === 'sign_in' && e.actor?.userId === marcId)).toBeTruthy();
+    expect((await marc.get('/api/activity')).status).toBe(403);
+    expect((await admin.get(`/api/activity?before=${page.entries[0]!.id}`)).json.entries[0].id).toBe(page.entries[1]!.id);
+  });
+
+  it('turns a disabled user away, even signed in', async () => {
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { disabled: true })).json).toMatchObject({ disabled: true });
+    expect((await marc.get('/api/conversations')).status).toBe(401);
+    expect((await signIn('marc@example.com', 'new marc password')).res.status).toBe(401);
+    expect((await admin.request('DELETE', `/api/users/${marcId}`)).json).toEqual({ ok: true });
+    expect((await admin.request('DELETE', `/api/users/${marcId}`)).status).toBe(404);
+    expect(((await admin.get('/api/users')).json as UserDto[]).map((u) => u.email)).toEqual(['julie@example.com']);
+  });
+
+  it('ends the session on sign-out', async () => {
+    const cookie = admin.cookie;
+    expect((await admin.post('/api/auth/logout')).json).toEqual({ ok: true });
+    const replay = new Client(backend.url);
+    replay.cookie = cookie;
+    expect((await replay.get('/api/conversations')).status).toBe(401);
+  });
 });

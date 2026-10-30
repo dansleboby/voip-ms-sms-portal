@@ -8,11 +8,11 @@ use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
- * Keeps the database in step with VoIP.ms by polling getSMS/getMMS
- * (server/sync.ts). There is no process of its own to run a timer: checks
- * happen when an open tab polls (every POLL_INTERVAL_ACTIVE) and when the
- * cron job runs (every POLL_INTERVAL_IDLE, at most once a minute). What the
- * Docker version keeps in memory lives in the settings table.
+ * Keeps the database in step with VoIP.ms by polling getSMS/getMMS. There
+ * is no process of its own to run a timer: checks happen when an open tab
+ * polls (every POLL_INTERVAL_ACTIVE) and when the cron job runs (every
+ * POLL_INTERVAL_IDLE; at most once a minute on shared hosting, every 10 s
+ * in Docker). Its state lives in the settings table.
  *
  * VoIP.ms keeps the history, so polling never loses anything: after a
  * downtime the next check widens its window back to the last success.
@@ -49,22 +49,39 @@ final class Sync
         private readonly int $pollIdleMs,
         private readonly string $lockDir,
         private readonly \Closure $onIncoming,
-        private readonly string $cronCommand,
+        /** The line for cPanel's cron jobs; null where the server runs its own (Docker). */
+        private readonly ?string $cronCommand,
         /** VoIP.ms announcing texts: with every number covered, checks become a safety net. */
         private readonly ?Webhook $webhook = null,
+        /** The VoIP.ms account checked; each has its own (Accounts). */
+        private readonly int $accountId = Repo::PRIMARY_ACCOUNT,
+        /** @var ?\Closure(): void tells the tabs the state changed; by default, this account's own status */
+        private readonly ?\Closure $publish = null,
     ) {
+    }
+
+    /** This account's setting key: the first account keeps the keys of 1.x. */
+    private function key(string $key): string
+    {
+        return Repo::accountKey($this->accountId, $key);
+    }
+
+    /** A check of this account, and only this one, at a time. */
+    private function lockName(): string
+    {
+        return $this->accountId === Repo::PRIMARY_ACCOUNT ? 'sync' : "sync-$this->accountId";
     }
 
     public function status(): array
     {
-        $last = $this->repo->getSetting(self::LAST_SUCCESS_KEY);
-        $checked = $this->repo->getSetting(self::LAST_CHECK_KEY);
-        $error = $this->repo->getSetting(self::LAST_ERROR_KEY);
+        $last = $this->repo->getSetting($this->key(self::LAST_SUCCESS_KEY));
+        $checked = $this->repo->getSetting($this->key(self::LAST_CHECK_KEY));
+        $error = $this->repo->getSetting($this->key(self::LAST_ERROR_KEY));
         $import = $this->import();
         $cron = $this->repo->getSetting(self::CRON_KEY);
         if (!($this->isEnabled)()) {
             $state = 'disabled';
-        } elseif (Lock::isHeld($this->lockDir, 'sync')) {
+        } elseif (Lock::isHeld($this->lockDir, $this->lockName())) {
             $state = 'syncing';
         } else {
             $state = $error !== null ? 'error' : 'idle';
@@ -76,9 +93,8 @@ final class Sync
             'lastCheckAt' => $checked !== null ? (int) $checked : null,
             'lastError' => $error,
             'importing' => $import ? ['done' => $import['done'], 'total' => $import['total']] : null,
-            'cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand],
             'webhook' => $this->webhook?->summary(),
-        ];
+        ] + ($this->cronCommand === null ? [] : ['cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand]]);
     }
 
     public function recordCronRun(): void
@@ -94,9 +110,9 @@ final class Sync
     public function isDue(bool $active, bool $opening = false): bool
     {
         $interval = $active ? $this->pollActiveMs : $this->pollIdleMs;
-        $errors = (int) ($this->repo->getSetting(self::ERRORS_KEY) ?? 0);
+        $errors = (int) ($this->repo->getSetting($this->key(self::ERRORS_KEY)) ?? 0);
         if ($errors > 0) {
-            $interval = $this->repo->getSetting(self::LAST_ERROR_KEY) === 'api_limit_exceeded'
+            $interval = $this->repo->getSetting($this->key(self::LAST_ERROR_KEY)) === 'api_limit_exceeded'
                 ? self::RATE_LIMIT_BACKOFF_MS
                 : min($interval * 2 ** ($errors - 1), self::MAX_ERROR_BACKOFF_MS);
         } elseif (!$opening && $this->webhook?->complete()) {
@@ -104,7 +120,7 @@ final class Sync
         }
         // Polls and cron runs do not land exactly on the interval: a little early still counts.
         $slack = min(5000, intdiv($interval, 4));
-        return Time::nowMs() - (int) ($this->repo->getSetting(self::LAST_CHECK_KEY) ?? 0) >= $interval - $slack;
+        return Time::nowMs() - (int) ($this->repo->getSetting($this->key(self::LAST_CHECK_KEY)) ?? 0) >= $interval - $slack;
     }
 
     /**
@@ -117,26 +133,26 @@ final class Sync
         if ($client === null || !($this->isEnabled)()) {
             return;
         }
-        $lock = $wait ? Lock::wait($this->lockDir, 'sync', 60) : Lock::take($this->lockDir, 'sync');
+        $lock = $wait ? Lock::wait($this->lockDir, $this->lockName(), 60) : Lock::take($this->lockDir, $this->lockName());
         if ($lock === null) {
             return;
         }
         $now = Time::nowMs();
-        $last = (int) ($this->repo->getSetting(self::LAST_SUCCESS_KEY) ?? 0);
+        $last = (int) ($this->repo->getSetting($this->key(self::LAST_SUCCESS_KEY)) ?? 0);
         // A day before the last success absorbs clock and time zone edges; at most 90 days back.
         $from = max(min($now - Time::DAY_MS, ($last ?: $now) - Time::DAY_MS), $now - 90 * Time::DAY_MS);
         try {
             // The very first sync only sets a baseline: no unread badges or notifications for old texts.
             $this->syncRange($client, $from, $now + Time::DAY_MS, $last > 0 ? PHP_INT_MIN : PHP_INT_MAX);
-            $this->repo->setSetting(self::LAST_SUCCESS_KEY, (string) $now);
-            $this->repo->deleteSetting(self::LAST_ERROR_KEY);
-            $this->repo->deleteSetting(self::ERRORS_KEY);
+            $this->repo->setSetting($this->key(self::LAST_SUCCESS_KEY), (string) $now);
+            $this->repo->deleteSetting($this->key(self::LAST_ERROR_KEY));
+            $this->repo->deleteSetting($this->key(self::ERRORS_KEY));
         } catch (VoipMsError $e) {
             $this->recordError($e->errorCode, $e);
         } catch (\Throwable $e) {
             $this->recordError('internal_error', $e);
         } finally {
-            $this->repo->setSetting(self::LAST_CHECK_KEY, (string) $now);
+            $this->repo->setSetting($this->key(self::LAST_CHECK_KEY), (string) $now);
             $lock->release();
         }
         $this->publishStatus();
@@ -144,8 +160,8 @@ final class Sync
 
     private function recordError(string $code, \Throwable $e): void
     {
-        $this->repo->setSetting(self::LAST_ERROR_KEY, $code);
-        $this->repo->setSetting(self::ERRORS_KEY, (string) ((int) ($this->repo->getSetting(self::ERRORS_KEY) ?? 0) + 1));
+        $this->repo->setSetting($this->key(self::LAST_ERROR_KEY), $code);
+        $this->repo->setSetting($this->key(self::ERRORS_KEY), (string) ((int) ($this->repo->getSetting($this->key(self::ERRORS_KEY)) ?? 0) + 1));
         Log::warn('VoIP.ms sync failed', ['code' => $code, 'err' => $e]);
     }
 
@@ -153,7 +169,7 @@ final class Sync
 
     private function import(): ?array
     {
-        $raw = $this->repo->getSetting(self::IMPORT_KEY);
+        $raw = $this->repo->getSetting($this->key(self::IMPORT_KEY));
         $job = $raw !== null ? json_decode($raw, true) : null;
         return is_array($job) ? $job : null;
     }
@@ -170,10 +186,10 @@ final class Sync
             return;
         }
         $now = Time::nowMs();
-        $last = (int) ($this->repo->getSetting(self::LAST_SUCCESS_KEY) ?? 0);
+        $last = (int) ($this->repo->getSetting($this->key(self::LAST_SUCCESS_KEY)) ?? 0);
         // Newest first, so recent conversations show up while older ones load.
         $windows = array_reverse(self::splitWindows($now - $days * Time::DAY_MS, $now + Time::DAY_MS, self::WINDOW_DAYS));
-        $this->repo->setSetting(self::IMPORT_KEY, json_encode([
+        $this->repo->setSetting($this->key(self::IMPORT_KEY), json_encode([
             'windows' => $windows,
             'total' => count($windows),
             'done' => 0,
@@ -190,7 +206,7 @@ final class Sync
         if ($job === null || $client === null) {
             return;
         }
-        $lock = Lock::take($this->lockDir, 'sync');
+        $lock = Lock::take($this->lockDir, $this->lockName());
         if ($lock === null) {
             return;
         }
@@ -199,16 +215,16 @@ final class Sync
                 [$from, $to] = array_shift($job['windows']);
                 $this->syncRange($client, $from, $to, $job['liveAfter']);
                 $job['done']++;
-                $this->repo->setSetting(self::IMPORT_KEY, json_encode($job));
+                $this->repo->setSetting($this->key(self::IMPORT_KEY), json_encode($job));
                 $this->events->broadcast(['type' => 'reload']);
                 $this->publishStatus();
             }
             if (!$job['windows']) {
-                $this->repo->deleteSetting(self::IMPORT_KEY);
+                $this->repo->deleteSetting($this->key(self::IMPORT_KEY));
             }
         } catch (\Throwable $e) {
             Log::error('History import failed', ['err' => $e]);
-            $this->repo->deleteSetting(self::IMPORT_KEY);
+            $this->repo->deleteSetting($this->key(self::IMPORT_KEY));
         } finally {
             $lock->release();
         }
@@ -276,7 +292,13 @@ final class Sync
                     if ($remote['id'] === '' || !$repo->allowsDid($did)) {
                         continue;
                     }
-                    $existing = $repo->findMessageByRemote($remote['kind'], $remote['id']);
+                    // A number known under another account is that account's to fetch.
+                    $owner = $repo->accountOfDid($did);
+                    if ($owner !== null && $owner !== $this->accountId) {
+                        continue;
+                    }
+                    $remoteId = Repo::storedRemoteId($this->accountId, $remote['id']);
+                    $existing = $repo->findMessageByRemote($remote['kind'], $remoteId);
                     if ($existing) {
                         // Deleted in the portal: it stays deleted.
                         if ($existing['deleted']) {
@@ -298,8 +320,8 @@ final class Sync
                     if ($did === '' || $phone === '') {
                         continue;
                     }
-                    if (!$repo->getDid($did)) {
-                        $repo->ensureDid($did);
+                    if ($owner === null) {
+                        $repo->ensureDid($did, $this->accountId);
                         $newDid = true;
                     }
                     $conversationId = $repo->getOrCreateConversation($did, $phone);
@@ -311,7 +333,7 @@ final class Sync
 
                     $live = $sentAt > $liveAfter;
                     if ($remote['direction'] === 'out') {
-                        $adopted = $this->adoptLocalSend($conversationId, $remote, $sentAt);
+                        $adopted = $this->adoptLocalSend($conversationId, $remote, $remoteId, $sentAt);
                         if ($adopted !== null) {
                             $changed[] = ['messageId' => $adopted, 'conversationId' => $conversationId];
                             continue;
@@ -321,7 +343,7 @@ final class Sync
                     $messageId = $repo->insertMessage([
                         'conversationId' => $conversationId,
                         'kind' => $remote['kind'],
-                        'remoteId' => $remote['id'],
+                        'remoteId' => $remoteId,
                         'direction' => $remote['direction'],
                         'body' => $remote['body'],
                         'sentAt' => $sentAt,
@@ -372,7 +394,7 @@ final class Sync
      * attached to the local copy instead of showing twice. Only failed
      * attempts qualify: a message still waiting to be sent must go out.
      */
-    private function adoptLocalSend(int $conversationId, array $remote, int $sentAt): ?int
+    private function adoptLocalSend(int $conversationId, array $remote, string $remoteId, int $sentAt): ?int
     {
         $id = $this->repo->run(
             "SELECT m.id FROM messages m
@@ -394,7 +416,7 @@ final class Sync
         }
         $this->repo->updateMessage((int) $id, [
             'kind' => $remote['kind'],
-            'remoteId' => $remote['id'],
+            'remoteId' => $remoteId,
             'status' => 'sent',
             'error' => null,
             'carrierStatus' => $remote['carrierStatus'],
@@ -404,7 +426,11 @@ final class Sync
 
     public function publishStatus(): void
     {
-        $this->events->broadcast(['type' => 'sync', 'status' => $this->status()]);
+        if ($this->publish !== null) {
+            ($this->publish)();
+        } else {
+            $this->events->broadcast(['type' => 'sync', 'status' => $this->status()]);
+        }
     }
 
     /**

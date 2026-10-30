@@ -27,6 +27,7 @@ Les étapes :
 2. Installer : [A. sur cPanel](#2a-installer-sur-un-hébergement-cpanel) ou [B. avec Docker](#2b-installer-avec-docker)
 3. [Assistant de configuration](#3-assistant-de-configuration) (pour tous)
 4. [Sur votre téléphone](#4-sur-votre-téléphone)
+5. [Plusieurs personnes?](#5-plusieurs-personnes-facultatif) (facultatif)
 
 ## 1. Préparer votre compte VoIP.ms
 
@@ -41,7 +42,7 @@ Vos numéros doivent aussi avoir les SMS activés : l'assistant de configuration
 
 ## 2A. Installer sur un hébergement cPanel
 
-Il faut PHP 8.1 ou plus récent, ce que la plupart des hébergeurs ont par défaut. Les libellés de cPanel sont donnés en français, avec l'anglais entre parenthèses.
+Il faut PHP 8.4 ou plus récent. La plupart des hébergeurs l'offrent, mais pas toujours par défaut : l'étape 2A-8 montre où le choisir. Les libellés de cPanel sont donnés en français, avec l'anglais entre parenthèses.
 
 **Mettre les fichiers sur l'hébergement**
 
@@ -62,6 +63,8 @@ Il faut PHP 8.1 ou plus récent, ce que la plupart des hébergeurs ont par défa
 
    Sur les anciennes versions de cPanel, la page s'appelle **Sous-domaines** (*Subdomains*) : réglez sa racine du document à `sms-portal-site` de la même façon.
 8. Ouvrez **État SSL/TLS** (*SSL/TLS Status*) et cliquez sur **Exécuter AutoSSL** (*Run AutoSSL*). Le site obtient ainsi le HTTPS (le cadenas), nécessaire aux notifications. Cela peut prendre quelques minutes.
+
+   Ouvrez ensuite **MultiPHP Manager** (ou **Select PHP Version**), cochez la nouvelle adresse, choisissez **PHP 8.4** ou une version plus récente et cliquez sur **Appliquer** (*Apply*). Si la liste s'arrête avant 8.4, demandez-la à votre hébergeur.
 
 **Choisir le mot de passe du portail**
 
@@ -146,12 +149,16 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
 
 **Envoyer une notification test**, dans les **Réglages**, vérifie que tout fonctionne.
 
+## 5. Plusieurs personnes? (facultatif)
+
+Pour un bureau, une famille ou une agence, le mode Équipe donne à chacun son courriel, son mot de passe et ses numéros : voir le [guide du mode Équipe](team.fr.md).
+
 ## Un problème?
 
 | Ce que vous voyez | Quoi faire |
 |---|---|
 | Une page « **Forbidden** », ou « **Ce dossier est la partie privée du Portail SMS** » | La racine du document de l'adresse n'est pas `sms-portal-site`. Dans cPanel → **Domaines**, elle doit se terminer par `/sms-portal-site`, et ce dossier doit être à côté de `sms-portal`, pas dedans (étape 2A-7). Si elle est bonne, vérifiez les permissions dans le Gestionnaire de fichiers : 644 pour les fichiers, 755 pour les dossiers. |
-| La page de connexion affiche « **Le serveur n’est pas encore prêt** » | Elle dit ce qui manque. Le plus souvent `config.php` (étape 2A-9) ou le mot de passe dedans (étape 2A-10). Si elle parle de PHP 8.1 : dans cPanel, ouvrez **MultiPHP Manager** (ou **Select PHP Version**) et choisissez PHP 8.1 ou plus récent pour l'adresse. |
+| La page de connexion affiche « **Le serveur n’est pas encore prêt** » | Elle dit ce qui manque. Le plus souvent `config.php` (étape 2A-9) ou le mot de passe dedans (étape 2A-10). Si elle parle de PHP 8.4 : dans cPanel, ouvrez **MultiPHP Manager** (ou **Select PHP Version**) et choisissez PHP 8.4 ou plus récent pour l'adresse. |
 | « **Mot de passe incorrect.** » à la connexion | Le mot de passe est l'`APP_PASSWORD` écrit dans `config.php` (cPanel) ou dans `docker-compose.yml` (Docker), pas votre mot de passe VoIP.ms. |
 | « **Courriel ou mot de passe API incorrect.** » dans l'assistant | Utilisez le mot de passe API de l'étape 1, pas votre mot de passe de connexion à VoIP.ms, et le courriel avec lequel vous vous connectez à VoIP.ms. Au besoin, enregistrez un nouveau mot de passe API sur la page de VoIP.ms et tapez-le de nouveau. |
 | « **Cette adresse IP n’est pas autorisée dans VoIP.ms.** » | L'adresse affichée par l'assistant n'est pas encore enregistrée dans **Enable IP Addresses** : collez-la, cliquez sur **Save IP Addresses**, attendez une minute, puis cliquez de nouveau sur **Vérifier l’accès**. |

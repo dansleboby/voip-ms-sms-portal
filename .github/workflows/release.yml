@@ -21,8 +21,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      REQUIRE_PHP: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +38,12 @@ jobs:
             echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - if: steps.version.outputs.new == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, openssl, curl, mbstring, intl
+          coverage: none
       - if: steps.version.outputs.new == 'true'
         uses: actions/setup-node@v4
         with:

@@ -1,16 +1,24 @@
 import type {
+  AccountCheckDto,
+  AccountDto,
+  ActivityPageDto,
   ConnectionTestDto,
+  ContactBook,
   ContactDto,
   ConversationDto,
   DidDto,
   EventsPollDto,
   MessageDto,
   SessionDto,
+  SessionInfoDto,
   SetupStatusDto,
   SyncStatusDto,
   UpdateStatusDto,
+  UserDto,
   WebhookStatusDto,
 } from '../../shared/types';
+
+type UserInput = Pick<UserDto, 'name' | 'role' | 'numbers'>;
 
 export class ApiError extends Error {
   constructor(
@@ -68,21 +76,41 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 
 export const api = {
   session: () => request<SessionDto>('GET', '/api/session'),
-  login: (password: string) => request<{ ok: true }>('POST', '/api/auth/login', { password }),
+  /** No email: the owner's APP_PASSWORD. */
+  login: (password: string, email?: string) => request<{ ok: true }>('POST', '/api/auth/login', email ? { email, password } : { password }),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
+
+  /** Turns the Team mode on, for good, with its first admin. */
+  startTeam: (admin: { email: string; name: string | null; password: string }) => request<UserDto>('POST', '/api/team', admin),
+  users: () => request<UserDto[]>('GET', '/api/users'),
+  createUser: (user: UserInput & { email: string; password: string }) => request<UserDto>('POST', '/api/users', user),
+  updateUser: (id: number, patch: Partial<UserInput> & { password?: string; disabled?: boolean }) => request<UserDto>('PATCH', `/api/users/${id}`, patch),
+  deleteUser: (id: number) => request<{ ok: true }>('DELETE', `/api/users/${id}`),
+  updateMe: (patch: { name?: string | null; password?: { current: string; next: string } }) => request<UserDto>('PATCH', '/api/me', patch),
+  sessions: () => request<SessionInfoDto[]>('GET', '/api/sessions'),
+  endSession: (id: string) => request<{ ok: true }>('DELETE', `/api/sessions/${encodeURIComponent(id)}`),
 
   setupStatus: () => request<SetupStatusDto>('GET', '/api/setup/status'),
   saveCredentials: (username: string, password: string) =>
     request<ConnectionTestDto>('POST', '/api/setup/credentials', { username, password }),
   testConnection: () => request<ConnectionTestDto>('POST', '/api/setup/test'),
+
+  activity: (before?: number) => request<ActivityPageDto>('GET', `/api/activity${before ? `?before=${before}` : ''}`),
+  accounts: () => request<AccountDto[]>('GET', '/api/accounts'),
+  addAccount: (a: { label: string | null; username: string; password: string }) => request<AccountCheckDto>('POST', '/api/accounts', a),
+  renameAccount: (id: number, label: string | null) => request<AccountDto>('PATCH', `/api/accounts/${id}`, { label }),
+  setAccountCredentials: (id: number, c: { username: string; password: string }) => request<AccountCheckDto>('PUT', `/api/accounts/${id}/credentials`, c),
+  testAccount: (id: number) => request<AccountCheckDto>('POST', `/api/accounts/${id}/test`),
   refreshDids: () => request<DidDto[]>('GET', '/api/setup/dids'),
   importHistory: (days: number) => request<{ ok: true }>('POST', '/api/setup/import', { days }),
   completeSetup: () => request<{ ok: true }>('POST', '/api/setup/complete'),
 
   dids: () => request<DidDto[]>('GET', '/api/dids'),
-  updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position'>>) =>
+  updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position' | 'sharedState'>>) =>
     request<DidDto>('PATCH', `/api/dids/${did}`, patch),
   enableSms: (did: string) => request<DidDto>('POST', `/api/dids/${did}/enable-sms`),
+  /** What the person signed in chose for a number, for themselves. */
+  updateMyDid: (did: string, patch: Partial<Pick<DidDto, 'hidden' | 'muted'>>) => request<DidDto>('PATCH', `/api/me/dids/${did}`, patch),
 
   conversations: (params: { q?: string; archived?: boolean } = {}) => {
     const query = new URLSearchParams();
@@ -120,14 +148,15 @@ export const api = {
   retryMedia: (attachmentId: number) => request<{ ok: true }>('POST', `/api/media/${attachmentId}/retry`),
 
   contacts: () => request<ContactDto[]>('GET', '/api/contacts'),
-  createContact: (c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>
+  createContact: (c: { name: string; phones: string[]; notes?: string | null; force?: boolean; book?: ContactBook }) =>
     request<ContactDto>('POST', '/api/contacts', c),
-  updateContact: (id: number, c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>
+  updateContact: (id: number, c: { name: string; phones: string[]; notes?: string | null; force?: boolean; book?: ContactBook }) =>
     request<ContactDto>('PUT', `/api/contacts/${id}`, c),
   deleteContact: (id: number) => request<{ ok: true }>('DELETE', `/api/contacts/${id}`),
   /** At most MAX_DELETE_IDS (shared/contact.ts) per request. */
   deleteContacts: (ids: number[]) => request<{ deleted: number }>('POST', '/api/contacts/delete', { ids }),
-  importContacts: (vcard: string) => request<{ imported: number; skipped: number; ids: number[] }>('POST', '/api/contacts/import', { vcard }),
+  importContacts: (vcard: string, book?: ContactBook) =>
+    request<{ imported: number; skipped: number; ids: number[] }>('POST', '/api/contacts/import', { vcard, book }),
 
   pushKey: () => request<{ publicKey: string }>('GET', '/api/push/key'),
   savePushSubscription: (subscription: object) => request<{ ok: true }>('POST', '/api/push/subscriptions', subscription),

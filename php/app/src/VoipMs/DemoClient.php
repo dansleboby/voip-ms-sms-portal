@@ -6,11 +6,12 @@ namespace SmsPortal\VoipMs;
 
 use PDO;
 use SmsPortal\Db;
+use SmsPortal\Repo;
 use SmsPortal\Time;
 
 /**
- * Stand-in for a VoIP.ms account (DEMO_MODE): the sample numbers,
- * conversations and auto-reply of server/voipms/demo.ts. Every PHP request
+ * Stand-in for a VoIP.ms account (DEMO_MODE): sample numbers, made-up
+ * conversations, and a reply to whatever is sent. Every PHP request
  * starts afresh, so the account lives in its own table, and the auto-reply
  * is a message dated 4 s in the future that stays hidden until then.
  */
@@ -19,12 +20,19 @@ final class DemoClient implements VoipMsApi
     private const HOUR = 3_600_000;
     private const MIN = 60_000;
     private const FIRST_ID = ['sms' => 900000, 'mms' => 50000];
+    /** VoIP.ms ids are unique across accounts: the second sample's never meet the first's. */
+    private const OTHER_FIRST_ID = ['sms' => 700000, 'mms' => 30000];
     private const REPLY = 'Bien reçu 👍 (réponse automatique de la démo)';
 
     public const DIDS = [
         ['did' => '5145550100', 'description' => 'Montréal, QC', 'smsAvailable' => true, 'smsEnabled' => true, 'mmsAvailable' => true],
         ['did' => '4505550199', 'description' => 'Laval, QC', 'smsAvailable' => true, 'smsEnabled' => true, 'mmsAvailable' => true],
         ['did' => '8195550123', 'description' => 'Gatineau, QC', 'smsAvailable' => true, 'smsEnabled' => false, 'mmsAvailable' => false],
+    ];
+
+    /** A second VoIP.ms account, as an agency keeps one per client. */
+    public const OTHER_DIDS = [
+        ['did' => '4185550142', 'description' => 'Québec, QC', 'smsAvailable' => true, 'smsEnabled' => true, 'mmsAvailable' => true],
     ];
 
     /** Contacts created locally in demo mode so names show up. */
@@ -34,17 +42,21 @@ final class DemoClient implements VoipMsApi
         ['name' => 'Garage Bélanger', 'phones' => ['4505550111'], 'icon' => 'car'],
     ];
 
-    public function __construct(private readonly PDO $db, private readonly string $timeZone)
+    /** The account's own messages: 1 is the first sample account, any other the second one. */
+    private readonly string $table;
+
+    public function __construct(private readonly PDO $db, private readonly string $timeZone, private readonly int $accountId = 1)
     {
+        $this->table = $accountId === 1 ? 'demo_messages' : "demo_messages_$accountId";
         $db->exec(
-            'CREATE TABLE IF NOT EXISTS demo_messages (
+            "CREATE TABLE IF NOT EXISTS $this->table (
                id INTEGER PRIMARY KEY, kind TEXT NOT NULL, remote_id TEXT NOT NULL, at INTEGER NOT NULL, direction TEXT NOT NULL,
                did TEXT NOT NULL, contact TEXT NOT NULL, body TEXT NOT NULL, carrier_status TEXT, media TEXT NOT NULL
-             )',
+             )",
         );
-        if ($db->query('SELECT COUNT(*) FROM demo_messages')->fetchColumn() == 0) {
+        if ($db->query("SELECT COUNT(*) FROM $this->table")->fetchColumn() == 0) {
             $this->exclusive(function (): void {
-                if ($this->db->query('SELECT COUNT(*) FROM demo_messages')->fetchColumn() == 0) {
+                if ($this->db->query("SELECT COUNT(*) FROM $this->table")->fetchColumn() == 0) {
                     $this->seed();
                 }
             });
@@ -65,17 +77,28 @@ final class DemoClient implements VoipMsApi
         }
     }
 
+    /** The sample account's numbers, as VoIP.ms first shows them. */
+    private function sample(): array
+    {
+        return $this->accountId === 1 ? self::DIDS : self::OTHER_DIDS;
+    }
+
     private function seed(): void
     {
         $day = Time::DAY_MS;
-        $seeds = [
+        $seeds = $this->accountId !== 1 ? [
+            [2 * $day + 3 * self::HOUR, '4185550142', '4185550177', 'in', 'Bonjour, est-ce que la commande de pains est prête pour vendredi?'],
+            [2 * $day + 2 * self::HOUR, '4185550142', '4185550177', 'out', 'Oui, tout sera prêt à 8 h. Merci!'],
+            [3 * self::HOUR, '4185550142', '4185550123', 'in', 'Avez-vous encore des croissants aux amandes?'],
+        ] : [
             [3 * $day + 2 * self::HOUR, '5145550100', '4385550142', 'in', 'Salut! Tu viens toujours au chalet en fin de semaine?'],
             [3 * $day + 1 * self::HOUR, '5145550100', '4385550142', 'out', 'Oui! On arrive samedi vers 10 h.'],
             [3 * $day + 50 * self::MIN, '5145550100', '4385550142', 'in', 'Parfait 😊 Apporte tes bottes, il a plu.'],
             [2 * self::HOUR, '5145550100', '4385550142', 'in', 'Regarde la vue ce matin!', [self::photo()]],
             [1 * self::HOUR + 55 * self::MIN, '5145550100', '4385550142', 'out', 'Wow, magnifique 😍'],
-            [26 * self::HOUR, '4505550199', '4505550111', 'in', 'Bonjour, votre véhicule est prêt. Vous pouvez passer le récupérer avant 17 h.'],
-            [25 * self::HOUR, '4505550199', '4505550111', 'out', 'Merci, je passe vers 16 h 30.'],
+            // Under a day old: the first check, which looks a day back by calendar date, finds them at any hour.
+            [23 * self::HOUR, '4505550199', '4505550111', 'in', 'Bonjour, votre véhicule est prêt. Vous pouvez passer le récupérer demain avant 17 h.'],
+            [22 * self::HOUR, '4505550199', '4505550111', 'out', 'Merci, je passe vers 16 h 30.'],
             [5 * $day, '5145550100', '5145550187', 'out', 'Hey Alex, are we still on for Thursday?'],
             [5 * $day - 20 * self::MIN, '5145550100', '5145550187', 'in', 'Yes! 7pm at the usual place.'],
             [12 * self::MIN, '5145550100', '5145550187', 'in', 'Running 10 min late, sorry!'],
@@ -90,11 +113,11 @@ final class DemoClient implements VoipMsApi
 
     private function add(string $kind, string $did, string $contact, string $direction, string $body, array $media, int $at): string
     {
-        $count = (int) $this->db->query('SELECT COUNT(*) FROM demo_messages WHERE kind = ' . $this->db->quote($kind))->fetchColumn();
-        $id = (string) (self::FIRST_ID[$kind] + $count);
+        $count = (int) $this->db->query("SELECT COUNT(*) FROM $this->table WHERE kind = " . $this->db->quote($kind))->fetchColumn();
+        $id = (string) (($this->accountId === 1 ? self::FIRST_ID : self::OTHER_FIRST_ID)[$kind] + $count);
         Db::run(
             $this->db,
-            'INSERT INTO demo_messages (kind, remote_id, at, direction, did, contact, body, carrier_status, media) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            "INSERT INTO $this->table (kind, remote_id, at, direction, did, contact, body, carrier_status, media) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [$kind, $id, $at, $direction, $did, $contact, $body, $direction === 'out' ? 'Delivered' : null, json_encode($media)],
         );
         return $id;
@@ -114,7 +137,7 @@ final class DemoClient implements VoipMsApi
     private const ENABLED_KEY = 'demo.smsEnabled';
     /** Each number's URL callback, once the portal changed one, kept between requests. */
     private const CALLBACKS_KEY = 'demo.callbacks';
-    /** Laval already sends its texts to another system, as numbers wired to a CRM do (server/voipms/demo.ts). */
+    /** Laval already sends its texts to another system, as numbers wired to a CRM do. */
     private const OTHER_CALLBACK = 'https://crm.example.com/sms?from={FROM}&message={MESSAGE}';
 
     public function getDids(): array
@@ -124,7 +147,7 @@ final class DemoClient implements VoipMsApi
         return array_map(
             static fn (array $d) => ['callback' => $callbacks[$d['did']] ?? null]
                 + (in_array($d['did'], $enabled, true) ? ['smsEnabled' => true, 'mmsAvailable' => true] + $d : $d),
-            self::DIDS,
+            $this->sample(),
         );
     }
 
@@ -148,8 +171,11 @@ final class DemoClient implements VoipMsApi
     /** @return array<string, ?array{url: string, retry: bool}> */
     private function callbacks(): array
     {
-        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [self::CALLBACKS_KEY])->fetchColumn();
-        return $stored === false ? ['4505550199' => ['url' => self::OTHER_CALLBACK, 'retry' => false]] : json_decode($stored, true);
+        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [Repo::accountKey($this->accountId, self::CALLBACKS_KEY)])->fetchColumn();
+        if ($stored === false) {
+            return $this->accountId === 1 ? ['4505550199' => ['url' => self::OTHER_CALLBACK, 'retry' => false]] : [];
+        }
+        return json_decode($stored, true);
     }
 
     private function storeCallback(string $did, ?array $callback): void
@@ -159,20 +185,20 @@ final class DemoClient implements VoipMsApi
         Db::run(
             $this->db,
             'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            [self::CALLBACKS_KEY, json_encode($callbacks)],
+            [Repo::accountKey($this->accountId, self::CALLBACKS_KEY), json_encode($callbacks)],
         );
     }
 
     public function deleteMessage(string $kind, string $id): void
     {
-        if (Db::run($this->db, 'DELETE FROM demo_messages WHERE kind = ? AND remote_id = ?', [$kind, $id])->rowCount() === 0) {
+        if (Db::run($this->db, "DELETE FROM $this->table WHERE kind = ? AND remote_id = ?", [$kind, $id])->rowCount() === 0) {
             throw new VoipMsError($kind === 'sms' ? 'invalid_sms' : 'invalid_mms');
         }
     }
 
     public function enableSms(string $did, ?array $callback = null): void
     {
-        if (!(array_column(self::DIDS, 'smsAvailable', 'did')[$did] ?? false)) {
+        if (!(array_column($this->sample(), 'smsAvailable', 'did')[$did] ?? false)) {
             throw new VoipMsError('invalid_did');
         }
         if ($callback !== null) {
@@ -181,21 +207,21 @@ final class DemoClient implements VoipMsApi
         Db::run(
             $this->db,
             'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-            [self::ENABLED_KEY, json_encode(array_values(array_unique([...$this->enabledByDemo(), $did])))],
+            [Repo::accountKey($this->accountId, self::ENABLED_KEY), json_encode(array_values(array_unique([...$this->enabledByDemo(), $did])))],
         );
     }
 
     /** @return list<string> */
     private function enabledByDemo(): array
     {
-        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [self::ENABLED_KEY])->fetchColumn();
+        $stored = Db::run($this->db, 'SELECT value FROM settings WHERE key = ?', [Repo::accountKey($this->accountId, self::ENABLED_KEY)])->fetchColumn();
         return $stored === false ? [] : json_decode($stored, true);
     }
 
     public function getMessages(string $kind, string $from, string $to, int $limit): array
     {
         $messages = [];
-        foreach (Db::run($this->db, 'SELECT * FROM demo_messages WHERE kind = ? AND at <= ? ORDER BY id', [$kind, Time::nowMs()])->fetchAll() as $m) {
+        foreach (Db::run($this->db, "SELECT * FROM $this->table WHERE kind = ? AND at <= ? ORDER BY id", [$kind, Time::nowMs()])->fetchAll() as $m) {
             $date = Time::epochToZonedDate($m['at'], $this->timeZone);
             if ($date < $from || $date > $to) {
                 continue;

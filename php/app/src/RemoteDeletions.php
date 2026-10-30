@@ -9,7 +9,7 @@ use SmsPortal\VoipMs\VoipMsError;
 
 /**
  * Deletes at VoIP.ms the messages deleted "at VoIP.ms too", one call each,
- * after responses and from the cron job (server/deletions.ts). A failure
+ * after responses and from the cron job. A failure
  * that may pass (network, rate limit) waits for the next run; the message
  * stays deleted in the portal whatever happens.
  */
@@ -18,8 +18,8 @@ final class RemoteDeletions
     /** Failures worth another try later; any other means VoIP.ms will not delete that message. */
     private const PASSING = ['network_error', 'http_error', 'invalid_response', 'api_limit_exceeded', 'not_configured'];
 
-    /** @param \Closure(): ?VoipMsApi $getClient */
-    public function __construct(private readonly Repo $repo, private readonly \Closure $getClient, private readonly string $lockDir)
+    /** @param \Closure(string): ?VoipMsApi $clientForDid the client of the account the message's number belongs to */
+    public function __construct(private readonly Repo $repo, private readonly \Closure $clientForDid, private readonly string $lockDir)
     {
     }
 
@@ -40,8 +40,8 @@ final class RemoteDeletions
                         return;
                     }
                     try {
-                        $client = ($this->getClient)() ?? throw new VoipMsError('not_configured');
-                        $client->deleteMessage($message['kind'], $message['remoteId']);
+                        $client = ($this->clientForDid)($message['did']) ?? throw new VoipMsError('not_configured');
+                        $client->deleteMessage($message['kind'], Repo::voipmsId($message['remoteId']));
                     } catch (VoipMsError $e) {
                         if (in_array($e->errorCode, self::PASSING, true)) {
                             return;

@@ -3,9 +3,11 @@ dist
 data
 .git
 .github
+.claude
 *.log
 .env
 .env.*
-php
 tests
-scripts
+# Settings and data of a local run of the server.
+php/app/config.php
+php/app/data

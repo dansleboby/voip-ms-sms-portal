@@ -7,14 +7,14 @@ namespace SmsPortal;
 use PDO;
 
 /**
- * The SQLite database. Its schema is the one of the Docker version
- * (server/db.ts), migration for migration, so a database can move between
- * the two; the tables only the PHP version needs are created apart from
- * that numbering.
+ * The SQLite database. Its migrations are those of the Node server of 1.x
+ * (the Docker image before 2.0), migration for migration, so the databases
+ * it left behind carry on here; the tables it kept in memory instead are
+ * created apart from that numbering.
  */
 final class Db
 {
-    /** Same list, same order as MIGRATIONS in server/db.ts; the index + 1 is PRAGMA user_version. */
+    /** Appended, never edited: the index + 1 is PRAGMA user_version. */
     private static function migrations(): array
     {
         return [
@@ -137,12 +137,129 @@ final class Db
                     }
                 }
             },
+            <<<'SQL'
+            CREATE TABLE voipms_accounts (
+              id         INTEGER PRIMARY KEY,
+              label      TEXT,
+              created_at INTEGER NOT NULL
+            );
+            INSERT INTO voipms_accounts (id, label, created_at) VALUES (1, NULL, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+            ALTER TABLE dids ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
+            SQL,
+            <<<'SQL'
+            CREATE TABLE users (
+              -- AUTOINCREMENT: a deleted user's id never goes to someone else.
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              email         TEXT NOT NULL UNIQUE,
+              name          TEXT,
+              -- pbkdf2-sha256$<iterations>$<salt>$<hash> (Passwords)
+              password_hash TEXT NOT NULL,
+              role          TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+              disabled_at   INTEGER,
+              created_at    INTEGER NOT NULL,
+              updated_at    INTEGER NOT NULL
+            );
+            CREATE TABLE user_dids (
+              user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              did      TEXT NOT NULL,
+              can_send INTEGER NOT NULL DEFAULT 1,
+              PRIMARY KEY (user_id, did)
+            );
+            CREATE TABLE sessions (
+              -- SHA-256 of the id in the cookie: the table alone signs nobody in.
+              id           TEXT PRIMARY KEY,
+              -- NULL: the owner, signed in with APP_PASSWORD.
+              user_id      INTEGER REFERENCES users(id) ON DELETE CASCADE,
+              created_at   INTEGER NOT NULL,
+              last_seen_at INTEGER NOT NULL,
+              user_agent   TEXT
+            );
+            CREATE INDEX sessions_user ON sessions(user_id);
+            SQL,
+            // What each person sees in the Team mode: numbers whose unread counts and archive are
+            // their own, who sent each text, and whose browser each push subscription is.
+            <<<'SQL'
+            -- 1: one unread count and archive for everyone; 0: one per person (conversation_states).
+            ALTER TABLE dids ADD COLUMN shared_state INTEGER NOT NULL DEFAULT 1;
+            -- Who sent a text from the portal: 0 the owner, otherwise a user's id; NULL when nobody known did
+            -- (sent elsewhere, or before 2.0). The name as it was then, which stays if the user goes.
+            ALTER TABLE messages ADD COLUMN sent_by_user INTEGER;
+            ALTER TABLE messages ADD COLUMN sent_by_name TEXT;
+            -- 0: the owner's browser, otherwise a user's.
+            ALTER TABLE push_subscriptions ADD COLUMN user_key INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE conversation_states (
+              conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+              -- 0: the owner; otherwise a user's id.
+              user_key        INTEGER NOT NULL,
+              -- The last message read (date and id): later incoming ones are unread. NULL: the shared count.
+              read_at         INTEGER,
+              read_message_id INTEGER,
+              archived_at     INTEGER,
+              PRIMARY KEY (conversation_id, user_key)
+            );
+            SQL,
+            <<<'SQL'
+            -- What each person (0: the owner; otherwise a user's id) chose for a number, for themselves.
+            CREATE TABLE did_prefs (
+              user_key INTEGER NOT NULL,
+              did      TEXT NOT NULL,
+              -- Out of their list of conversations and of their notifications.
+              hidden   INTEGER NOT NULL DEFAULT 0,
+              -- No notifications.
+              muted    INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (user_key, did)
+            );
+            SQL,
+            <<<'SQL'
+            -- Address books. A contact is someone's own (owner_key: 0 the owner, otherwise a user's id), or in
+            -- the books of numbers: every number's (all_dids = 1, where the contacts of 1.x stay) or those of
+            -- contact_dids.
+            ALTER TABLE contacts ADD COLUMN owner_key INTEGER;
+            ALTER TABLE contacts ADD COLUMN all_dids INTEGER NOT NULL DEFAULT 1;
+            CREATE TABLE contact_dids (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              did        TEXT NOT NULL,
+              PRIMARY KEY (contact_id, did)
+            );
+            -- A phone is one contact's per book, no longer one contact's in the whole portal.
+            CREATE TABLE contact_phones_by_book (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              phone      TEXT NOT NULL,
+              PRIMARY KEY (contact_id, phone)
+            );
+            INSERT INTO contact_phones_by_book (contact_id, phone) SELECT contact_id, phone FROM contact_phones ORDER BY rowid;
+            DROP TABLE contact_phones;
+            ALTER TABLE contact_phones_by_book RENAME TO contact_phones;
+            CREATE INDEX contact_phones_phone ON contact_phones(phone);
+            SQL,
+            <<<'SQL'
+            -- What people did, for the admins (Activity): kept 180 days.
+            CREATE TABLE activity (
+              id       INTEGER PRIMARY KEY,
+              at       INTEGER NOT NULL,
+              -- Who: 0 the owner, otherwise a user's id; NULL when nobody was signed in (a refused sign-in).
+              user_key INTEGER,
+              -- Their name, or email, as it was then.
+              actor    TEXT,
+              action   TEXT NOT NULL,
+              -- What it was about: an email, a number, a phone...
+              target   TEXT,
+              -- JSON: the fields a change touched, a count...
+              detail   TEXT,
+              ip       TEXT
+            );
+            CREATE INDEX activity_at ON activity(at);
+            SQL,
         ];
     }
 
-    /** Tables of the PHP version only; the Docker version ignores them. */
+    /**
+     * Created on every open, outside the migrations: the Node server of 1.x
+     * (the Docker image before 2.0) kept these in memory, so the databases it
+     * left behind lack them.
+     */
     private const PHP_TABLES = <<<'SQL'
-        -- What the Docker version sends over Server-Sent Events, kept for tabs to poll.
+        -- What happened, kept for open tabs to poll.
         CREATE TABLE IF NOT EXISTS events (
           id         INTEGER PRIMARY KEY AUTOINCREMENT,
           data       TEXT NOT NULL,
@@ -190,29 +307,27 @@ final class Db
         $statement->execute();
     }
 
-    public static function open(string $file): PDO
+    /**
+     * Opens the database and brings its schema up to date. Tests pass
+     * $version to build the database of an earlier release, as it stopped
+     * at that migration, and check what the later ones do to it.
+     */
+    public static function open(string $file, ?int $version = null): PDO
     {
-        $dsn = 'sqlite:' . $file;
-        // PHP 8.4 has a SQLite-specific class; createFunction moved there.
-        $db = class_exists(\Pdo\Sqlite::class) ? new \Pdo\Sqlite($dsn) : new PDO($dsn);
+        $db = new \Pdo\Sqlite('sqlite:' . $file);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $db->exec('PRAGMA busy_timeout = 5000');
         $db->exec('PRAGMA journal_mode = WAL');
         $db->exec('PRAGMA foreign_keys = ON');
-        $fold = static fn ($value) => is_string($value) ? Text::fold($value) : $value;
-        if ($db instanceof \Pdo\Sqlite) {
-            $db->createFunction('fold', $fold, 1, \Pdo\Sqlite::DETERMINISTIC);
-        } else {
-            $db->sqliteCreateFunction('fold', $fold, 1, PDO::SQLITE_DETERMINISTIC);
-        }
-        self::migrate($db);
+        $db->createFunction('fold', static fn ($value) => is_string($value) ? Text::fold($value) : $value, 1, \Pdo\Sqlite::DETERMINISTIC);
+        self::migrate($db, $version);
         return $db;
     }
 
-    private static function migrate(PDO $db): void
+    private static function migrate(PDO $db, ?int $version): void
     {
-        $migrations = self::migrations();
+        $migrations = array_slice(self::migrations(), 0, $version);
         while ((int) $db->query('PRAGMA user_version')->fetchColumn() < count($migrations)) {
             // Two first requests can arrive together: the one that waited finds the work done.
             $db->exec('BEGIN IMMEDIATE');

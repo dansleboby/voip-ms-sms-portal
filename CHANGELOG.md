@@ -2,6 +2,25 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 2.0.0 (2026-10-30)
+
+- **Team mode.** Several people can use the same portal, each with their own email and password. The owner turns it on in *Settings* → *Team mode* by creating the first administrator; it does not turn off. Administrators add users, give them a new password when they forget theirs, suspend or delete them, and choose the numbers each user texts from, read only or with sending. Users see only the settings that concern them: notifications, appearance and their account. The server's `APP_PASSWORD` still opens the portal as its owner, with *Owner sign-in* on the sign-in page. Without Team mode, nothing changes: `APP_PASSWORD` alone opens the portal. The [Team mode guide](docs/team.md) ([en français](docs/team.fr.md)) takes it step by step.
+  - A user sees the conversations, pictures, live updates and push notifications of their own numbers only. On a number given to them read only, they read the texts but cannot send, retry or delete any.
+  - Each text sent from the portal says who sent it, under the bubble: the user's name (or email), *Owner*, or *You*.
+  - For each number, *Settings* → *Numbers* chooses whether everyone shares what is read and archived (the default), or each person keeps their own unread counts and archive. Going back to shared, a conversation someone read counts as read.
+  - Each person can hide a number from their own list in *Settings* → *My numbers*, without hiding it for the others.
+  - *Settings* → *Activity log* shows the administrators the last 180 days of sign-ins (refused ones too), devices signed out, password changes, changes to users, numbers and VoIP.ms accounts, and deletions, with who did each and from which address.
+- **Address books per number.** A contact can be in every number's book (where your contacts are after this update, so nothing changes for them), in the books of some numbers only, or in your own personal book, which only you see. A conversation shows the name from your personal book first, then from its number's. The same phone number can be a different contact in each book. In Team mode, users see the contacts of their numbers' books and change those of the numbers they may text from; every number's book is the administrators'. Imports go to the book you choose.
+- **Mute a number.** *Settings* → *My numbers* turns off the notifications of one number and keeps the others.
+- **Several VoIP.ms accounts, from Settings.** *Settings* → *VoIP.ms accounts* adds another account (one per client, for instance) step by step: its API access, its credentials, the IP address to allow, then its numbers. Each account can be renamed, tested, and given a new API password.
+- **Docker runs the same server as shared hosting.** The image now serves the portal with PHP and Apache, from the same files as the cPanel package, and checks VoIP.ms on its own every few seconds while no tab is open, as before. The portal is the same everywhere, so every new feature reaches both ways of hosting it at once. Updating keeps everything: `docker compose pull && docker compose up -d` opens your data as it is, conversations, contacts, settings, push notifications and the VoIP.ms credentials typed in the wizard (read once, which takes a couple of seconds on the first start) included. What changes:
+  - Open tabs ask for news every 3 seconds instead of keeping a connection open: `LIVE_UPDATES` is gone, and a reverse proxy no longer needs response buffering turned off.
+  - The logs show errors only, not every request. `LOG_LEVEL`, `HOST` and `WEB_DIR` are no longer read; `PORT`, `TRUST_PROXY`, `PUID` and `PGID` work as before.
+  - A mistake in the settings, such as a missing `APP_PASSWORD`, still stops the container, with the reason in its logs.
+- **PHP 8.4 or later**, on shared hosting. PHP 8.1 has had no security fixes since the end of 2025, and 8.2 has none after 2026. Choose the version in cPanel (*MultiPHP Manager*, or *Select PHP Version*): with 1.8.1 or later, *Settings* → *Updates* waits for it before installing 2.0, and says so. The Docker image brings its own PHP 8.4.
+- **Signed-in devices.** *Settings* → *My account* lists the browsers signed in, with when each was last active, and signs out any of them. Changing your password signs out the others. Signing out now ends a session for good: before, a copy of its cookie kept working until it expired. Everyone signs in again once after this update.
+- When several texts from the same person arrive within the same second, as the parts of a long text can, the push notification now shows the last one instead of the first.
+
 ## 1.8.1 (2026-10-30)
 
 - Shared hosting: *Settings* → *Updates* now checks that a new version runs on the site's PHP before installing it. Version 2.0 will need PHP 8.4 or later: on an older PHP, it says which version to choose in cPanel (*MultiPHP Manager*) and installs the update once it is chosen, instead of installing a version the site cannot run.

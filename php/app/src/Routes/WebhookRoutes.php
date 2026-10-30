@@ -11,16 +11,17 @@ use SmsPortal\Http\InvalidRequest;
 use SmsPortal\Http\Request;
 use SmsPortal\Http\Response;
 
-/** server/routes/webhook.ts */
+/** VoIP.ms calling back when texts arrive: turning it on and off, and the callback itself. */
 final class WebhookRoutes
 {
     public static function register(App $app): void
     {
         $r = $app->router;
 
-        $r->add('GET', '/api/webhook', fn () => Response::json($app->webhook->status()));
+        // The first account's: the one the setup wizard and Settings show.
+        $r->admin('GET', '/api/webhook', fn () => Response::json($app->accounts->primary()->webhook->status()));
 
-        $r->add('POST', '/api/webhook/enable', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/webhook/enable', function (Request $req) use ($app): Response {
             $body = new Input($req->json());
             // Numbers whose callback to another address may be replaced.
             $replace = $body->has('replace') ? $body->stringList('replace', 0, 1000) : [];
@@ -29,10 +30,16 @@ final class WebhookRoutes
                     throw new InvalidRequest('replace: expected 10-digit numbers');
                 }
             }
-            return Response::json($app->webhook->enable($req->header('origin'), $replace));
+            $status = $app->accounts->primary()->webhook->enable($req->header('origin'), $replace);
+            $app->activity->record($req, 'webhook_enabled');
+            return Response::json($status);
         });
 
-        $r->add('POST', '/api/webhook/disable', fn () => Response::json($app->webhook->disable()));
+        $r->admin('POST', '/api/webhook/disable', function (Request $req) use ($app): Response {
+            $status = $app->accounts->primary()->webhook->disable();
+            $app->activity->record($req, 'webhook_disabled');
+            return Response::json($status);
+        });
 
         /**
          * VoIP.ms's call for a text one of the numbers received. Public: the secret
@@ -40,7 +47,7 @@ final class WebhookRoutes
          * the check of VoIP.ms runs after the answer.
          */
         $r->add('GET', '/api/voipms/callback/{token}', function (Request $req) use ($app): Response {
-            if (!$app->webhook->receive($req->param('token'))) {
+            if (!$app->accounts->receive($req->param('token'))) {
                 throw new HttpError(404, 'not_found');
             }
             return new Response(200, ['Content-Type' => 'text/plain; charset=utf-8'], 'ok');

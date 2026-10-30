@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
 import { errorText, t } from './i18n';
 import { openLiveUpdates } from './lib/live';
+import { isShown } from './lib/format';
 import { notifyIncoming } from './lib/notify';
 import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
@@ -129,7 +130,7 @@ export async function loadDids(): Promise<void> {
   const dids = await api.dids();
   setState((s) => ({
     dids,
-    didFilter: s.didFilter && dids.some((d) => d.did === s.didFilter && d.visible) ? s.didFilter : null,
+    didFilter: s.didFilter && dids.some((d) => d.did === s.didFilter && isShown(d)) ? s.didFilter : null,
   }));
 }
 
@@ -259,7 +260,7 @@ function upsertConversation(conversation: ConversationDto): void {
   setState((s) => {
     const known = { ...s.known, [conversation.id]: conversation };
     const did = s.dids.find((d) => d.did === conversation.did);
-    const shown = !!conversation.lastMessage && !(did && !did.visible);
+    const shown = !!conversation.lastMessage && !(did && !isShown(did));
     const conversations = s.conversations.filter((c) => c.id !== conversation.id);
     if (shown && !conversation.archived) conversations.push(conversation);
     conversations.sort(byRecent);
@@ -407,7 +408,7 @@ function catchUp(): void {
 export function connectEvents(): void {
   if (closeLive) return;
   document.addEventListener('visibilitychange', reportVisibility);
-  closeLive = openLiveUpdates(state.session?.liveUpdates ?? 'stream', { device: deviceId(), tab: tabId, visible }, {
+  closeLive = openLiveUpdates({ device: deviceId(), tab: tabId, visible }, {
     onOpen: () => {
       const wasDisconnected = !state.connected;
       setState({ connected: true });
@@ -418,7 +419,7 @@ export function connectEvents(): void {
     onEvent: handleEvent,
     onError: () => {
       setState({ connected: false });
-      // EventSource hides the status code: check whether the session expired.
+      // A poll that fails may mean the session expired.
       loadSession()
         .then((session) => {
           if (!session.authenticated) disconnectEvents();

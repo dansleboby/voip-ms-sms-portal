@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace SmsPortal;
 
 use SmsPortal\Http\HttpError;
-use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
 /**
  * Records an outgoing message right away (status "sending") and delivers it
  * through VoIP.ms once the response is on its way; the tabs follow along
- * through their polls (server/send.ts).
+ * through their polls.
  */
 final class Sender
 {
@@ -19,15 +18,14 @@ final class Sender
     private const AMBIGUOUS_ERRORS = ['http_error', 'network_error', 'invalid_response', 'interrupted'];
 
     /**
-     * @param \Closure(): ?VoipMsApi $getClient
+     * @param \Closure(string): ?Account $accountForDid the account a number belongs to: its client sends
      * @param \Closure(callable): void $defer runs work after the response
      */
     public function __construct(
         private readonly Repo $repo,
         private readonly Events $events,
         private readonly Media $media,
-        private readonly Sync $sync,
-        private readonly \Closure $getClient,
+        private readonly \Closure $accountForDid,
         private readonly string $lockDir,
         private readonly \Closure $defer,
     ) {
@@ -35,9 +33,10 @@ final class Sender
 
     /**
      * @param list<array{bytes: string, mime: string}> $files
+     * @param ?array{key: int, name: ?string} $sentBy who sends it (Viewer key, and the name shown on the text)
      * @return array{message: array, conversation: array}
      */
-    public function queue(string $did, string $to, string $body, array $files): array
+    public function queue(string $did, string $to, string $body, array $files, ?array $sentBy = null): array
     {
         $did = Phone::normalize($did);
         $to = Phone::normalize($to);
@@ -66,7 +65,7 @@ final class Sender
         }
 
         $saved = array_map(fn (array $f) => $this->media->save($f['bytes'], $f['mime']), $files);
-        [$messageId, $conversationId] = $this->repo->transaction(function () use ($did, $to, $body, $check, $saved): array {
+        [$messageId, $conversationId] = $this->repo->transaction(function () use ($did, $to, $body, $check, $saved, $sentBy): array {
             $conversationId = $this->repo->getOrCreateConversation($did, $to);
             $messageId = $this->repo->insertMessage([
                 'conversationId' => $conversationId,
@@ -76,6 +75,7 @@ final class Sender
                 'body' => $body,
                 'sentAt' => Time::nowMs(),
                 'status' => 'sending',
+                'sentBy' => $sentBy,
             ]);
             foreach ($saved as $i => $file) {
                 $this->repo->insertAttachment($messageId, $i, $file + ['status' => 'ready']);
@@ -102,7 +102,8 @@ final class Sender
         if (in_array($row['error'] ?? '', self::AMBIGUOUS_ERRORS, true)) {
             // VoIP.ms may have taken the first attempt: look at the history
             // (which adopts it) before texting the recipient a second time.
-            $this->sync->syncRecent(wait: true);
+            $conversation = $this->repo->getConversation($row['conversation_id']);
+            ($this->accountForDid)($conversation['did'])?->sync->syncRecent(wait: true);
             if (($this->repo->getMessageRow($messageId)['status'] ?? null) === 'sent') {
                 return $this->publish($messageId, $row['conversation_id'])['message'];
             }
@@ -128,7 +129,8 @@ final class Sender
                 throw new VoipMsError('interrupted', 'The write lock stayed busy');
             }
             $conversation = $this->repo->getConversation($row['conversation_id']) ?? throw new VoipMsError('not_found');
-            $client = ($this->getClient)() ?? throw new VoipMsError('not_configured');
+            $account = ($this->accountForDid)($conversation['did']);
+            $client = $account?->client() ?? throw new VoipMsError('not_configured');
             $remoteId = null;
             if ($kind === 'sms') {
                 try {
@@ -145,7 +147,8 @@ final class Sender
                 $media = array_map(fn (array $a) => $this->media->toDataUri($a), $this->repo->listAttachments($messageId));
                 $remoteId = $client->sendMms($conversation['did'], $conversation['phone'], $row['body'], $media);
             }
-            $this->repo->updateMessage($messageId, ['kind' => $kind, 'remoteId' => $remoteId, 'status' => 'sent', 'error' => null]);
+            $stored = $remoteId === null ? null : Repo::storedRemoteId($account->id, $remoteId);
+            $this->repo->updateMessage($messageId, ['kind' => $kind, 'remoteId' => $stored, 'status' => 'sent', 'error' => null]);
         } catch (\Throwable $e) {
             $code = $e instanceof VoipMsError ? $e->errorCode : 'internal_error';
             Log::warn('Sending failed', ['messageId' => $messageId, 'code' => $code, 'err' => $e]);

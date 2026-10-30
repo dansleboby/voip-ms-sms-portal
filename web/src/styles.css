@@ -611,6 +611,22 @@ textarea.input {
   font-size: 13px;
 }
 
+.book-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+fieldset.bare {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .filter-chip[aria-pressed='true'] {
   border-color: transparent;
   background: var(--secondary-container);
@@ -1741,6 +1757,17 @@ textarea.input {
 
 .did-row .did-note .btn {
   margin-left: -12px;
+}
+
+.did-row .did-shared {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.read-only-note {
+  margin: 0 16px 16px;
 }
 
 .switch:disabled {

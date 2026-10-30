@@ -42,7 +42,7 @@ final class Text
     /**
      * Some VoIP.ms bodies come back with quotes escaped, at times more than
      * once ("l\\\'accès"); a backslash right before a quote never means
-     * anything in a text message (server/voipms/text.ts).
+     * anything in a text message.
      */
     public static function unescapeQuotes(string $text): string
     {

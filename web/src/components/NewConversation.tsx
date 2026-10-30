@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '../api';
 import { t } from '../i18n';
-import { didName } from '../lib/format';
+import { didName, isShown } from '../lib/format';
 import { navigate } from '../lib/router';
 import { useStore } from '../store';
 import { Composer } from './Composer';
@@ -21,7 +21,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
   const dids = useStore((s) => s.dids);
   const contacts = useStore((s) => s.contacts);
   const didFilter = useStore((s) => s.didFilter);
-  const sendable = useMemo(() => dids.filter((d) => d.visible && d.smsEnabled), [dids]);
+  const sendable = useMemo(() => dids.filter((d) => isShown(d) && d.smsEnabled && d.canSend), [dids]);
   const [from, setFrom] = useState<string | null>(null);
   const [query, setQuery] = useState(initialPhone ? formatPhone(initialPhone) : '');
   const [recipient, setRecipient] = useState<Suggestion | null>(null);
@@ -131,7 +131,10 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
       </div>
 
       {sendable.length === 0 ? (
-        <div className="placeholder-pane">{t('new.noDid')}</div>
+        <div className="placeholder-pane">
+          {/* Team mode: numbers they may only read. */}
+          {dids.some((d) => isShown(d) && d.smsEnabled) ? t('new.readOnly') : t('new.noDid')}
+        </div>
       ) : recipient ? (
         <div className="thread-empty" />
       ) : (

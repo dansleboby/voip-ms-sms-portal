@@ -6,7 +6,7 @@ namespace SmsPortal;
 
 /**
  * Settings, from config.php next to bootstrap.php, overridden by environment
- * variables of the same name. The names are those of the Docker version.
+ * variables of the same name (the Docker image's way).
  */
 final class Config
 {
@@ -39,6 +39,10 @@ final class Config
         public readonly ?array $allowedDids = null,
         /** @var list<string> numbers of the account the portal leaves alone (EXCLUDED_DIDS) */
         public readonly array $excludedDids = [],
+        /** "docker" in the Docker image (SMS_PORTAL_INSTALL), "php" otherwise. */
+        public readonly string $install = 'php',
+        /** @var list<string> settings that were read, but not as written */
+        public readonly array $warnings = [],
     ) {
     }
 
@@ -49,18 +53,31 @@ final class Config
         if (!is_array($values)) {
             throw new ConfigError('config.php must return an array of settings, like config.sample.php.');
         }
-        $get = static function (string $key) use ($values): mixed {
+        $warnings = [];
+        $get = static function (string $key) use ($values, &$warnings): mixed {
             $env = getenv($key);
-            return $env !== false ? $env : ($values[$key] ?? null);
+            if ($env === false) {
+                return $values[$key] ?? null;
+            }
+            // Docker Compose strips quotes around values in .env files, but --env-file (Docker,
+            // Podman) keeps them: KEY="value" arrives with its quotes, which would then end up in
+            // the password sent to VoIP.ms.
+            $value = trim($env);
+            if (strlen($value) >= 2 && preg_match('/^(["\']).*\1$/s', $value)) {
+                $warnings[$key] = "$key was wrapped in quotes, which were removed. Remove them from the settings file to silence this warning.";
+                return substr($value, 1, -1);
+            }
+            return $env;
         };
 
+        $docker = $get('SMS_PORTAL_INSTALL') === 'docker';
         $appPassword = (string) ($get('APP_PASSWORD') ?? '');
         if ($appPassword === '') {
-            throw new ConfigError(
-                is_file($file)
-                    ? 'APP_PASSWORD is not set. Choose a password for the web interface and set it in config.php.'
-                    : 'config.php is missing. Copy config.sample.php to config.php, in the same folder, and set APP_PASSWORD.',
-            );
+            throw new ConfigError(match (true) {
+                $docker => 'APP_PASSWORD is not set. Choose a password for the web interface and give it to the container (in .env with Docker Compose).',
+                is_file($file) => 'APP_PASSWORD is not set. Choose a password for the web interface and set it in config.php.',
+                default => 'config.php is missing. Copy config.sample.php to config.php, in the same folder, and set APP_PASSWORD.',
+            });
         }
 
         $username = trim((string) ($get('VOIPMS_API_USERNAME') ?? ''));
@@ -107,6 +124,8 @@ final class Config
             updateManifestUrl: self::url($get('UPDATE_MANIFEST_URL'), self::DEFAULT_UPDATE_MANIFEST_URL, 'UPDATE_MANIFEST_URL'),
             allowedDids: self::didList($get('ALLOWED_DIDS'), 'ALLOWED_DIDS'),
             excludedDids: self::didList($get('EXCLUDED_DIDS'), 'EXCLUDED_DIDS') ?? [],
+            install: $docker ? 'docker' : 'php',
+            warnings: array_values($warnings),
         );
     }
 

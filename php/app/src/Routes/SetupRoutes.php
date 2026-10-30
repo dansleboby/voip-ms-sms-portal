@@ -12,11 +12,11 @@ use SmsPortal\Http\Response;
 use SmsPortal\VoipMs\VoipMsApi;
 use SmsPortal\VoipMs\VoipMsError;
 
-/** server/routes/setup.ts */
+/** The setup wizard: VoIP.ms credentials, numbers, history import. */
 final class SetupRoutes
 {
     /** getIP works from any address (it only checks credentials); getBalance needs a whitelisted IP. */
-    private static function testConnection(VoipMsApi $client): array
+    public static function testConnection(VoipMsApi $client): array
     {
         try {
             $ip = $client->getIP();
@@ -40,14 +40,14 @@ final class SetupRoutes
     {
         $r = $app->router;
 
-        $r->add('GET', '/api/setup/status', fn () => Response::json([
+        $r->admin('GET', '/api/setup/status', fn () => Response::json([
             'completed' => $app->isSetupCompleted(),
             'credentialsSource' => $app->credentials->source(),
             'username' => $app->credentials->get()['username'] ?? null,
         ]));
 
         /** Checks and stores credentials entered in the wizard, then reports whether the IP is allowed. */
-        $r->add('POST', '/api/setup/credentials', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/setup/credentials', function (Request $req) use ($app): Response {
             if ($app->credentials->source() === 'env') {
                 throw new HttpError(409, 'credentials_from_env');
             }
@@ -59,38 +59,41 @@ final class SetupRoutes
             }
             $app->credentials->save($credentials);
             $app->resetClient();
+            $app->activity->record($req, 'credentials_changed', $credentials['username']);
             return Response::json($result);
         });
 
-        $r->add('POST', '/api/setup/test', fn () => Response::json(self::testConnection(self::client($app))));
+        $r->admin('POST', '/api/setup/test', fn () => Response::json(self::testConnection(self::client($app))));
 
-        /** Refreshes the numbers from VoIP.ms and returns them with their local names and colors. */
-        $r->add('GET', '/api/setup/dids', function () use ($app): Response {
-            $dids = array_filter(self::client($app)->getDids(), fn (array $did) => $app->repo->allowsDid($did['did']));
-            $app->repo->transaction(function () use ($app, $dids): void {
-                foreach ($dids as $did) {
-                    $app->repo->upsertDid($did);
-                }
-            });
-            $app->events->broadcast(['type' => 'dids']);
+        /** Refreshes the numbers of every VoIP.ms account and returns them with their local names and colors. */
+        $r->admin('GET', '/api/setup/dids', function () use ($app): Response {
+            self::client($app);
+            $app->accounts->refreshDids();
             return Response::json($app->repo->listDids());
         });
 
         /** Queues the last `days` of history; progress shows in the sync status. */
-        $r->add('POST', '/api/setup/import', function (Request $req) use ($app): Response {
+        $r->admin('POST', '/api/setup/import', function (Request $req) use ($app): Response {
             $days = (new Input($req->json()))->int('days', 0, 3650);
             self::client($app);
             if ($days > 0) {
-                $app->sync->startImport($days);
-                $app->defer(fn () => $app->sync->continueImport(microtime(true) + 20));
+                // The history of the account the wizard sets up.
+                $sync = $app->accounts->primary()->sync;
+                $sync->startImport($days);
+                $app->defer(fn () => $sync->continueImport(microtime(true) + 20));
+                $app->activity->record($req, 'history_imported', null, ['days' => $days]);
             }
             return Response::json(['ok' => true], 202);
         });
 
-        $r->add('POST', '/api/setup/complete', function () use ($app): Response {
+        $r->admin('POST', '/api/setup/complete', function () use ($app): Response {
             self::client($app);
             $app->setSetupCompleted(true);
-            $app->defer(fn () => $app->sync->syncRecent());
+            $app->defer(function () use ($app): void {
+                foreach ($app->accounts->all() as $account) {
+                    $account->sync->syncRecent();
+                }
+            });
             return Response::json(['ok' => true]);
         });
     }
