@@ -841,6 +841,41 @@ describe('The server in the Team mode', () => {
     expect(((await marc.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
   });
 
+  it('keeps an address book per number, and one of their own for each person', async () => {
+    const LAVAL = '4505550199';
+    // Marc's own: it names his conversations, and nobody else sees it.
+    const own = await marc.post('/api/contacts', { name: 'Ma sœur', phones: [MARIE], book: { kind: 'personal' } });
+    expect(own).toMatchObject({ status: 201, json: { book: { kind: 'personal' }, editable: true } });
+    const marie = ((await marc.get('/api/conversations')).json as ConversationDto[]).find((c) => c.phone === MARIE)!;
+    expect(marie.contact?.name).toBe('Ma sœur');
+    expect(((await admin.get(`/api/conversations/${marie.id}`)).json as ConversationDto).contact?.name).toBe('Marie Tremblay');
+    expect(((await admin.get('/api/contacts')).json as ContactDto[]).map((c) => c.name)).not.toContain('Ma sœur');
+
+    // Every number's book is the admins'; a number's, theirs and that of whoever may text from it.
+    const book = (b: object) => ({ name: 'Pharmacie', phones: ['5145550199'], book: b });
+    expect(await marc.post('/api/contacts', book({ kind: 'all' }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [LAVAL] }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [MONTREAL] }))).toMatchObject({
+      status: 201,
+      json: { book: { kind: 'numbers', dids: [MONTREAL] }, editable: true },
+    });
+    const garage = await admin.post('/api/contacts', { name: 'Garage du coin', phones: ['4505550188'], book: { kind: 'numbers', dids: [LAVAL] } });
+    expect(garage.status).toBe(201);
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Garage du coin')).toMatchObject({ editable: false });
+    expect((await marc.request('PUT', `/api/contacts/${garage.json.id}`, { name: 'x', phones: ['4505550188'] })).json).toEqual({ error: 'read_only' });
+    expect((await marc.request('DELETE', `/api/contacts/${garage.json.id}`)).json).toEqual({ error: 'read_only' });
+    // Alex is in every number's book, which Marc may not change.
+    expect(await marc.post('/api/contacts', { name: 'Alex', phones: ['5145550187'], book: { kind: 'numbers', dids: [MONTREAL] }, force: true })).toMatchObject({
+      status: 409,
+      json: { error: 'phone_locked', phones: ['5145550187'] },
+    });
+
+    // Imports go to their own book.
+    const imported = await marc.post('/api/contacts/import', { vcard: 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Paul\r\nTEL:514-555-0166\r\nEND:VCARD\r\n' });
+    expect(imported.json).toMatchObject({ imported: 1 });
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Paul')).toMatchObject({ book: { kind: 'personal' } });
+  });
+
   it('lets users change their own name and password, signing their other browsers out', async () => {
     const phone = (await signIn('marc@example.com', 'marc password')).client;
     expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);

@@ -611,6 +611,22 @@ textarea.input {
   font-size: 13px;
 }
 
+.book-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+fieldset.bare {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .filter-chip[aria-pressed='true'] {
   border-color: transparent;
   background: var(--secondary-container);

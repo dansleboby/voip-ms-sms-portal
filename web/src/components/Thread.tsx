@@ -66,7 +66,8 @@ export function Thread({ id }: { id: number }) {
   // Team mode: a number given to them to read only.
   const readOnly = did ? !did.canSend : false;
   const name = displayName(conversation.phone, conversation.contact);
-  const contact = conversation.contact ? contacts.find((c) => c.id === conversation.contact!.id) ?? null : null;
+  // A contact in a book they may not change is left alone: they can make their own instead.
+  const contact = conversation.contact ? contacts.find((c) => c.id === conversation.contact!.id && c.editable) ?? null : null;
   const shortCode = !isValidNanp(conversation.phone);
   const back = () => navigate(getState().archiveView ? { name: 'archived' } : { name: 'home' });
 
@@ -91,8 +92,8 @@ export function Thread({ id }: { id: number }) {
       ? []
       : [
           {
-            icon: conversation.contact ? <UserPen size={22} /> : <UserPlus size={22} />,
-            label: conversation.contact ? t('thread.editContact') : t('thread.addContact'),
+            icon: contact ? <UserPen size={22} /> : <UserPlus size={22} />,
+            label: contact ? t('thread.editContact') : t('thread.addContact'),
             onSelect: () => setEditingContact(true),
           },
         ]),
@@ -168,7 +169,7 @@ export function Thread({ id }: { id: number }) {
       )}
 
       {editingContact && (
-        <ContactDialog contact={contact} initialPhone={conversation.phone} onClose={() => setEditingContact(false)} />
+        <ContactDialog contact={contact} initialPhone={conversation.phone} initialDid={conversation.did} onClose={() => setEditingContact(false)} />
       )}
       {deleting && (
         <DeleteDialog

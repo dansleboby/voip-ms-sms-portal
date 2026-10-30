@@ -153,7 +153,18 @@ export interface ConversationDto {
 export interface ContactDto extends ContactRef {
   notes: string | null;
   phones: string[];
+  book: ContactBook;
+  /** Whether whoever asks may change or delete it. */
+  editable: boolean;
 }
+
+/**
+ * Where a contact is: its creator's own book (only they see it), every
+ * number's, or the books of some numbers (seen by whoever sees one of them).
+ * A conversation takes its name from the viewer's own book first, then from
+ * its number's.
+ */
+export type ContactBook = { kind: 'personal' } | { kind: 'all' } | { kind: 'numbers'; dids: string[] };
 
 export interface SyncStatusDto {
   state: 'disabled' | 'idle' | 'syncing' | 'error';

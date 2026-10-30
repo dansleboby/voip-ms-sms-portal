@@ -210,6 +210,28 @@ final class Db
               PRIMARY KEY (user_key, did)
             );
             SQL,
+            <<<'SQL'
+            -- Address books. A contact is someone's own (owner_key: 0 the owner, otherwise a user's id), or in
+            -- the books of numbers: every number's (all_dids = 1, where the contacts of 1.x stay) or those of
+            -- contact_dids.
+            ALTER TABLE contacts ADD COLUMN owner_key INTEGER;
+            ALTER TABLE contacts ADD COLUMN all_dids INTEGER NOT NULL DEFAULT 1;
+            CREATE TABLE contact_dids (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              did        TEXT NOT NULL,
+              PRIMARY KEY (contact_id, did)
+            );
+            -- A phone is one contact's per book, no longer one contact's in the whole portal.
+            CREATE TABLE contact_phones_by_book (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              phone      TEXT NOT NULL,
+              PRIMARY KEY (contact_id, phone)
+            );
+            INSERT INTO contact_phones_by_book (contact_id, phone) SELECT contact_id, phone FROM contact_phones ORDER BY rowid;
+            DROP TABLE contact_phones;
+            ALTER TABLE contact_phones_by_book RENAME TO contact_phones;
+            CREATE INDEX contact_phones_phone ON contact_phones(phone);
+            SQL,
         ];
     }
 

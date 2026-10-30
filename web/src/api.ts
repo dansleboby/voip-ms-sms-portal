@@ -1,5 +1,6 @@
 import type {
   ConnectionTestDto,
+  ContactBook,
   ContactDto,
   ConversationDto,
   DidDto,
@@ -137,14 +138,15 @@ export const api = {
   retryMedia: (attachmentId: number) => request<{ ok: true }>('POST', `/api/media/${attachmentId}/retry`),
 
   contacts: () => request<ContactDto[]>('GET', '/api/contacts'),
-  createContact: (c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>
+  createContact: (c: { name: string; phones: string[]; notes?: string | null; force?: boolean; book?: ContactBook }) =>
     request<ContactDto>('POST', '/api/contacts', c),
-  updateContact: (id: number, c: { name: string; phones: string[]; notes?: string | null; force?: boolean }) =>
+  updateContact: (id: number, c: { name: string; phones: string[]; notes?: string | null; force?: boolean; book?: ContactBook }) =>
     request<ContactDto>('PUT', `/api/contacts/${id}`, c),
   deleteContact: (id: number) => request<{ ok: true }>('DELETE', `/api/contacts/${id}`),
   /** At most MAX_DELETE_IDS (shared/contact.ts) per request. */
   deleteContacts: (ids: number[]) => request<{ deleted: number }>('POST', '/api/contacts/delete', { ids }),
-  importContacts: (vcard: string) => request<{ imported: number; skipped: number; ids: number[] }>('POST', '/api/contacts/import', { vcard }),
+  importContacts: (vcard: string, book?: ContactBook) =>
+    request<{ imported: number; skipped: number; ids: number[] }>('POST', '/api/contacts/import', { vcard, book }),
 
   pushKey: () => request<{ publicKey: string }>('GET', '/api/push/key'),
   savePushSubscription: (subscription: object) => request<{ ok: true }>('POST', '/api/push/subscriptions', subscription),

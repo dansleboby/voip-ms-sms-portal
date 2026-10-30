@@ -4,12 +4,13 @@ import { api } from '../api';
 import { t } from '../i18n';
 import { navigate } from '../lib/router';
 import { loadContacts, loadConversations, toast, toastError, useStore } from '../store';
+import { BookChips, BookPicker, useBooks } from './Books';
 import { ContactDialog } from './ContactDialog';
 import { Avatar, Dialog } from './ui';
 import { MAX_DELETE_IDS } from '../../../shared/contact';
 import { formatPhone, searchDigits } from '../../../shared/phone';
 import { foldText } from '../../../shared/text';
-import type { ContactDto } from '../../../shared/types';
+import type { ContactBook, ContactDto } from '../../../shared/types';
 
 /** Deletes any number of contacts, MAX_DELETE_IDS per request; resolves with how many were deleted. */
 async function deleteContacts(ids: number[]): Promise<number> {
@@ -30,6 +31,9 @@ export function Contacts() {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const books = useBooks();
+  /** The book an import goes to, while asking which (several books to choose from). */
+  const [importBook, setImportBook] = useState<ContactBook | null>(null);
 
   const filtered = useMemo(() => {
     const q = foldText(query.trim());
@@ -75,9 +79,9 @@ export function Contacts() {
     }
   };
 
-  const importFile = async (file: File) => {
+  const importFile = async (file: File, book?: ContactBook) => {
     try {
-      const result = await api.importContacts(await file.text());
+      const result = await api.importContacts(await file.text(), book);
       await Promise.all([loadContacts(), loadConversations()]);
       // The wrong file is easy to pick: the contacts it added can go again in one tap.
       const undo = async () => {
@@ -126,7 +130,7 @@ export function Contacts() {
           <span className="desktop-only">{t('contacts.select')}</span>
         </button>
       )}
-      <button className="btn text" onClick={() => fileInput.current?.click()}>
+      <button className="btn text" onClick={() => (books.show ? setImportBook(books.initial()) : fileInput.current?.click())}>
         <Upload size={18} />
         <span className="desktop-only">{t('contacts.import')}</span>
       </button>
@@ -137,7 +141,8 @@ export function Contacts() {
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) void importFile(file);
+          if (file) void importFile(file, importBook ?? undefined);
+          setImportBook(null);
           e.target.value = '';
         }}
       />
@@ -186,6 +191,7 @@ export function Contacts() {
                     <div className="row-main">
                       <div className="row-title">{c.name}</div>
                       <div className="row-sub">{c.phones.map(formatPhone).join(' · ')}</div>
+                      {books.show && <BookChips book={c.book} />}
                     </div>
                     {!selection && (
                       <button
@@ -208,6 +214,21 @@ export function Contacts() {
         </div>
       </div>
       {editing && <ContactDialog contact={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {importBook && (
+        <Dialog title={t('contacts.importInto')} onClose={() => setImportBook(null)}>
+          <BookPicker books={books} value={importBook} onChange={setImportBook} />
+          <div className="dialog-actions">
+            <span className="spacer" />
+            <button type="button" className="btn text" onClick={() => setImportBook(null)}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn" onClick={() => fileInput.current?.click()}>
+              <Upload size={18} />
+              {t('contacts.importStart')}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {confirming && (
         <Dialog title={t('contacts.deleteManyTitle', { count: chosen.length })} onClose={() => !deleting && setConfirming(false)}>
           <p className="dialog-text">{t('contacts.deleteManyBody')}</p>

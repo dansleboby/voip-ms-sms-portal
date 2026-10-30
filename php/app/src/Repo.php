@@ -40,8 +40,13 @@ final class Repo
         LEFT JOIN dids d ON d.did = c.did
         LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
         LEFT JOIN messages m ON m.id = c.last_message_id
-        LEFT JOIN contact_phones cp ON cp.phone = c.phone
-        LEFT JOIN contacts ct ON ct.id = cp.contact_id
+        LEFT JOIN contacts ct ON ct.id = (
+          SELECT k.id FROM contact_phones cp JOIN contacts k ON k.id = cp.contact_id
+          WHERE cp.phone = c.phone AND (k.owner_key = ? OR (k.owner_key IS NULL AND (k.all_dids = 1
+            OR EXISTS (SELECT 1 FROM contact_dids kd WHERE kd.contact_id = k.id AND kd.did = c.did))))
+          -- The viewer's own contact first, then the number's.
+          ORDER BY k.owner_key IS NULL, k.id LIMIT 1
+        )
         SQL;
 
     private int $depth = 0;
@@ -249,12 +254,13 @@ final class Repo
         return $this->run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $values)->rowCount() > 0;
     }
 
-    /** Also forgets what the user read, archived and chose for themselves, and their devices' notifications. */
+    /** Also forgets what the user read, archived and chose for themselves, their own contacts, and their devices' notifications. */
     public function deleteUser(int $id): bool
     {
         return $this->transaction(function () use ($id): bool {
             $this->run('DELETE FROM conversation_states WHERE user_key = ?', [$id]);
             $this->run('DELETE FROM did_prefs WHERE user_key = ?', [$id]);
+            $this->run('DELETE FROM contacts WHERE owner_key = ?', [$id]);
             $this->deleteUserPushSubscriptions($id);
             return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
         });
@@ -595,7 +601,7 @@ final class Repo
     public function getConversation(int $id): ?array
     {
         [$scope, $scopeParams] = $this->didScope('c.did');
-        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$this->viewerKey(), $id, ...$scopeParams]);
+        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$this->viewerKey(), $this->viewerKey(), $id, ...$scopeParams]);
         return $row ? self::conversationDto($row) : null;
     }
 
@@ -606,7 +612,7 @@ final class Repo
     public function listConversations(?string $did = null, ?string $query = null, ?bool $archived = null, int $limit = 500): array
     {
         [$scope, $scopeParams] = $this->didScope('c.did');
-        $params = [$this->viewerKey(), ...$scopeParams];
+        $params = [$this->viewerKey(), $this->viewerKey(), ...$scopeParams];
         $where = ['c.last_message_id IS NOT NULL', $scope];
         $q = trim($query ?? '');
         $archived ??= $q !== '' ? null : false;
@@ -970,14 +976,46 @@ final class Repo
 
     // ----------------------------------------------------------------- contacts
 
+    /** Every number's book: where contacts went before 2.0, and where they go unless told otherwise. */
+    public const ALL_NUMBERS = ['kind' => 'all'];
+
+    /**
+     * The contacts the viewer sees: their own, those of every number's book, and
+     * those in the book of a number they see.
+     *
+     * @return list<array> ContactDto
+     */
     public function listContacts(): array
     {
-        $contacts = $this->all('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE');
-        $byContact = [];
+        $dids = $this->viewer?->dids();
+        $inTheirBooks = $dids === null
+            ? '1'
+            : ($dids ? 'EXISTS (SELECT 1 FROM contact_dids kd WHERE kd.contact_id = k.id AND kd.did IN (' . self::placeholders($dids) . '))' : '0');
+        $contacts = $this->all(
+            "SELECT k.id, k.name, k.color, k.icon, k.notes, k.owner_key, k.all_dids FROM contacts k
+             WHERE k.owner_key = ? OR (k.owner_key IS NULL AND (k.all_dids = 1 OR $inTheirBooks))
+             ORDER BY k.name COLLATE NOCASE, k.id",
+            [$this->viewerKey(), ...($dids ?? [])],
+        );
+        $phones = [];
         foreach ($this->all('SELECT phone, contact_id FROM contact_phones ORDER BY rowid') as $p) {
-            $byContact[$p['contact_id']][] = $p['phone'];
+            $phones[$p['contact_id']][] = $p['phone'];
         }
-        return array_map(static fn (array $c) => $c + ['phones' => $byContact[$c['id']] ?? []], $contacts);
+        $books = $this->contactDids();
+        $canSend = $this->canSendMap();
+        return array_map(function (array $c) use ($phones, $books, $canSend): array {
+            $book = self::book($c, $books[$c['id']] ?? []);
+            return [
+                'id' => $c['id'],
+                'name' => $c['name'],
+                'color' => $c['color'],
+                'icon' => $c['icon'],
+                'notes' => $c['notes'],
+                'phones' => $phones[$c['id']] ?? [],
+                'book' => $book,
+                'editable' => $this->mayChange($c['owner_key'], $book, $canSend),
+            ];
+        }, $contacts);
     }
 
     public function getContact(int $id): ?array
@@ -990,49 +1028,141 @@ final class Repo
         return null;
     }
 
-    /** Phones already attached to another contact than $exceptId. */
-    public function conflictingPhones(array $phones, ?int $exceptId): array
+    /** @return array<int, list<string>> contact id => the numbers whose books it is in */
+    private function contactDids(?array $ids = null): array
+    {
+        $books = [];
+        $rows = $ids === null
+            ? $this->all('SELECT contact_id, did FROM contact_dids ORDER BY did')
+            : ($ids ? $this->all('SELECT contact_id, did FROM contact_dids WHERE contact_id IN (' . self::placeholders($ids) . ') ORDER BY did', $ids) : []);
+        foreach ($rows as $row) {
+            $books[$row['contact_id']][] = (string) $row['did'];
+        }
+        return $books;
+    }
+
+    /**
+     * A contact's book, as ContactDto has it: someone's own (personal), every number's
+     * (all), or those of some numbers.
+     *
+     * @return array{kind: 'personal'}|array{kind: 'all'}|array{kind: 'numbers', dids: list<string>}
+     */
+    private static function book(array $row, array $dids): array
+    {
+        return match (true) {
+            $row['owner_key'] !== null => ['kind' => 'personal'],
+            $row['all_dids'] === 1 => self::ALL_NUMBERS,
+            default => ['kind' => 'numbers', 'dids' => $dids],
+        };
+    }
+
+    /**
+     * Whether the viewer may put a contact in $book: their own book, every number's
+     * when they see every number (the owner and the admins), or those of numbers they
+     * may text from.
+     */
+    public function mayUseBook(array $book, ?array $canSend = null): bool
+    {
+        $canSend ??= $this->canSendMap();
+        return match ($book['kind']) {
+            'personal' => $this->viewer !== null,
+            'all' => $this->viewer?->dids() === null,
+            'numbers' => $book['dids'] !== [] && array_all($book['dids'], static fn (string $did): bool => $canSend[$did] ?? false),
+            default => false,
+        };
+    }
+
+    /** Whether the viewer may change or delete a contact (its owner's key and its book). */
+    private function mayChange(?int $ownerKey, array $book, array $canSend): bool
+    {
+        return $book['kind'] === 'personal' ? $ownerKey === $this->viewerKey() : $this->mayUseBook($book, $canSend);
+    }
+
+    /** @return array<string, bool> the numbers the viewer sees: did => may text from it */
+    private function canSendMap(): array
+    {
+        return array_column($this->listDids(), 'canSend', 'did');
+    }
+
+    /** Whether the viewer sees the contact and may change it; null when they do not see it. */
+    public function contactEditable(int $id): ?bool
+    {
+        return $this->getContact($id)['editable'] ?? null;
+    }
+
+    /**
+     * Phones that already belong to another contact than $exceptId in a book
+     * that overlaps $book (a phone is one contact's per book).
+     *
+     * @return list<array{phone: string, contactId: int, editable: bool}>
+     */
+    public function phoneConflicts(array $phones, ?int $exceptId, array $book = self::ALL_NUMBERS): array
     {
         if (!$phones) {
             return [];
         }
-        $rows = $this->all('SELECT phone, contact_id FROM contact_phones WHERE phone IN (' . self::placeholders($phones) . ')', array_values($phones));
-        return array_values(array_map(
-            static fn (array $r) => $r['phone'],
-            array_filter($rows, static fn (array $r) => $r['contact_id'] !== $exceptId),
-        ));
+        $rows = $this->all(
+            'SELECT cp.phone, k.id, k.owner_key, k.all_dids FROM contact_phones cp JOIN contacts k ON k.id = cp.contact_id
+             WHERE cp.phone IN (' . self::placeholders($phones) . ') AND k.id IS NOT ?',
+            [...array_values($phones), $exceptId],
+        );
+        $books = $this->contactDids(array_values(array_unique(array_column($rows, 'id'))));
+        $canSend = $this->canSendMap();
+        $conflicts = [];
+        foreach ($rows as $row) {
+            $other = self::book($row, $books[$row['id']] ?? []);
+            $overlap = match (true) {
+                $book['kind'] === 'personal' || $other['kind'] === 'personal' => $book['kind'] === $other['kind'] && $row['owner_key'] === $this->viewerKey(),
+                $book['kind'] === 'all' || $other['kind'] === 'all' => true,
+                default => array_intersect($book['dids'], $other['dids']) !== [],
+            };
+            if ($overlap) {
+                $conflicts[] = ['phone' => $row['phone'], 'contactId' => $row['id'], 'editable' => $this->mayChange($row['owner_key'], $other, $canSend)];
+            }
+        }
+        return $conflicts;
     }
 
-    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null): int
+    /**
+     * Creates or replaces a contact, in $book (a personal one is the viewer's). Its
+     * phones that another contact of the same book had move here: the caller asked
+     * (phoneConflicts).
+     */
+    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null, array $book = self::ALL_NUMBERS): int
     {
-        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon): int {
+        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon, $book): int {
             $now = Time::nowMs();
+            $owner = $book['kind'] === 'personal' ? $this->viewerKey() : null;
+            $all = $book['kind'] === 'all' ? 1 : 0;
             if ($id) {
                 $this->run(
-                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?',
-                    [$name, $color, $icon, $notes, $now, $id],
+                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, owner_key = ?, all_dids = ?, updated_at = ? WHERE id = ?',
+                    [$name, $color, $icon, $notes, $owner, $all, $now, $id],
                 );
                 $this->run('DELETE FROM contact_phones WHERE contact_id = ?', [$id]);
+                $this->run('DELETE FROM contact_dids WHERE contact_id = ?', [$id]);
             } else {
                 $this->run(
-                    'INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$name, $color, $icon, $notes, $now, $now],
+                    'INSERT INTO contacts (name, color, icon, notes, owner_key, all_dids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$name, $color, $icon, $notes, $owner, $all, $now, $now],
                 );
                 $id = (int) $this->db->lastInsertId();
             }
+            foreach ($book['kind'] === 'numbers' ? array_unique($book['dids']) : [] as $did) {
+                $this->run('INSERT INTO contact_dids (contact_id, did) VALUES (?, ?)', [$id, $did]);
+            }
             $phones = array_values(array_unique($phones));
-            $previousOwners = $phones
-                ? array_unique(array_column($this->all('SELECT contact_id FROM contact_phones WHERE phone IN (' . self::placeholders($phones) . ')', $phones), 'contact_id'))
-                : [];
+            $previousOwners = [];
+            foreach ($this->phoneConflicts($phones, $id, $book) as $conflict) {
+                $this->run('DELETE FROM contact_phones WHERE contact_id = ? AND phone = ?', [$conflict['contactId'], $conflict['phone']]);
+                $previousOwners[$conflict['contactId']] = true;
+            }
             foreach ($phones as $phone) {
-                $this->run(
-                    'INSERT INTO contact_phones (phone, contact_id) VALUES (?, ?) ON CONFLICT(phone) DO UPDATE SET contact_id = excluded.contact_id',
-                    [$phone, $id],
-                );
+                $this->run('INSERT INTO contact_phones (contact_id, phone) VALUES (?, ?)', [$id, $phone]);
             }
             // A contact whose only numbers were just moved here has nothing left to identify it.
-            foreach ($previousOwners as $owner) {
-                if ($owner !== $id && !$this->one('SELECT 1 FROM contact_phones WHERE contact_id = ? LIMIT 1', [$owner])) {
+            foreach (array_keys($previousOwners) as $owner) {
+                if (!$this->one('SELECT 1 FROM contact_phones WHERE contact_id = ? LIMIT 1', [$owner])) {
                     $this->run('DELETE FROM contacts WHERE id = ?', [$owner]);
                 }
             }
@@ -1045,9 +1175,11 @@ final class Repo
         return $this->run('DELETE FROM contacts WHERE id = ?', [$id])->rowCount() > 0;
     }
 
-    /** Deletes the contacts that still exist among $ids; returns how many there were. */
+    /** Deletes the contacts among $ids that still exist and that the viewer may change; returns how many there were. */
     public function deleteContacts(array $ids): int
     {
+        $mine = array_column(array_filter($this->listContacts(), static fn (array $c) => $c['editable']), 'id');
+        $ids = array_values(array_intersect($ids, $mine));
         return $this->transaction(function () use ($ids): int {
             $deleted = 0;
             // In slices: the SQLite of older hosts takes at most 999 parameters.
