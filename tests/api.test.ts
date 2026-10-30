@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
 import { browserKeys } from './webpush-helpers.js';
-import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
+import type { ActivityPageDto, ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
 
 /**
  * The HTTP API, as the web client uses it, in demo mode. Docker and shared
@@ -911,6 +911,29 @@ describe('The server in the Team mode', () => {
     expect((await marc.request('DELETE', `/api/sessions/${other.id}`)).json).toEqual({ ok: true });
     expect((await phone.get('/api/conversations')).status).toBe(401);
     expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+  });
+
+  it('keeps a log of sign-ins and changes for the admins', async () => {
+    const page = (await admin.get('/api/activity')).json as ActivityPageDto;
+    const seen = page.entries.map((e) => [e.action, e.actor?.name ?? null, e.target]);
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        ['sign_in_failed', null, 'nobody@example.com'],
+        ['team_enabled', null, 'julie@example.com'],
+        ['user_added', 'Julie', 'marc@example.com'],
+        ['number_changed', 'Julie', MONTREAL],
+        // He had no name yet: his email, as it was then.
+        ['password_changed', 'marc@example.com', null],
+      ]),
+    );
+    // The latest first, with who did it and from where.
+    expect(page.entries[0]!.id).toBeGreaterThan(page.entries[1]!.id);
+    expect(page.entries.find((e) => e.action === 'sign_in_failed')).toMatchObject({ actor: null, ip: '127.0.0.1' });
+    expect(page.entries.find((e) => e.action === 'team_enabled')!.actor).toEqual({ userId: null, name: null });
+    expect(page.entries.find((e) => e.action === 'user_changed')!.detail).toMatchObject({ changes: expect.arrayContaining(['numbers']) });
+    expect(page.entries.find((e) => e.action === 'sign_in' && e.actor?.userId === marcId)).toBeTruthy();
+    expect((await marc.get('/api/activity')).status).toBe(403);
+    expect((await admin.get(`/api/activity?before=${page.entries[0]!.id}`)).json.entries[0].id).toBe(page.entries[1]!.id);
   });
 
   it('turns a disabled user away, even signed in', async () => {

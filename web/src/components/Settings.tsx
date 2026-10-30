@@ -11,6 +11,7 @@ import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
 import { AccountsSection } from './Accounts';
+import { ActivitySection } from './Activity';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
 import { ReceivingPanel } from './Receiving';
@@ -260,6 +261,8 @@ export function Settings() {
           <MyAccountSection />
 
           {admin && <TeamSection />}
+
+          {admin && <ActivitySection />}
 
           {admin && <AccountsSection />}
 

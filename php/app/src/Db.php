@@ -232,6 +232,24 @@ final class Db
             ALTER TABLE contact_phones_by_book RENAME TO contact_phones;
             CREATE INDEX contact_phones_phone ON contact_phones(phone);
             SQL,
+            <<<'SQL'
+            -- What people did, for the admins (Activity): kept 180 days.
+            CREATE TABLE activity (
+              id       INTEGER PRIMARY KEY,
+              at       INTEGER NOT NULL,
+              -- Who: 0 the owner, otherwise a user's id; NULL when nobody was signed in (a refused sign-in).
+              user_key INTEGER,
+              -- Their name, or email, as it was then.
+              actor    TEXT,
+              action   TEXT NOT NULL,
+              -- What it was about: an email, a number, a phone...
+              target   TEXT,
+              -- JSON: the fields a change touched, a count...
+              detail   TEXT,
+              ip       TEXT
+            );
+            CREATE INDEX activity_at ON activity(at);
+            SQL,
         ];
     }
 

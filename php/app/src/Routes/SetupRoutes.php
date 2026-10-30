@@ -59,6 +59,7 @@ final class SetupRoutes
             }
             $app->credentials->save($credentials);
             $app->resetClient();
+            $app->activity->record($req, 'credentials_changed', $credentials['username']);
             return Response::json($result);
         });
 
@@ -80,6 +81,7 @@ final class SetupRoutes
                 $sync = $app->accounts->primary()->sync;
                 $sync->startImport($days);
                 $app->defer(fn () => $sync->continueImport(microtime(true) + 20));
+                $app->activity->record($req, 'history_imported', null, ['days' => $days]);
             }
             return Response::json(['ok' => true], 202);
         });

@@ -61,6 +61,12 @@ final class MessagingRoutes
             if (!$deleted['ids']) {
                 return [];
             }
+            $conversation = $repo->getConversation($conversationId);
+            $app->activity->record($req, $ids === null ? 'conversation_deleted' : 'message_deleted', $conversation['phone'] ?? null, [
+                'did' => $conversation['did'] ?? null,
+                'count' => count($deleted['ids']),
+                'voipms' => $alsoAtVoipMs,
+            ]);
             $app->media->remove($deleted['files']);
             if ($alsoAtVoipMs) {
                 $app->defer(fn () => $app->deletions->drain(microtime(true) + 20));
@@ -74,7 +80,7 @@ final class MessagingRoutes
 
         $r->add('GET', '/api/dids', fn (Request $req) => Response::json($scoped($req)->listDids()));
 
-        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events, $scoped): Response {
+        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($app, $repo, $events, $scoped): Response {
             $did = $req->param('did');
             $body = new Input($req->json());
             $patch = [];
@@ -98,6 +104,11 @@ final class MessagingRoutes
             }
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
+            // The order of the numbers is not worth a line.
+            $changes = array_values(array_diff(array_keys($patch), ['position']));
+            if ($changes) {
+                $app->activity->record($req, 'number_changed', $did, ['changes' => $changes]);
+            }
             return Response::json($scoped($req)->getDid($did));
         });
 
@@ -148,6 +159,7 @@ final class MessagingRoutes
             });
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
+            $app->activity->record($req, 'sms_enabled', $did);
             return Response::json($scoped($req)->getDid($did));
         });
 

@@ -1,6 +1,7 @@
 import type {
   AccountCheckDto,
   AccountDto,
+  ActivityPageDto,
   ConnectionTestDto,
   ContactBook,
   ContactDto,
@@ -94,6 +95,7 @@ export const api = {
     request<ConnectionTestDto>('POST', '/api/setup/credentials', { username, password }),
   testConnection: () => request<ConnectionTestDto>('POST', '/api/setup/test'),
 
+  activity: (before?: number) => request<ActivityPageDto>('GET', `/api/activity${before ? `?before=${before}` : ''}`),
   accounts: () => request<AccountDto[]>('GET', '/api/accounts'),
   addAccount: (a: { label: string | null; username: string; password: string }) => request<AccountCheckDto>('POST', '/api/accounts', a),
   renameAccount: (id: number, label: string | null) => request<AccountDto>('PATCH', `/api/accounts/${id}`, { label }),

@@ -53,17 +53,22 @@ final class AuthRoutes
             $password = $body->string('password', 0, 1000);
             $email = $body->has('email') ? strtolower(trim($body->string('email', 0, 254))) : '';
             $userId = null;
+            $who = ['userId' => null, 'email' => null, 'name' => null];
             if ($email !== '') {
                 $user = $app->auth->mode() === 'team' ? $app->repo->findUserByEmail($email) : null;
                 // Compared against something even when nobody has that email, so that the answer takes as long.
                 $ok = Passwords::verify($password, $user['password_hash'] ?? self::missingUserHash());
                 if ($user === null || !$ok || $user['disabled_at'] !== null) {
+                    $app->activity->recordAs(null, $req, 'sign_in_failed', $email);
                     throw new HttpError(401, 'wrong_password');
                 }
                 $userId = $user['id'];
+                $who = ['userId' => $user['id'], 'email' => $user['email'], 'name' => $user['name']];
             } elseif (!$app->auth->checkPassword($password)) {
+                $app->activity->recordAs(null, $req, 'sign_in_failed');
                 throw new HttpError(401, 'wrong_password');
             }
+            $app->activity->recordAs($who, $req, 'sign_in', $req->header('user-agent'));
             return self::signIn($app, $req, Response::json(['ok' => true]), $userId);
         }, public: true);
 

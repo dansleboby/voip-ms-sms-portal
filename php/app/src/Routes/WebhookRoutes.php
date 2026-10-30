@@ -30,10 +30,16 @@ final class WebhookRoutes
                     throw new InvalidRequest('replace: expected 10-digit numbers');
                 }
             }
-            return Response::json($app->accounts->primary()->webhook->enable($req->header('origin'), $replace));
+            $status = $app->accounts->primary()->webhook->enable($req->header('origin'), $replace);
+            $app->activity->record($req, 'webhook_enabled');
+            return Response::json($status);
         });
 
-        $r->admin('POST', '/api/webhook/disable', fn () => Response::json($app->accounts->primary()->webhook->disable()));
+        $r->admin('POST', '/api/webhook/disable', function (Request $req) use ($app): Response {
+            $status = $app->accounts->primary()->webhook->disable();
+            $app->activity->record($req, 'webhook_disabled');
+            return Response::json($status);
+        });
 
         /**
          * VoIP.ms's call for a text one of the numbers received. Public: the secret

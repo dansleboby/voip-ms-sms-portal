@@ -101,25 +101,27 @@ final class ContactRoutes
 
         $r->add('PUT', '/api/contacts/{id}', fn (Request $req) => $save(Input::id($req->param('id')), $req));
 
-        $r->add('DELETE', '/api/contacts/{id}', function (Request $req) use ($scoped, $changed): Response {
+        $r->add('DELETE', '/api/contacts/{id}', function (Request $req) use ($app, $scoped, $changed): Response {
             $repo = $scoped($req);
             $id = Input::id($req->param('id'));
-            $editable = $repo->contactEditable($id) ?? throw new HttpError(404, 'not_found');
-            if (!$editable) {
+            $contact = $repo->getContact($id) ?? throw new HttpError(404, 'not_found');
+            if (!$contact['editable']) {
                 throw new HttpError(403, 'read_only');
             }
             $repo->deleteContact($id);
+            $app->activity->record($req, 'contact_deleted', $contact['name']);
             $changed();
             return Response::json(['ok' => true]);
         });
 
         /** Deletes several contacts at once (a whole list imported by mistake); their conversations stay. */
-        $r->add('POST', '/api/contacts/delete', function (Request $req) use ($scoped, $changed): Response {
+        $r->add('POST', '/api/contacts/delete', function (Request $req) use ($app, $scoped, $changed): Response {
             $ids = array_values(array_unique((new Input($req->json()))->idList('ids', 1, self::MAX_DELETE_IDS)));
             // Those they may change only.
             $deleted = $scoped($req)->deleteContacts($ids);
             if ($deleted) {
                 $changed();
+                $app->activity->record($req, 'contacts_deleted', null, ['count' => $deleted]);
             }
             return Response::json(['deleted' => $deleted]);
         });

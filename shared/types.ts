@@ -56,6 +56,57 @@ export interface UserDto {
   numbers: { did: string; canSend: boolean }[];
 }
 
+/** What someone did, in the activity log the admins see. */
+export interface ActivityDto {
+  id: number;
+  at: number;
+  /** Who: a user, or the owner (userId and name null); null when nobody was signed in (a refused sign-in). */
+  actor: { userId: number | null; name: string | null } | null;
+  action: ActivityAction;
+  /** What it was about: an email, a number, a phone, a browser's user agent (sign_in, session_ended)... */
+  target: string | null;
+  detail: {
+    /** The fields a change touched. */
+    changes?: string[];
+    count?: number;
+    /** Deleted at VoIP.ms too. */
+    voipms?: boolean;
+    did?: string | null;
+    days?: number;
+    role?: string;
+  } | null;
+  ip: string | null;
+}
+
+export type ActivityAction =
+  | 'sign_in'
+  | 'sign_in_failed'
+  | 'session_ended'
+  | 'password_changed'
+  | 'team_enabled'
+  | 'user_added'
+  | 'user_changed'
+  | 'user_deleted'
+  | 'number_changed'
+  | 'sms_enabled'
+  | 'account_added'
+  | 'account_changed'
+  | 'credentials_changed'
+  | 'history_imported'
+  | 'webhook_enabled'
+  | 'webhook_disabled'
+  | 'update_installed'
+  | 'conversation_deleted'
+  | 'message_deleted'
+  | 'contact_deleted'
+  | 'contacts_deleted';
+
+/** GET /api/activity: the latest first, a page at a time (before: the last id of the previous page). */
+export interface ActivityPageDto {
+  entries: ActivityDto[];
+  more: boolean;
+}
+
 /** A signed-in browser, which its user can sign out from elsewhere. */
 export interface SessionInfoDto {
   id: string;
