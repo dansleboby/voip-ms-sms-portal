@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Loader2, LogOut, RefreshCw } from 'lucide-react';
+import { ArrowLeft, LogOut, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, setLang, t, useLang } from '../i18n';
 import { disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported, soundEnabled } from '../lib/notify';
@@ -10,13 +10,15 @@ import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sen
 import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
+import { AccountsSection } from './Accounts';
+import { ActivitySection } from './Activity';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
 import { ReceivingPanel } from './Receiving';
+import { MyNumbersSection } from './MyNumbers';
 import { MyAccountSection, TeamSection } from './Team';
 import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
-import type { ConnectionTestDto } from '../../../shared/types';
 import { WEBHOOK_SAFETY_MINUTES } from '../../../shared/webhook';
 
 const IMPORT_CHOICES = [30, 90, 365, 730];
@@ -54,8 +56,6 @@ export function Settings() {
   const [pushBusy, setPushBusy] = useState(false);
   const support = pushSupport();
   const [refreshing, setRefreshing] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [connection, setConnection] = useState<ConnectionTestDto | null>(null);
   const [importDays, setImportDays] = useState(90);
   const langChoice = prefs.get('lang') ?? 'auto';
   // A user of the Team mode texts; the numbers, VoIP.ms and the server are the admins'.
@@ -70,17 +70,6 @@ export function Settings() {
       toastError(err);
     } finally {
       setRefreshing(false);
-    }
-  };
-
-  const test = async () => {
-    setTesting(true);
-    try {
-      setConnection(await api.testConnection());
-    } catch (err) {
-      setConnection({ ip: null, status: err instanceof ApiError ? err.code : 'offline', balance: null });
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -230,6 +219,8 @@ export function Settings() {
             </div>
           </section>
 
+          <MyNumbersSection />
+
           <section className="section">
             <h3>{t('settings.appearance')}</h3>
             <div className="card">
@@ -271,49 +262,9 @@ export function Settings() {
 
           {admin && <TeamSection />}
 
-          {admin && (
-            <section className="section">
-              <h3>{t('settings.account')}</h3>
-              <div className="card">
-                <div className="row">
-                  <div className="row-main">
-                    <div className="row-title">{t('settings.username')}</div>
-                    <div className="row-sub">
-                      {session?.credentialsSource === 'env' ? t('settings.credentialsEnv') : t('settings.credentialsDb')}
-                    </div>
-                  </div>
-                  <button className="btn tonal small" onClick={test} disabled={testing}>
-                    {testing && <Loader2 size={16} className="spin" />}
-                    {t('settings.testConnection')}
-                  </button>
-                </div>
-                {connection && (
-                  <div className="row">
-                    <div className="row-main">
-                      {connection.status === 'success' ? (
-                        <span className="ok-text">✓ {t('setup.ip.ok', { balance: connection.balance?.toFixed(2) ?? '—' })}</span>
-                      ) : (
-                        <span className="error-text">{errorText(connection.status)}</span>
-                      )}
-                      {connection.ip && (
-                        <div className="row-sub">
-                          {t('setup.ip.yourIp')} : <code>{connection.ip}</code>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {!session?.demo && (
-                  <div className="row">
-                    <div className="row-main row-sub">{t('settings.runWizard')}</div>
-                    <button className="btn outlined small" onClick={() => navigate({ name: 'setup' })}>
-                      {session?.credentialsSource === 'env' ? t('settings.runWizard') : t('settings.changeCredentials')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
+          {admin && <ActivitySection />}
+
+          {admin && <AccountsSection />}
 
           {admin && (
             <section className="section">

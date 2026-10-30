@@ -46,8 +46,10 @@ final class UserRoutes
                 throw new HttpError(409, 'team_mode_on');
             }
             $body = new Input($req->json());
-            $id = $repo->createUser(self::email($body), self::name($body), Passwords::hash(self::password($body, 'password')), 'admin');
+            $email = self::email($body);
+            $id = $repo->createUser($email, self::name($body), Passwords::hash(self::password($body, 'password')), 'admin');
             $repo->setSetting(Auth::TEAM_KEY, '1');
+            $app->activity->record($req, 'team_enabled', $email);
             return Response::json($repo->getUser($id), 201);
         });
 
@@ -56,7 +58,7 @@ final class UserRoutes
             return Response::json($repo->listUsers());
         }, admin: true);
 
-        $r->add('POST', '/api/users', function (Request $req) use ($repo, $teamOnly): Response {
+        $r->add('POST', '/api/users', function (Request $req) use ($app, $repo, $teamOnly): Response {
             $teamOnly();
             $body = new Input($req->json());
             $email = self::email($body);
@@ -71,6 +73,7 @@ final class UserRoutes
             if ($numbers !== null) {
                 $repo->setUserNumbers($id, $numbers);
             }
+            $app->activity->record($req, 'user_added', $email, ['role' => $role]);
             return Response::json($repo->getUser($id), 201);
         }, admin: true);
 
@@ -116,23 +119,36 @@ final class UserRoutes
                 $app->events->broadcast(['type' => 'dids']);
                 $app->events->broadcast(['type' => 'reload']);
             }
+            $changes = array_keys(array_filter([
+                'name' => array_key_exists('name', $patch),
+                'role' => isset($patch['role']),
+                'disabled' => ($patch['disabled'] ?? null) === true,
+                'enabled' => ($patch['disabled'] ?? null) === false,
+                'password' => $password !== null,
+                'numbers' => $numbers !== null,
+            ]));
+            if ($changes) {
+                $app->activity->record($req, 'user_changed', $repo->getUserRow($id)['email'], ['changes' => $changes]);
+            }
             return Response::json($repo->getUser($id));
         }, admin: true);
 
-        $r->add('DELETE', '/api/users/{id}', function (Request $req) use ($repo, $teamOnly): Response {
+        $r->add('DELETE', '/api/users/{id}', function (Request $req) use ($app, $repo, $teamOnly): Response {
             $teamOnly();
             $id = Input::id($req->param('id'));
             if ($id === $req->user['userId']) {
                 throw new HttpError(409, 'cannot_change_self');
             }
+            $email = $repo->getUserRow($id)['email'] ?? null;
             if (!$repo->deleteUser($id)) {
                 throw new HttpError(404, 'not_found');
             }
+            $app->activity->record($req, 'user_deleted', $email);
             return Response::json(['ok' => true]);
         }, admin: true);
 
         /** A user's own name and password. The owner's password is APP_PASSWORD, set on the server. */
-        $r->add('PATCH', '/api/me', function (Request $req) use ($repo): Response {
+        $r->add('PATCH', '/api/me', function (Request $req) use ($app, $repo): Response {
             $userId = $req->user['userId'];
             if ($userId === null) {
                 throw new HttpError(409, 'owner_has_no_account');
@@ -152,9 +168,16 @@ final class UserRoutes
             $repo->updateUser($userId, $patch);
             if (isset($patch['passwordHash'])) {
                 $repo->deleteUserSessions($userId, $req->user['sessionId']);
+                $app->activity->record($req, 'password_changed');
             }
             return Response::json($repo->getUser($userId));
         });
+
+        /** What people did, the latest first (ActivityPageDto), a page at a time. */
+        $r->add('GET', '/api/activity', function (Request $req) use ($app): Response {
+            $before = (new Input($req->query))->matching('before', '/^\d{1,18}$/');
+            return Response::json($app->activity->page($before === null ? null : (int) $before));
+        }, admin: true);
 
         $r->add('GET', '/api/sessions', fn (Request $req) => Response::json(array_map(static fn (array $row) => [
             'id' => substr($row['id'], 0, self::PUBLIC_ID_LENGTH),
@@ -170,6 +193,7 @@ final class UserRoutes
             foreach ($repo->listSessions($req->user['userId']) as $row) {
                 if (substr($row['id'], 0, self::PUBLIC_ID_LENGTH) === $id) {
                     $app->auth->close($row['id']);
+                    $app->activity->record($req, 'session_ended', $row['user_agent']);
                     return Response::json(['ok' => true]);
                 }
             }

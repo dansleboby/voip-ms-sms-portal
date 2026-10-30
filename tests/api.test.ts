@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, runCron, startBackend, waitFor, type Backend } from './backends.js';
 import { browserKeys } from './webpush-helpers.js';
-import type { ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
+import type { ActivityPageDto, ContactDto, ConversationDto, DidDto, EventsPollDto, MessageDto, ServerEvent, SessionInfoDto, UserDto } from '../shared/types.js';
 
 /**
  * The HTTP API, as the web client uses it, in demo mode. Docker and shared
@@ -570,7 +570,7 @@ describe('The server with several VoIP.ms accounts', () => {
   });
 
   it('lists the account set up first', async () => {
-    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3 }]);
+    expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3, error: null }]);
   });
 
   it('adds an account once, checking its credentials, with its own numbers', async () => {
@@ -611,6 +611,19 @@ describe('The server with several VoIP.ms accounts', () => {
       return messages.find((m) => m.id === id)?.status === 'sent';
     });
   }, 30_000);
+
+  it('tests an account, and takes new credentials for it', async () => {
+    expect((await client.post('/api/accounts/2/test')).json).toMatchObject({
+      account: { id: 2, error: null },
+      connection: { status: 'success', ip: '203.0.113.10' },
+    });
+    expect((await client.post('/api/accounts/9/test')).status).toBe(404);
+    const changed = await client.request('PUT', '/api/accounts/2/credentials', { username: 'boulangerie@example.com', password: 'new secret' });
+    expect(changed.json).toMatchObject({ account: { id: 2, username: 'boulangerie@example.com', credentialsSource: 'db', numbers: 1 }, connection: { status: 'success' } });
+    expect((await client.request('PUT', '/api/accounts/2/credentials', { username: 'DEMO@example.com', password: 'x' })).json).toEqual({ error: 'account_exists' });
+    // The first account's come from the server's settings here.
+    expect((await client.request('PUT', '/api/accounts/1/credentials', { username: 'x@example.com', password: 'x' })).json).toEqual({ error: 'credentials_env' });
+  });
 
   it('renames an account', async () => {
     expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
@@ -810,6 +823,72 @@ describe('The server in the Team mode', () => {
     expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
   }, 30_000);
 
+  it('lets each person hide a number from their list and mute it, for themselves only', async () => {
+    const LAVAL = '4505550199';
+    const numbers = [{ did: MONTREAL, canSend: true }, { did: LAVAL, canSend: false }];
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { numbers })).status).toBe(200);
+    await poll(admin);
+    await poll(marc);
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: true, muted: true })).json).toMatchObject({
+      did: LAVAL,
+      visible: true,
+      hidden: true,
+      muted: true,
+    });
+    expect((await marc.request('PATCH', `/api/me/dids/${GATINEAU}`, { muted: true })).status).toBe(404);
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: 'yes' })).status).toBe(400);
+    const mine = (await marc.get('/api/conversations')).json as ConversationDto[];
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((c) => c.did === MONTREAL)).toBe(true);
+    // Still there when asked for.
+    expect(((await marc.get(`/api/conversations?did=${LAVAL}`)).json as ConversationDto[]).length).toBeGreaterThan(0);
+
+    // Nobody else's choice changes, nor their tabs.
+    expect(((await admin.get('/api/dids')).json as DidDto[]).find((d) => d.did === LAVAL)).toMatchObject({ hidden: false, muted: false });
+    expect(((await admin.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+    expect((await poll(admin)).filter((e) => e.type === 'reload')).toEqual([]);
+    expect((await poll(marc)).map((e) => e.type)).toEqual(expect.arrayContaining(['dids', 'reload']));
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: false })).json).toMatchObject({ hidden: false, muted: true });
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+  });
+
+  it('keeps an address book per number, and one of their own for each person', async () => {
+    const LAVAL = '4505550199';
+    // Marc's own: it names his conversations, and nobody else sees it.
+    const own = await marc.post('/api/contacts', { name: 'Ma sœur', phones: [MARIE], book: { kind: 'personal' } });
+    expect(own).toMatchObject({ status: 201, json: { book: { kind: 'personal' }, editable: true } });
+    const marie = ((await marc.get('/api/conversations')).json as ConversationDto[]).find((c) => c.phone === MARIE)!;
+    expect(marie.contact?.name).toBe('Ma sœur');
+    expect(((await admin.get(`/api/conversations/${marie.id}`)).json as ConversationDto).contact?.name).toBe('Marie Tremblay');
+    expect(((await admin.get('/api/contacts')).json as ContactDto[]).map((c) => c.name)).not.toContain('Ma sœur');
+
+    // Every number's book is the admins'; a number's, theirs and that of whoever may text from it.
+    const book = (b: object) => ({ name: 'Pharmacie', phones: ['5145550199'], book: b });
+    expect(await marc.post('/api/contacts', book({ kind: 'all' }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [LAVAL] }))).toMatchObject({ status: 403, json: { error: 'book_forbidden' } });
+    expect(await marc.post('/api/contacts', book({ kind: 'numbers', dids: [MONTREAL] }))).toMatchObject({
+      status: 201,
+      json: { book: { kind: 'numbers', dids: [MONTREAL] }, editable: true },
+    });
+    const garage = await admin.post('/api/contacts', { name: 'Garage du coin', phones: ['4505550188'], book: { kind: 'numbers', dids: [LAVAL] } });
+    expect(garage.status).toBe(201);
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Garage du coin')).toMatchObject({ editable: false });
+    expect((await marc.request('PUT', `/api/contacts/${garage.json.id}`, { name: 'x', phones: ['4505550188'] })).json).toEqual({ error: 'read_only' });
+    expect((await marc.request('DELETE', `/api/contacts/${garage.json.id}`)).json).toEqual({ error: 'read_only' });
+    // Alex is in every number's book, which Marc may not change.
+    expect(await marc.post('/api/contacts', { name: 'Alex', phones: ['5145550187'], book: { kind: 'numbers', dids: [MONTREAL] }, force: true })).toMatchObject({
+      status: 409,
+      json: { error: 'phone_locked', phones: ['5145550187'] },
+    });
+
+    // Imports go to their own book.
+    const imported = await marc.post('/api/contacts/import', { vcard: 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Paul\r\nTEL:514-555-0166\r\nEND:VCARD\r\n' });
+    expect(imported.json).toMatchObject({ imported: 1 });
+    expect(((await marc.get('/api/contacts')).json as ContactDto[]).find((c) => c.name === 'Paul')).toMatchObject({ book: { kind: 'personal' } });
+  });
+
   it('lets users change their own name and password, signing their other browsers out', async () => {
     const phone = (await signIn('marc@example.com', 'marc password')).client;
     expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);
@@ -832,6 +911,29 @@ describe('The server in the Team mode', () => {
     expect((await marc.request('DELETE', `/api/sessions/${other.id}`)).json).toEqual({ ok: true });
     expect((await phone.get('/api/conversations')).status).toBe(401);
     expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+  });
+
+  it('keeps a log of sign-ins and changes for the admins', async () => {
+    const page = (await admin.get('/api/activity')).json as ActivityPageDto;
+    const seen = page.entries.map((e) => [e.action, e.actor?.name ?? null, e.target]);
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        ['sign_in_failed', null, 'nobody@example.com'],
+        ['team_enabled', null, 'julie@example.com'],
+        ['user_added', 'Julie', 'marc@example.com'],
+        ['number_changed', 'Julie', MONTREAL],
+        // He had no name yet: his email, as it was then.
+        ['password_changed', 'marc@example.com', null],
+      ]),
+    );
+    // The latest first, with who did it and from where.
+    expect(page.entries[0]!.id).toBeGreaterThan(page.entries[1]!.id);
+    expect(page.entries.find((e) => e.action === 'sign_in_failed')).toMatchObject({ actor: null, ip: '127.0.0.1' });
+    expect(page.entries.find((e) => e.action === 'team_enabled')!.actor).toEqual({ userId: null, name: null });
+    expect(page.entries.find((e) => e.action === 'user_changed')!.detail).toMatchObject({ changes: expect.arrayContaining(['numbers']) });
+    expect(page.entries.find((e) => e.action === 'sign_in' && e.actor?.userId === marcId)).toBeTruthy();
+    expect((await marc.get('/api/activity')).status).toBe(403);
+    expect((await admin.get(`/api/activity?before=${page.entries[0]!.id}`)).json.entries[0].id).toBe(page.entries[1]!.id);
   });
 
   it('turns a disabled user away, even signed in', async () => {

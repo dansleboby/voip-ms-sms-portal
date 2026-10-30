@@ -259,6 +259,14 @@ describe('PHP server: push notifications', () => {
     // One number: no need to say which.
     expect(forMarc).toMatchObject({ title: '(514) 555-0188', body: 'Pour Marc aussi', unread: 1 });
 
+    // Muted, for them only.
+    expect((await marc.request('PATCH', `/api/me/dids/${OTHER}`, { muted: true })).json).toMatchObject({ muted: true });
+    service.received = [];
+    voipms.push({ direction: 'in', did: OTHER, contact: '5145550188', message: 'Encore' });
+    await checkNow(client);
+    await waitFor(async () => to(owner).length === 1);
+    expect(to(theirs)).toEqual([]);
+
     // A disabled user's browsers stop getting them.
     expect((await client.request('PATCH', `/api/users/${created.json.id}`, { disabled: true })).status).toBe(200);
     expect((await subscriptions()).map((s) => s.endpoint)).toEqual([owner]);

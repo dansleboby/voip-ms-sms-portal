@@ -198,6 +198,58 @@ final class Db
               PRIMARY KEY (conversation_id, user_key)
             );
             SQL,
+            <<<'SQL'
+            -- What each person (0: the owner; otherwise a user's id) chose for a number, for themselves.
+            CREATE TABLE did_prefs (
+              user_key INTEGER NOT NULL,
+              did      TEXT NOT NULL,
+              -- Out of their list of conversations and of their notifications.
+              hidden   INTEGER NOT NULL DEFAULT 0,
+              -- No notifications.
+              muted    INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (user_key, did)
+            );
+            SQL,
+            <<<'SQL'
+            -- Address books. A contact is someone's own (owner_key: 0 the owner, otherwise a user's id), or in
+            -- the books of numbers: every number's (all_dids = 1, where the contacts of 1.x stay) or those of
+            -- contact_dids.
+            ALTER TABLE contacts ADD COLUMN owner_key INTEGER;
+            ALTER TABLE contacts ADD COLUMN all_dids INTEGER NOT NULL DEFAULT 1;
+            CREATE TABLE contact_dids (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              did        TEXT NOT NULL,
+              PRIMARY KEY (contact_id, did)
+            );
+            -- A phone is one contact's per book, no longer one contact's in the whole portal.
+            CREATE TABLE contact_phones_by_book (
+              contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+              phone      TEXT NOT NULL,
+              PRIMARY KEY (contact_id, phone)
+            );
+            INSERT INTO contact_phones_by_book (contact_id, phone) SELECT contact_id, phone FROM contact_phones ORDER BY rowid;
+            DROP TABLE contact_phones;
+            ALTER TABLE contact_phones_by_book RENAME TO contact_phones;
+            CREATE INDEX contact_phones_phone ON contact_phones(phone);
+            SQL,
+            <<<'SQL'
+            -- What people did, for the admins (Activity): kept 180 days.
+            CREATE TABLE activity (
+              id       INTEGER PRIMARY KEY,
+              at       INTEGER NOT NULL,
+              -- Who: 0 the owner, otherwise a user's id; NULL when nobody was signed in (a refused sign-in).
+              user_key INTEGER,
+              -- Their name, or email, as it was then.
+              actor    TEXT,
+              action   TEXT NOT NULL,
+              -- What it was about: an email, a number, a phone...
+              target   TEXT,
+              -- JSON: the fields a change touched, a count...
+              detail   TEXT,
+              ip       TEXT
+            );
+            CREATE INDEX activity_at ON activity(at);
+            SQL,
         ];
     }
 

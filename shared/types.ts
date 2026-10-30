@@ -56,6 +56,57 @@ export interface UserDto {
   numbers: { did: string; canSend: boolean }[];
 }
 
+/** What someone did, in the activity log the admins see. */
+export interface ActivityDto {
+  id: number;
+  at: number;
+  /** Who: a user, or the owner (userId and name null); null when nobody was signed in (a refused sign-in). */
+  actor: { userId: number | null; name: string | null } | null;
+  action: ActivityAction;
+  /** What it was about: an email, a number, a phone, a browser's user agent (sign_in, session_ended)... */
+  target: string | null;
+  detail: {
+    /** The fields a change touched. */
+    changes?: string[];
+    count?: number;
+    /** Deleted at VoIP.ms too. */
+    voipms?: boolean;
+    did?: string | null;
+    days?: number;
+    role?: string;
+  } | null;
+  ip: string | null;
+}
+
+export type ActivityAction =
+  | 'sign_in'
+  | 'sign_in_failed'
+  | 'session_ended'
+  | 'password_changed'
+  | 'team_enabled'
+  | 'user_added'
+  | 'user_changed'
+  | 'user_deleted'
+  | 'number_changed'
+  | 'sms_enabled'
+  | 'account_added'
+  | 'account_changed'
+  | 'credentials_changed'
+  | 'history_imported'
+  | 'webhook_enabled'
+  | 'webhook_disabled'
+  | 'update_installed'
+  | 'conversation_deleted'
+  | 'message_deleted'
+  | 'contact_deleted'
+  | 'contacts_deleted';
+
+/** GET /api/activity: the latest first, a page at a time (before: the last id of the previous page). */
+export interface ActivityPageDto {
+  entries: ActivityDto[];
+  more: boolean;
+}
+
 /** A signed-in browser, which its user can sign out from elsewhere. */
 export interface SessionInfoDto {
   id: string;
@@ -88,6 +139,10 @@ export interface DidDto {
   sharedState: boolean;
   /** Whether whoever asks may text from it (false: read only, in the Team mode). */
   canSend: boolean;
+  /** Hidden by whoever asks, for themselves (visible is the admins' choice, for everyone). */
+  hidden: boolean;
+  /** Whoever asks gets no notifications for it. */
+  muted: boolean;
 }
 
 export interface AttachmentDto {
@@ -149,7 +204,18 @@ export interface ConversationDto {
 export interface ContactDto extends ContactRef {
   notes: string | null;
   phones: string[];
+  book: ContactBook;
+  /** Whether whoever asks may change or delete it. */
+  editable: boolean;
 }
+
+/**
+ * Where a contact is: its creator's own book (only they see it), every
+ * number's, or the books of some numbers (seen by whoever sees one of them).
+ * A conversation takes its name from the viewer's own book first, then from
+ * its number's.
+ */
+export type ContactBook = { kind: 'personal' } | { kind: 'all' } | { kind: 'numbers'; dids: string[] };
 
 export interface SyncStatusDto {
   state: 'disabled' | 'idle' | 'syncing' | 'error';
@@ -212,6 +278,14 @@ export interface AccountDto {
   username: string | null;
   credentialsSource: CredentialsSource;
   numbers: number;
+  /** Why its last check failed (ip_not_enabled after the server moved, say); null when it worked. */
+  error: string | null;
+}
+
+/** An account added, given new credentials or tested: and what VoIP.ms answered. */
+export interface AccountCheckDto {
+  account: AccountDto;
+  connection: ConnectionTestDto;
 }
 
 export interface SetupStatusDto {

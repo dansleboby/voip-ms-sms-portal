@@ -61,6 +61,12 @@ final class MessagingRoutes
             if (!$deleted['ids']) {
                 return [];
             }
+            $conversation = $repo->getConversation($conversationId);
+            $app->activity->record($req, $ids === null ? 'conversation_deleted' : 'message_deleted', $conversation['phone'] ?? null, [
+                'did' => $conversation['did'] ?? null,
+                'count' => count($deleted['ids']),
+                'voipms' => $alsoAtVoipMs,
+            ]);
             $app->media->remove($deleted['files']);
             if ($alsoAtVoipMs) {
                 $app->defer(fn () => $app->deletions->drain(microtime(true) + 20));
@@ -74,7 +80,7 @@ final class MessagingRoutes
 
         $r->add('GET', '/api/dids', fn (Request $req) => Response::json($scoped($req)->listDids()));
 
-        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($repo, $events, $scoped): Response {
+        $r->admin('PATCH', '/api/dids/{did}', function (Request $req) use ($app, $repo, $events, $scoped): Response {
             $did = $req->param('did');
             $body = new Input($req->json());
             $patch = [];
@@ -98,7 +104,33 @@ final class MessagingRoutes
             }
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
+            // The order of the numbers is not worth a line.
+            $changes = array_values(array_diff(array_keys($patch), ['position']));
+            if ($changes) {
+                $app->activity->record($req, 'number_changed', $did, ['changes' => $changes]);
+            }
             return Response::json($scoped($req)->getDid($did));
+        });
+
+        /** What the person signed in chose for a number, for themselves: hidden from their list, or muted. */
+        $r->add('PATCH', '/api/me/dids/{did}', function (Request $req) use ($events, $scoped): Response {
+            $repo = $scoped($req);
+            $did = $req->param('did');
+            if ($repo->getDid($did) === null) {
+                throw new HttpError(404, 'not_found');
+            }
+            $body = new Input($req->json());
+            $patch = [];
+            foreach (['hidden', 'muted'] as $field) {
+                if ($body->has($field)) {
+                    $patch[$field] = $body->bool($field);
+                }
+            }
+            $repo->setDidPrefs($did, $patch);
+            // Their tabs only.
+            $events->broadcast(['type' => 'dids', 'userKey' => $req->viewer->key]);
+            $events->broadcast(['type' => 'reload', 'userKey' => $req->viewer->key]);
+            return Response::json($repo->getDid($did));
         });
 
         /** Turns SMS on for a number in the VoIP.ms account, and shows the number. */
@@ -127,6 +159,7 @@ final class MessagingRoutes
             });
             $events->broadcast(['type' => 'dids']);
             $events->broadcast(['type' => 'reload']);
+            $app->activity->record($req, 'sms_enabled', $did);
             return Response::json($scoped($req)->getDid($did));
         });
 
@@ -293,7 +326,7 @@ final class MessagingRoutes
             $visible = $query->choice('visible', ['0', '1']) !== '0';
             $after = $query->optionalString('after', 100);
             $result = $events->poll($after, $tab, $device, $visible);
-            $result['events'] = self::forViewer($result['events'], $scoped($req));
+            $result['events'] = self::forViewer($result['events'], $scoped($req), $req->viewer->key);
             // Like the stream's first frame: a tab starting over learns the sync state.
             if ($after === null || $result['reset']) {
                 array_unshift($result['events'], ['type' => 'sync', 'status' => $app->accounts->status()]);
@@ -306,16 +339,22 @@ final class MessagingRoutes
     /**
      * The events as the one polling sees them: about the conversations on their numbers
      * only, each conversation as it is now for them (their own unread count and archive,
-     * where its number keeps them per person).
+     * where its number keeps them per person). An event with a userKey is for that person only.
      *
      * @param list<array> $events
      * @return list<array>
      */
-    private static function forViewer(array $events, Repo $repo): array
+    private static function forViewer(array $events, Repo $repo, int $viewerKey): array
     {
         $conversations = [];
         $visible = [];
         foreach ($events as $event) {
+            if (array_key_exists('userKey', $event)) {
+                if ($event['userKey'] !== $viewerKey) {
+                    continue;
+                }
+                unset($event['userKey']);
+            }
             if (isset($event['conversation']['id'])) {
                 $id = $event['conversation']['id'];
                 if (!array_key_exists($id, $conversations)) {

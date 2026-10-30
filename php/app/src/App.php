@@ -27,6 +27,7 @@ final class App
     public readonly Repo $repo;
     public readonly Events $events;
     public readonly Auth $auth;
+    public readonly Activity $activity;
     public readonly Credentials $credentials;
     public readonly Media $media;
     /** The VoIP.ms accounts, each checked on its own. */
@@ -66,6 +67,7 @@ final class App
         $this->repo = new Repo(Db::open("$dataDir/portal.db"), $config->allowedDids, $config->excludedDids);
         $this->events = new Events($this->repo);
         $this->auth = new Auth($this->repo, $config->appPassword, $config->sessionDays);
+        $this->activity = new Activity($this->repo);
         $this->credentials = new Credentials(
             $this->repo,
             $config->appPassword,

@@ -66,6 +66,9 @@ export function didName(did: DidDto | undefined, fallback: string): string {
   return did?.label || formatPhone(did?.did ?? fallback);
 }
 
+/** A number on screen: neither hidden by the admins for everyone, nor by whoever is signed in for themselves. */
+export const isShown = (did: DidDto): boolean => did.visible && !did.hidden;
+
 /** Up to two initials, or null when the name is a phone number. */
 export function initials(name: string): string | null {
   if (!/\p{L}/u.test(name)) return null;

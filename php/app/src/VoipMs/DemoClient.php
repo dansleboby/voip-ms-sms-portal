@@ -96,8 +96,9 @@ final class DemoClient implements VoipMsApi
             [3 * $day + 50 * self::MIN, '5145550100', '4385550142', 'in', 'Parfait 😊 Apporte tes bottes, il a plu.'],
             [2 * self::HOUR, '5145550100', '4385550142', 'in', 'Regarde la vue ce matin!', [self::photo()]],
             [1 * self::HOUR + 55 * self::MIN, '5145550100', '4385550142', 'out', 'Wow, magnifique 😍'],
-            [26 * self::HOUR, '4505550199', '4505550111', 'in', 'Bonjour, votre véhicule est prêt. Vous pouvez passer le récupérer avant 17 h.'],
-            [25 * self::HOUR, '4505550199', '4505550111', 'out', 'Merci, je passe vers 16 h 30.'],
+            // Under a day old: the first check, which looks a day back by calendar date, finds them at any hour.
+            [23 * self::HOUR, '4505550199', '4505550111', 'in', 'Bonjour, votre véhicule est prêt. Vous pouvez passer le récupérer demain avant 17 h.'],
+            [22 * self::HOUR, '4505550199', '4505550111', 'out', 'Merci, je passe vers 16 h 30.'],
             [5 * $day, '5145550100', '5145550187', 'out', 'Hey Alex, are we still on for Thursday?'],
             [5 * $day - 20 * self::MIN, '5145550100', '5145550187', 'in', 'Yes! 7pm at the usual place.'],
             [12 * self::MIN, '5145550100', '5145550187', 'in', 'Running 10 min late, sorry!'],

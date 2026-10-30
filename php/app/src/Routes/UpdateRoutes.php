@@ -21,10 +21,12 @@ final class UpdateRoutes
         });
 
         /** Replaces this server's files with the newest release; the next request runs it. */
-        $app->router->admin('POST', '/api/update/install', function () use ($app): Response {
+        $app->router->admin('POST', '/api/update/install', function (Request $req) use ($app): Response {
             // Loaded before its file is replaced.
             class_exists(Response::class);
-            return Response::json(['version' => $app->updates->install()]);
+            $version = $app->updates->install();
+            $app->activity->record($req, 'update_installed', $version);
+            return Response::json(['version' => $version]);
         });
     }
 }
