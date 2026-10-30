@@ -9,6 +9,7 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
   - Open tabs ask for news every 3 seconds instead of keeping a connection open: `LIVE_UPDATES` is gone, and a reverse proxy no longer needs response buffering turned off.
   - The logs show errors only, not every request. `LOG_LEVEL`, `HOST` and `WEB_DIR` are no longer read; `PORT`, `TRUST_PROXY`, `PUID` and `PGID` work as before.
   - A mistake in the settings, such as a missing `APP_PASSWORD`, still stops the container, with the reason in its logs.
+- **PHP 8.4 or later**, on shared hosting. PHP 8.1 has had no security fixes since the end of 2025, and 8.2 has none after 2026. Choose the version in cPanel (*MultiPHP Manager*, or *Select PHP Version*): with 1.8.1 or later, *Settings* → *Updates* waits for it before installing 2.0, and says so. The Docker image brings its own PHP 8.4.
 - **Signed-in devices.** *Settings* → *My account* lists the browsers signed in, with when each was last active, and signs out any of them. Changing your password signs out the others. Signing out now ends a session for good: before, a copy of its cookie kept working until it expired. Everyone signs in again once after this update.
 - When several texts from the same person arrive within the same second, as the parts of a long text can, the push notification now shows the last one instead of the first.
 

@@ -275,7 +275,7 @@ describe.each(['ZipArchive', 'PharData'])('PHP server: installing an update with
     expect(await client.post('/api/update/install')).toMatchObject({ status: 409, json: { error: 'php_too_old' } });
     expect(read(path.join(app, 'VERSION')).trim()).toBe('1.0.0');
     // The PHP this server runs, or an older one, is fine.
-    releases.release('9.9.9', zip, undefined, '8.1');
+    releases.release('9.9.9', zip, undefined, '8.4');
     expect((await client.get('/api/update?refresh=1')).json).toMatchObject({ canInstall: true, blocked: null });
     expect((await client.get('/api/update')).json.php).toBeUndefined();
   });

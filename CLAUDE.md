@@ -2,7 +2,7 @@
 
 A web app for sending and receiving the texts of a VoIP.ms account: a React client and one server, in PHP.
 
-- **Server** (`php/`): PHP 8.1+ with no Composer packages, and SQLite. Each request is a process of its own,
+- **Server** (`php/`): PHP 8.4+ with no Composer packages, and SQLite. Each request is a process of its own,
   so live updates, open tabs and sync state live in the database, and file locks keep jobs from overlapping.
   VoIP.ms is checked after requests and by `php/app/cron.php`.
 - **One package, two ways to host it** (`npm run build:cpanel`):
@@ -51,7 +51,7 @@ docker build -t sms-portal .                  # the Docker image
 npm run screenshots                           # README screenshots; lists the ones that changed
 ```
 
-The tests need PHP 8.1+ on the PATH; CI runs them on PHP 8.1 and 8.4, and starts the Docker image. Run the
+The tests need PHP 8.4+ on the PATH; CI runs them on PHP 8.4 and 8.5, and starts the Docker image. Run the
 whole `tests/api.test.ts` file rather than filtering with `-t`, because its cases share the setup in
 `beforeAll`.
 
@@ -65,8 +65,9 @@ whole `tests/api.test.ts` file rather than filtering with `-t`, because its case
 - **Who may call a route.** Every `/api` route needs a session unless it is public. One that changes the
   portal itself (numbers, VoIP.ms, users, updates) is for admins: `admin: true` or `$r->admin()`. The owner
   (`APP_PASSWORD`) passes that check.
-- **PHP code must run on 8.1.** That rules out typed class constants, `readonly` classes and
-  `json_validate`.
+- **PHP 8.4 is the oldest supported**, as `engines.php` in `package.json` says. `release.json` announces it,
+  and the updater waits for a site's PHP to reach it; `api.php` and `bootstrap.php` check it (a test keeps the
+  three in step). Raising it goes through all three, with a line for users in the changelog.
 - **Every user-visible string goes through i18n**, in `fr.ts` and `en.ts`.
 - **User-facing changes go under `## Unreleased` in `CHANGELOG.md`**, written for users.
   Keep the two READMEs (`README.md` and `README.fr.md`) in step.

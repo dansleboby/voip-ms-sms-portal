@@ -139,7 +139,7 @@ Want to look around first? Start it with `DEMO_MODE=true`: sample numbers and co
 
 The same app runs on ordinary PHP web hosting, without Docker: the server is the same as the Docker image's, and a cron job checks VoIP.ms while the app is closed.
 
-**You need** PHP 8.1 or later with `pdo_sqlite`, `openssl`, `curl` and `mbstring` (all on by default in cPanel), a subdomain with HTTPS, and cron jobs. The steps below are the short version; the [step-by-step guide](docs/install.md#2a-install-on-cpanel-web-hosting) gives every click.
+**You need** PHP 8.4 or later with `pdo_sqlite`, `openssl`, `curl` and `mbstring` (all on by default in cPanel; choose the version in *MultiPHP Manager*), a subdomain with HTTPS, and cron jobs. The steps below are the short version; the [step-by-step guide](docs/install.md#2a-install-on-cpanel-web-hosting) gives every click.
 
 1. Get `sms-portal-cpanel-<version>.zip`, attached to each [release](https://github.com/dansleboby/voip-ms-sms-portal/releases) (or build it: `npm run build:cpanel`), and extract it in your home folder (cPanel → *File Manager* → *Upload*, then *Extract*). You get two folders side by side: `sms-portal/`, the server with its settings and data, never served, and `sms-portal-site/`, what the browser loads.
 2. Create the subdomain (cPanel → *Domains* → *Create A New Domain*) with `sms-portal-site` as its document root, and make sure it has HTTPS (cPanel → *SSL/TLS Status* → *Run AutoSSL*). Keep the two folders side by side: if every page answers *Forbidden*, the document root is `sms-portal` or a folder inside it, or the web server cannot read the site's files (they need permissions 644, and folders 755).
@@ -229,12 +229,12 @@ location / {
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
 - **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using PHP's openssl, without a third-party library.
 - **Sending.** A message is saved immediately and delivered in the background; if VoIP.ms fails ambiguously (timeout, Cloudflare 5xx) and the message still went out, it is matched with the history instead of appearing twice. Failed messages can be retried.
-- **Stack.** The server is PHP 8.1+ with no Composer package and SQLite; the client, React + Vite in TypeScript. One server for both ways of hosting it: Docker runs it under Apache with the same `.htaccess` as shared hosting, plus its cron job every 10 seconds, in a single container with no external service.
+- **Stack.** The server is PHP 8.4+ with no Composer package and SQLite; the client, React + Vite in TypeScript. One server for both ways of hosting it: Docker runs it under Apache with the same `.htaccess` as shared hosting, plus its cron job every 10 seconds, in a single container with no external service.
 - **No process of its own.** Each request is a PHP process, so the server keeps in the database the live updates open tabs poll for (every 3 s), the open tabs and the sync state; file locks keep a check and a send from overlapping. `tests/` checks the API in demo mode, the VoIP.ms client against a fake VoIP.ms over HTTP, and the server's classes in PHP.
 
 ## Development
 
-It takes Node.js 22+ for the client and the tools, and PHP 8.1+ (with `pdo_sqlite`, `openssl`, `curl` and `mbstring`) for the server and the tests.
+It takes Node.js 22+ for the client and the tools, and PHP 8.4+ (with `pdo_sqlite`, `openssl`, `curl`, `mbstring` and `intl`) for the server and the tests.
 
 ```bash
 npm install

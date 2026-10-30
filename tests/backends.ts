@@ -22,7 +22,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const ENV = { APP_PASSWORD: 'hunter2', DEMO_MODE: 'true', POLL_INTERVAL_ACTIVE: '3' };
 
 if (spawnSync('php', ['-v']).status !== 0) {
-  throw new Error('The tests need PHP 8.1 or later on the PATH: the server is written in PHP.');
+  throw new Error('The tests need PHP 8.4 or later on the PATH: the server is written in PHP.');
 }
 
 /** A port nothing uses right now, picked by the system. */

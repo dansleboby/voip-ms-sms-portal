@@ -14,10 +14,10 @@ jobs:
     strategy:
       matrix:
         include:
-          # The oldest PHP shared hosting may have, with the oldest Node the tooling supports.
-          - { php: '8.1', node: 22 }
-          # What the Docker image runs.
-          - { php: '8.4', node: 24 }
+          # The oldest PHP the server supports, which the Docker image runs, with the oldest Node the tooling supports.
+          - { php: '8.4', node: 22 }
+          # The newest PHP, which hosts move to.
+          - { php: '8.5', node: 24 }
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -34,7 +34,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:cpanel
-      - if: matrix.php == '8.1'
+      - if: matrix.php == '8.4'
         uses: actions/upload-artifact@v4
         with:
           name: sms-portal-cpanel

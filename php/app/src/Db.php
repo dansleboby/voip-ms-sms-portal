@@ -240,20 +240,13 @@ final class Db
      */
     public static function open(string $file, ?int $version = null): PDO
     {
-        $dsn = 'sqlite:' . $file;
-        // PHP 8.4 has a SQLite-specific class; createFunction moved there.
-        $db = class_exists(\Pdo\Sqlite::class) ? new \Pdo\Sqlite($dsn) : new PDO($dsn);
+        $db = new \Pdo\Sqlite('sqlite:' . $file);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $db->exec('PRAGMA busy_timeout = 5000');
         $db->exec('PRAGMA journal_mode = WAL');
         $db->exec('PRAGMA foreign_keys = ON');
-        $fold = static fn ($value) => is_string($value) ? Text::fold($value) : $value;
-        if ($db instanceof \Pdo\Sqlite) {
-            $db->createFunction('fold', $fold, 1, \Pdo\Sqlite::DETERMINISTIC);
-        } else {
-            $db->sqliteCreateFunction('fold', $fold, 1, PDO::SQLITE_DETERMINISTIC);
-        }
+        $db->createFunction('fold', static fn ($value) => is_string($value) ? Text::fold($value) : $value, 1, \Pdo\Sqlite::DETERMINISTIC);
         self::migrate($db, $version);
         return $db;
     }

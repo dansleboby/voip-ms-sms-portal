@@ -14,14 +14,17 @@ cd "$CLAUDE_PROJECT_DIR"
 # Playwright is only for npm run screenshots, and the image brings its browser.
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund
 
-# The PHP server's tests are skipped without PHP (8.1+, pdo_sqlite, openssl, curl, mbstring).
+# The server and its tests need PHP 8.4+ with pdo_sqlite, openssl, curl, mbstring and intl.
 if ! command -v php >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-    apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq php-cli php-sqlite3 php-curl php-mbstring >/dev/null \
-      || echo "PHP could not be installed: the PHP server's tests will be skipped." >&2
+    apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq php-cli php-sqlite3 php-curl php-mbstring php-intl >/dev/null \
+      || echo "PHP could not be installed: the tests need PHP 8.4 or later." >&2
   else
-    echo "PHP is not installed: the PHP server's tests will be skipped." >&2
+    echo "PHP is not installed: the tests need PHP 8.4 or later." >&2
   fi
+fi
+if command -v php >/dev/null 2>&1 && ! php -r 'exit(PHP_VERSION_ID >= 80400 ? 0 : 1);'; then
+  echo "PHP $(php -r 'echo PHP_VERSION;') is too old for the tests, which need 8.4 or later (Debian 13 has it; Ubuntu 24.04 does not)." >&2
 fi
 
 # A clone of one branch has no origin/HEAD: point it at the default branch.

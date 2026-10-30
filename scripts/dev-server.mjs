@@ -10,7 +10,7 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 if (spawnSync('php', ['-v']).status !== 0) {
-  console.error('PHP 8.1 or later must be on the PATH: the server is written in PHP.');
+  console.error('PHP 8.4 or later must be on the PATH: the server is written in PHP.');
   process.exit(1);
 }
 

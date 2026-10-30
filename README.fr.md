@@ -139,7 +139,7 @@ Pour faire le tour avant de brancher votre compte : `DEMO_MODE=true` affiche des
 
 La même application fonctionne sur un hébergement web PHP ordinaire, sans Docker : le serveur est le même que celui de l'image Docker, et une tâche cron vérifie VoIP.ms quand l'application est fermée.
 
-**Il faut** PHP 8.1 ou plus récent avec `pdo_sqlite`, `openssl`, `curl` et `mbstring` (activés par défaut dans cPanel), un sous-domaine en HTTPS et les tâches cron. Les étapes ci-dessous en sont la version courte; le [guide pas à pas](docs/install.fr.md#2a-installer-sur-un-hébergement-cpanel) donne chaque clic.
+**Il faut** PHP 8.4 ou plus récent avec `pdo_sqlite`, `openssl`, `curl` et `mbstring` (activés par défaut dans cPanel ; la version se choisit dans *MultiPHP Manager*), un sous-domaine en HTTPS et les tâches cron. Les étapes ci-dessous en sont la version courte; le [guide pas à pas](docs/install.fr.md#2a-installer-sur-un-hébergement-cpanel) donne chaque clic.
 
 1. Prenez `sms-portal-cpanel-<version>.zip`, joint à chaque [version publiée](https://github.com/dansleboby/voip-ms-sms-portal/releases) (ou construisez-le : `npm run build:cpanel`), et décompressez-le dans votre dossier personnel (cPanel → *Gestionnaire de fichiers* → *Charger*, puis *Extraire*). Vous obtenez deux dossiers côte à côte : `sms-portal/`, le serveur avec ses réglages et ses données, jamais servi, et `sms-portal-site/`, ce que le navigateur charge.
 2. Créez le sous-domaine (cPanel → *Domaines* → *Créer un nouveau domaine*) avec `sms-portal-site` comme racine de document, et vérifiez qu'il est en HTTPS (cPanel → *État SSL/TLS* → *Exécuter AutoSSL*). Laissez les deux dossiers côte à côte : si chaque page répond *Forbidden*, la racine est `sms-portal` ou un dossier à l'intérieur, ou bien le serveur web ne peut pas lire les fichiers du site (il leur faut les permissions 644, et 755 pour les dossiers).
@@ -209,12 +209,12 @@ Transmettez l'hôte et le protocole d'origine (ou réglez `PUBLIC_URL`), et rég
 - **Dates.** VoIP.ms renvoie l'heure de l'Est ; son paramètre `timezone` ignore l'heure avancée, donc les dates sont converties avec le fuseau IANA.
 - **Push.** Chaque navigateur a un identifiant aléatoire, partagé par ses onglets et son abonnement push ; les onglets ouverts signalent s'ils sont visibles et le serveur évite les navigateurs qui affichent l'application. Les messages sont chiffrés selon la RFC 8291 et signés avec VAPID (RFC 8292) par l'extension openssl de PHP, sans bibliothèque tierce.
 - **Envoi.** Le message est enregistré immédiatement puis livré en arrière-plan ; si VoIP.ms échoue de façon ambiguë (délai, erreur Cloudflare 5xx) alors que le message est bien parti, il est rapproché de l'historique au lieu d'apparaître en double. Un message en échec peut être renvoyé.
-- **Technologies.** Le serveur est en PHP 8.1+, sans paquet Composer, avec SQLite ; le client, en React + Vite et TypeScript. Un seul serveur pour les deux façons de l'héberger : Docker le fait tourner sous Apache avec le même `.htaccess` que l'hébergement mutualisé, plus sa tâche cron toutes les 10 secondes, dans un seul conteneur, sans service externe.
+- **Technologies.** Le serveur est en PHP 8.4+, sans paquet Composer, avec SQLite ; le client, en React + Vite et TypeScript. Un seul serveur pour les deux façons de l'héberger : Docker le fait tourner sous Apache avec le même `.htaccess` que l'hébergement mutualisé, plus sa tâche cron toutes les 10 secondes, dans un seul conteneur, sans service externe.
 - **Pas de processus à lui.** Chaque requête est un processus PHP : le serveur garde donc dans la base les mises à jour que les onglets ouverts viennent chercher (toutes les 3 s), les onglets ouverts et l'état de la synchronisation ; des verrous de fichier évitent qu'une vérification et un envoi se chevauchent. `tests/` vérifie l'API en mode démo, le client VoIP.ms contre un faux VoIP.ms en HTTP, et les classes du serveur en PHP.
 
 ## Développement
 
-Il faut Node.js 22+ pour le client et les outils, et PHP 8.1+ (avec `pdo_sqlite`, `openssl`, `curl` et `mbstring`) pour le serveur et les tests.
+Il faut Node.js 22+ pour le client et les outils, et PHP 8.4+ (avec `pdo_sqlite`, `openssl`, `curl`, `mbstring` et `intl`) pour le serveur et les tests.
 
 ```bash
 npm install
