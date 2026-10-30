@@ -249,11 +249,12 @@ final class Repo
         return $this->run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $values)->rowCount() > 0;
     }
 
-    /** Also forgets what the user read and archived for themselves, and their devices' notifications. */
+    /** Also forgets what the user read, archived and chose for themselves, and their devices' notifications. */
     public function deleteUser(int $id): bool
     {
         return $this->transaction(function () use ($id): bool {
             $this->run('DELETE FROM conversation_states WHERE user_key = ?', [$id]);
+            $this->run('DELETE FROM did_prefs WHERE user_key = ?', [$id]);
             $this->deleteUserPushSubscriptions($id);
             return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
         });
@@ -394,11 +395,12 @@ final class Repo
     {
         [$scope, $scopeParams] = $this->didScope('d.did');
         $rows = $this->all(
-            'SELECT d.*, (SELECT SUM(' . self::UNREAD_SQL . ') FROM conversations c
+            'SELECT d.*, p.hidden, p.muted, (SELECT SUM(' . self::UNREAD_SQL . ') FROM conversations c
                 LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
                 WHERE c.did = d.did AND (' . self::ARCHIVED_SQL . ") IS NULL) AS unread
-             FROM dids d WHERE $scope ORDER BY d.position, d.did",
-            [$this->viewerKey(), ...$scopeParams],
+             FROM dids d LEFT JOIN did_prefs p ON p.did = d.did AND p.user_key = ?
+             WHERE $scope ORDER BY d.position, d.did",
+            [$this->viewerKey(), $this->viewerKey(), ...$scopeParams],
         );
         return array_map(fn (array $r) => [
             'did' => $r['did'],
@@ -414,7 +416,24 @@ final class Repo
             'accountId' => (int) $r['account_id'],
             'sharedState' => $r['shared_state'] === 1,
             'canSend' => $this->viewer?->canSend($r['did']) ?? true,
+            'hidden' => $r['hidden'] === 1,
+            'muted' => $r['muted'] === 1,
         ], $rows);
+    }
+
+    /**
+     * What the viewer chose for a number, for themselves.
+     *
+     * @param array{hidden?: bool, muted?: bool} $patch
+     */
+    public function setDidPrefs(string $did, array $patch): void
+    {
+        $this->run('INSERT OR IGNORE INTO did_prefs (user_key, did) VALUES (?, ?)', [$this->viewerKey(), $did]);
+        foreach (['hidden', 'muted'] as $column) {
+            if (array_key_exists($column, $patch)) {
+                $this->run("UPDATE did_prefs SET $column = ? WHERE user_key = ? AND did = ?", [$patch[$column] ? 1 : 0, $this->viewerKey(), $did]);
+            }
+        }
     }
 
     public function getDid(string $did): ?array
@@ -598,7 +617,10 @@ final class Repo
             $where[] = 'c.did = ?';
             $params[] = $did;
         } else {
+            // Numbers an admin hid for everyone, or the viewer for themselves.
             $where[] = 'c.did IN (SELECT did FROM dids WHERE visible = 1)';
+            $where[] = 'c.did NOT IN (SELECT did FROM did_prefs WHERE user_key = ? AND hidden = 1)';
+            $params[] = $this->viewerKey();
         }
         if ($q !== '') {
             $like = '%' . addcslashes(Text::fold($q), '\\%_') . '%';

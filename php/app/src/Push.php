@@ -131,7 +131,8 @@ final class Push
                 continue;
             }
             $repo = $this->repo->forViewer($viewer);
-            $dids = array_values(array_filter($repo->listDids(), static fn (array $d) => $d['visible']));
+            // The numbers they have on screen: not hidden, by an admin for everyone or by them for themselves.
+            $dids = array_values(array_filter($repo->listDids(), static fn (array $d) => $d['visible'] && !$d['hidden']));
             $multi = count($dids) > 1;
             // Archived conversations are already left out of these counts.
             $unread = array_sum(array_column($dids, 'unreadCount'));
@@ -148,8 +149,8 @@ final class Push
                         $did = $d;
                     }
                 }
-                if ($did === null) {
-                    // Hidden number.
+                if ($did === null || $did['muted']) {
+                    // A hidden number, or one they muted.
                     continue;
                 }
                 $didLabel = $multi ? ($did['label'] ?: Phone::format($conversation['did'])) : null;

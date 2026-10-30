@@ -198,6 +198,18 @@ final class Db
               PRIMARY KEY (conversation_id, user_key)
             );
             SQL,
+            <<<'SQL'
+            -- What each person (0: the owner; otherwise a user's id) chose for a number, for themselves.
+            CREATE TABLE did_prefs (
+              user_key INTEGER NOT NULL,
+              did      TEXT NOT NULL,
+              -- Out of their list of conversations and of their notifications.
+              hidden   INTEGER NOT NULL DEFAULT 0,
+              -- No notifications.
+              muted    INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (user_key, did)
+            );
+            SQL,
         ];
     }
 

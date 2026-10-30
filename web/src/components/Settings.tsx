@@ -13,6 +13,7 @@ import { loadDids, loadSession, resetData, toast, toastError, useStore } from '.
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
 import { ReceivingPanel } from './Receiving';
+import { MyNumbersSection } from './MyNumbers';
 import { MyAccountSection, TeamSection } from './Team';
 import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
@@ -229,6 +230,8 @@ export function Settings() {
               </div>
             </div>
           </section>
+
+          <MyNumbersSection />
 
           <section className="section">
             <h3>{t('settings.appearance')}</h3>

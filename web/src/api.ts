@@ -98,6 +98,8 @@ export const api = {
   updateDid: (did: string, patch: Partial<Pick<DidDto, 'label' | 'color' | 'visible' | 'position' | 'sharedState'>>) =>
     request<DidDto>('PATCH', `/api/dids/${did}`, patch),
   enableSms: (did: string) => request<DidDto>('POST', `/api/dids/${did}/enable-sms`),
+  /** What the person signed in chose for a number, for themselves. */
+  updateMyDid: (did: string, patch: Partial<Pick<DidDto, 'hidden' | 'muted'>>) => request<DidDto>('PATCH', `/api/me/dids/${did}`, patch),
 
   conversations: (params: { q?: string; archived?: boolean } = {}) => {
     const query = new URLSearchParams();

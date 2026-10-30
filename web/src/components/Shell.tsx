@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { errorText, t } from '../i18n';
-import { didName, displayName, formatListDate } from '../lib/format';
+import { didName, displayName, formatListDate, isShown } from '../lib/format';
 import { setIconBadge } from '../lib/install';
 import { navigate, type Route } from '../lib/router';
 import { setArchiveView, setDidFilter, toastError, useStore } from '../store';
@@ -35,7 +35,7 @@ function didMark(did: DidDto): string {
 export function Shell({ route }: { route: Route }) {
   const dids = useStore((s) => s.dids);
   const conversations = useStore((s) => s.conversations);
-  const visibleDids = useMemo(() => dids.filter((d) => d.visible), [dids]);
+  const visibleDids = useMemo(() => dids.filter(isShown), [dids]);
   const totalUnread = useMemo(() => conversations.reduce((n, c) => n + c.unreadCount, 0), [conversations]);
 
   const loaded = useStore((s) => s.conversationsLoaded);

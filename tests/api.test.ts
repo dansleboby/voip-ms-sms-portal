@@ -810,6 +810,37 @@ describe('The server in the Team mode', () => {
     expect(((await marc.get('/api/conversations')).json as ConversationDto[]).map((c) => c.id)).toContain(conversation.id);
   }, 30_000);
 
+  it('lets each person hide a number from their list and mute it, for themselves only', async () => {
+    const LAVAL = '4505550199';
+    const numbers = [{ did: MONTREAL, canSend: true }, { did: LAVAL, canSend: false }];
+    expect((await admin.request('PATCH', `/api/users/${marcId}`, { numbers })).status).toBe(200);
+    await poll(admin);
+    await poll(marc);
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: true, muted: true })).json).toMatchObject({
+      did: LAVAL,
+      visible: true,
+      hidden: true,
+      muted: true,
+    });
+    expect((await marc.request('PATCH', `/api/me/dids/${GATINEAU}`, { muted: true })).status).toBe(404);
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: 'yes' })).status).toBe(400);
+    const mine = (await marc.get('/api/conversations')).json as ConversationDto[];
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((c) => c.did === MONTREAL)).toBe(true);
+    // Still there when asked for.
+    expect(((await marc.get(`/api/conversations?did=${LAVAL}`)).json as ConversationDto[]).length).toBeGreaterThan(0);
+
+    // Nobody else's choice changes, nor their tabs.
+    expect(((await admin.get('/api/dids')).json as DidDto[]).find((d) => d.did === LAVAL)).toMatchObject({ hidden: false, muted: false });
+    expect(((await admin.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+    expect((await poll(admin)).filter((e) => e.type === 'reload')).toEqual([]);
+    expect((await poll(marc)).map((e) => e.type)).toEqual(expect.arrayContaining(['dids', 'reload']));
+
+    expect((await marc.request('PATCH', `/api/me/dids/${LAVAL}`, { hidden: false })).json).toMatchObject({ hidden: false, muted: true });
+    expect(((await marc.get('/api/conversations')).json as ConversationDto[]).some((c) => c.did === LAVAL)).toBe(true);
+  });
+
   it('lets users change their own name and password, signing their other browsers out', async () => {
     const phone = (await signIn('marc@example.com', 'marc password')).client;
     expect(((await marc.get('/api/sessions')).json as SessionInfoDto[]).map((s) => s.current).sort()).toEqual([false, true]);

@@ -88,6 +88,10 @@ export interface DidDto {
   sharedState: boolean;
   /** Whether whoever asks may text from it (false: read only, in the Team mode). */
   canSend: boolean;
+  /** Hidden by whoever asks, for themselves (visible is the admins' choice, for everyone). */
+  hidden: boolean;
+  /** Whoever asks gets no notifications for it. */
+  muted: boolean;
 }
 
 export interface AttachmentDto {
