@@ -54,7 +54,7 @@ Type a name or a number: contacts are suggested as you type. With several number
 
 ### Setup wizard
 
-On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Turning on a number whose SMS is off enables it in your VoIP.ms account; the row says so beforehand. It then asks how new texts should reach the portal (see [Receiving texts](#receiving-texts)).
+On first launch, the wizard checks the credentials, shows the IP address VoIP.ms sees (to add to its whitelist), then lists your numbers so you can pick, name and color them. Turning on a number whose SMS is off enables it in your VoIP.ms account; the row says so beforehand. It then asks how new texts should reach the portal (see [Receiving texts](#receiving-texts)). Other VoIP.ms accounts, one per client for instance, are added later in *Settings* → *VoIP.ms accounts*, with the same steps.
 
 | Allowing the IP address | Choosing your numbers |
 | --- | --- |
@@ -65,6 +65,8 @@ On first launch, the wizard checks the credentials, shows the IP address VoIP.ms
 Contacts are stored on the server, so every browser sees the same names. Add them by hand or import a `.vcf` file exported from Google Contacts, iCloud or your phone. Each one can have its own avatar color, and an icon instead of its initials (home, work, family, car…); numbers are formatted as you type them.
 
 To delete many at once, tap *Select*, tick contacts or *Select all* (after a search, all the contacts it found), then *Delete*; their conversations stay. Right after an import, *Undo* removes the contacts it added, if the wrong file went in.
+
+With several numbers, each contact belongs to an address book: every number's, or only some numbers' (the same phone can then be a different contact on each). In Team mode, everyone also has a personal book that only they see, whose names come first in their conversations.
 
 | Contact list | Editing a contact |
 | --- | --- |
@@ -104,7 +106,7 @@ Rename or recolor numbers, turn off the ones you do not use, sync now or import 
 
 ### Team mode
 
-For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can.
+For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*; each person can also hide a number for themselves, or mute it, in *Settings* → *My numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*, and administrators see who signed in and what changed in *Settings* → *Activity log*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can.
 
 ### On a phone, and in the dark
 

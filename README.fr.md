@@ -54,7 +54,7 @@ Tapez un nom ou un numéro : les contacts sont suggérés au fil de la frappe. A
 
 ### Assistant de configuration
 
-Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant. Il demande ensuite comment les nouveaux textos doivent arriver au portail (voir [Réception des textos](#réception-des-textos)).
+Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse IP que voit VoIP.ms (à ajouter à sa liste blanche), puis liste vos numéros pour les choisir, les nommer et leur donner une couleur. Activer un numéro dont le SMS est désactivé l'active dans votre compte VoIP.ms ; la ligne le dit avant. Il demande ensuite comment les nouveaux textos doivent arriver au portail (voir [Réception des textos](#réception-des-textos)). D'autres comptes VoIP.ms, un par client par exemple, s'ajoutent ensuite dans *Réglages* → *Comptes VoIP.ms*, avec les mêmes étapes.
 
 | Autoriser l'adresse IP | Choisir ses numéros |
 | --- | --- |
@@ -65,6 +65,8 @@ Au premier lancement, l'assistant vérifie les identifiants, affiche l'adresse I
 Les contacts sont enregistrés sur le serveur : tous les navigateurs voient les mêmes noms. Ajoutez-les à la main ou importez un fichier `.vcf` exporté de Google Contacts, d'iCloud ou de votre téléphone. Chacun peut avoir sa couleur d'avatar, et une icône à la place de ses initiales (maison, travail, famille, auto…) ; les numéros se mettent en forme pendant la saisie.
 
 Pour en supprimer plusieurs d'un coup, touchez *Sélectionner*, cochez des contacts ou *Tout sélectionner* (après une recherche : tous ceux qu'elle a trouvés), puis *Supprimer* ; leurs conversations restent. Juste après un import, *Annuler* retire les contacts ajoutés, si le mauvais fichier est passé.
+
+Avec plusieurs numéros, chaque contact appartient à un carnet : celui de tous les numéros, ou ceux de certains numéros seulement (un même téléphone peut alors être un contact différent sur chacun). En mode Équipe, chacun a aussi un carnet personnel que lui seul voit, dont les noms passent en premier dans ses conversations.
 
 | Liste des contacts | Modifier un contact |
 | --- | --- |
@@ -104,7 +106,7 @@ Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, sy
 
 ### Mode Équipe
 
-Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut.
+Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*; chacun peut aussi masquer un numéro pour lui seul, ou couper ses notifications, dans *Réglages* → *Mes numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*, et les administrateurs voient qui s'est connecté et ce qui a changé dans *Réglages* → *Journal d'activité*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut.
 
 ### Sur téléphone, et dans le noir
 
