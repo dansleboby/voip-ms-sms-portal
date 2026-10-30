@@ -45,7 +45,7 @@ A web app for sending and receiving the texts of a VoIP.ms account: a React clie
 ```bash
 DEMO_MODE=true APP_PASSWORD=dev npm run dev   # API (php -S) on :8080, UI on http://localhost:5173
 npm test                                      # vitest: client units, the API, and the PHP tests
-npm run typecheck                             # tsc for the client and shared/ (no ESLint here)
+npm run typecheck                             # tsc for the client, shared/, the tests and scripts (no ESLint here)
 npm run build:cpanel                          # dist/sms-portal-cpanel-<version>.zip
 docker build -t sms-portal .                  # the Docker image
 npm run screenshots                           # README screenshots; lists the ones that changed

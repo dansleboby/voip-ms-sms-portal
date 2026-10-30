@@ -27,7 +27,7 @@ describe('PHP server with a VoIP.ms account', () => {
   const send = (fields: Record<string, string>, files: Buffer[] = []) => {
     const form = new FormData();
     for (const [k, v] of Object.entries(fields)) form.set(k, v);
-    for (const f of files) form.append('files[]', new Blob([f], { type: 'image/png' }), 'photo.png');
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f)], { type: 'image/png' }), 'photo.png');
     return client.post('/api/messages', form);
   };
 

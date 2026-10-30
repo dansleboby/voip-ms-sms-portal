@@ -128,7 +128,9 @@ export class FakeVoipMsServer {
     }
     const method = fields.method ?? '';
     this.calls.push({ method, fields });
-    const json = (body: object) => res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+    const json = (body: object): void => {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+    };
     const failure = this.failNext[method];
     if (failure) {
       delete this.failNext[method];

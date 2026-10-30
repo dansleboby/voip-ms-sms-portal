@@ -40,7 +40,7 @@ describe('The server', () => {
   function sendForm(fields: Record<string, string>, files: { type: string; data: Buffer }[] = []) {
     const form = new FormData();
     for (const [k, v] of Object.entries(fields)) form.set(k, v);
-    for (const f of files) form.append('files[]', new Blob([f.data], { type: f.type }), 'file');
+    for (const f of files) form.append('files[]', new Blob([new Uint8Array(f.data)], { type: f.type }), 'file');
     return client.post('/api/messages', form);
   }
 
