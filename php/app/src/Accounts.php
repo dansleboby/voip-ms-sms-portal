@@ -154,11 +154,10 @@ final class Accounts
             'importing' => $importing
                 ? ['done' => array_sum(array_column($importing, 'done')), 'total' => array_sum(array_column($importing, 'total'))]
                 : null,
-            'cron' => $all[0]['cron'],
             'webhook' => $webhooks
                 ? ['lastCallAt' => $lastCalls ? max($lastCalls) : null, 'complete' => !in_array(false, array_column($webhooks, 'complete'), true)]
                 : null,
-        ];
+        ] + (isset($all[0]['cron']) ? ['cron' => $all[0]['cron']] : []);
     }
 
     public function publishStatus(): void

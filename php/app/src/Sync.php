@@ -49,7 +49,8 @@ final class Sync
         private readonly int $pollIdleMs,
         private readonly string $lockDir,
         private readonly \Closure $onIncoming,
-        private readonly string $cronCommand,
+        /** The line for cPanel's cron jobs; null where the server runs its own (Docker). */
+        private readonly ?string $cronCommand,
         /** VoIP.ms announcing texts: with every number covered, checks become a safety net. */
         private readonly ?Webhook $webhook = null,
         /** The VoIP.ms account checked; each has its own (Accounts). */
@@ -92,9 +93,8 @@ final class Sync
             'lastCheckAt' => $checked !== null ? (int) $checked : null,
             'lastError' => $error,
             'importing' => $import ? ['done' => $import['done'], 'total' => $import['total']] : null,
-            'cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand],
             'webhook' => $this->webhook?->summary(),
-        ];
+        ] + ($this->cronCommand === null ? [] : ['cron' => ['lastRunAt' => $cron !== null ? (int) $cron : null, 'command' => $this->cronCommand]]);
     }
 
     public function recordCronRun(): void

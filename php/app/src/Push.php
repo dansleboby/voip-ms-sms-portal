@@ -35,12 +35,14 @@ final class Push
 
     /**
      * @param \Closure(): string $ownerFingerprint changes with APP_PASSWORD (slow to compute: only asked when needed)
+     * @param ?\Closure(): string $legacyOwnerFingerprint the same, as the Node server of 1.x computed it
      */
     public function __construct(
         private readonly Repo $repo,
         private readonly Events $events,
         private readonly string $subject,
         private readonly \Closure $ownerFingerprint,
+        private readonly ?\Closure $legacyOwnerFingerprint = null,
     ) {
     }
 
@@ -71,8 +73,11 @@ final class Push
         }
         $this->ownerChecked = true;
         $owner = ($this->ownerFingerprint)();
-        if ($this->repo->getSetting(self::OWNER_KEY) !== $owner) {
-            $dropped = $this->repo->deleteAllPushSubscriptions();
+        $stored = $this->repo->getSetting(self::OWNER_KEY);
+        if ($stored !== $owner) {
+            // A Docker install from before 2.0 computed it another way: the same APP_PASSWORD keeps its browsers.
+            $sameOwner = $stored !== null && $this->legacyOwnerFingerprint !== null && $stored === ($this->legacyOwnerFingerprint)();
+            $dropped = $sameOwner ? 0 : $this->repo->deleteAllPushSubscriptions();
             if ($dropped) {
                 Log::info('APP_PASSWORD changed: push subscriptions removed', ['count' => $dropped]);
             }

@@ -16,6 +16,29 @@ final class Cron
     /** A send still "sending" after this long died with its request. */
     private const STALE_SEND_MS = 5 * 60_000;
 
+    /**
+     * What the Docker image runs before it starts serving: the settings,
+     * checked once, so that a mistake stops the container with its reason
+     * in the logs, and their warnings show up there once rather than with
+     * every request.
+     */
+    public static function check(string $appDir): int
+    {
+        try {
+            $config = Config::load($appDir);
+        } catch (ConfigError $e) {
+            fwrite(STDERR, 'SMS Portal: ' . $e->getMessage() . "\n");
+            return 1;
+        }
+        foreach ($config->warnings as $warning) {
+            fwrite(STDERR, "SMS Portal: $warning\n");
+        }
+        if ($config->demo) {
+            fwrite(STDERR, "SMS Portal: DEMO_MODE is on: using sample data, no real texts are sent.\n");
+        }
+        return 0;
+    }
+
     public static function run(string $appDir): int
     {
         try {
@@ -45,8 +68,8 @@ final class Cron
                     $checked = true;
                 }
             }
-            if (!$checked) {
-                // The tabs learn that the cron job is alive.
+            if (!$checked && $app->config->install !== 'docker') {
+                // The tabs learn that the cron job is alive (Docker runs its own, which Settings does not show).
                 $app->accounts->publishStatus();
             }
             foreach ($app->accounts->all() as $account) {
