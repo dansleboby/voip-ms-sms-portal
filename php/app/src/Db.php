@@ -229,7 +229,12 @@ final class Db
         $statement->execute();
     }
 
-    public static function open(string $file): PDO
+    /**
+     * Opens the database and brings its schema up to date. Tests pass
+     * $version to build the database of an earlier release, as it stopped
+     * at that migration, and check what the later ones do to it.
+     */
+    public static function open(string $file, ?int $version = null): PDO
     {
         $dsn = 'sqlite:' . $file;
         // PHP 8.4 has a SQLite-specific class; createFunction moved there.
@@ -245,13 +250,13 @@ final class Db
         } else {
             $db->sqliteCreateFunction('fold', $fold, 1, PDO::SQLITE_DETERMINISTIC);
         }
-        self::migrate($db);
+        self::migrate($db, $version);
         return $db;
     }
 
-    private static function migrate(PDO $db): void
+    private static function migrate(PDO $db, ?int $version): void
     {
-        $migrations = self::migrations();
+        $migrations = array_slice(self::migrations(), 0, $version);
         while ((int) $db->query('PRAGMA user_version')->fetchColumn() < count($migrations)) {
             // Two first requests can arrive together: the one that waited finds the work done.
             $db->exec('BEGIN IMMEDIATE');
