@@ -186,6 +186,11 @@ describe('The server', () => {
     expect(await client.post('/api/messages/999999/retry')).toMatchObject({ status: 404, json: { error: 'not_found' } });
   });
 
+  it('sends to a short code, as services that answer a keyword expect', async () => {
+    const res = await sendForm({ did: MONTREAL, to: '511123', body: 'HELP' });
+    expect(res).toMatchObject({ status: 202, json: { conversation: { phone: '511123' } } });
+  });
+
   it('turns SMS on for a number in the VoIP.ms account', async () => {
     const before = ((await client.get('/api/dids')).json as DidDto[]).find((d) => d.did === GATINEAU);
     expect(before).toMatchObject({ smsEnabled: false, smsAvailable: true, visible: false });

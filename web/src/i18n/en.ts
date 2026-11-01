@@ -86,7 +86,7 @@ export const en: Record<MessageKey, string> = {
   'delete.atVoipMs': 'Delete at VoIP.ms too',
   'delete.atVoipMsOff': 'VoIP.ms keeps its copy in your account’s history.',
   'delete.atVoipMsOn': 'Also erased from your VoIP.ms account: this cannot be undone.',
-  'thread.noReply': 'This is a short code: most of them do not accept replies.',
+  'thread.noReply': 'This is a short code: many do not take replies, but some services answer a keyword.',
   'thread.readOnly': 'This number is read-only for you: you see its texts but cannot reply.',
   'thread.sentByYou': 'You',
 

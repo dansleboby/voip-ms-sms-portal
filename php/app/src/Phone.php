@@ -26,6 +26,18 @@ final class Phone
         return (bool) preg_match('/^[2-9]\d{2}[2-9]\d{6}$/', $phone);
     }
 
+    /** A 5- or 6-digit short code: services text from them, and some answer a keyword sent back. */
+    public static function isShortCode(string $phone): bool
+    {
+        return (bool) preg_match('/^\d{5,6}$/', $phone);
+    }
+
+    /** What VoIP.ms can text: a North American number or a short code (shared/phone.ts has the same). */
+    public static function isTextable(string $phone): bool
+    {
+        return self::isValidNanp($phone) || self::isShortCode($phone);
+    }
+
     /** "4506575294" -> "(450) 657-5294"; anything else is returned untouched. */
     public static function format(string $phone): string
     {

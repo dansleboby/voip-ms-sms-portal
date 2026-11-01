@@ -250,6 +250,15 @@ final class Db
             );
             CREATE INDEX activity_at ON activity(at);
             SQL,
+            static function (PDO $db): void {
+                $update = $db->prepare('UPDATE messages SET body = ?, search_text = ? WHERE id = ?');
+                foreach ($db->query('SELECT id, body FROM messages')->fetchAll() as $row) {
+                    if (preg_match(Text::GSM_CONTROLS, $row['body'])) {
+                        $body = Text::gsmLetters($row['body']);
+                        self::execute($update, [$body, Text::fold($body), $row['id']]);
+                    }
+                }
+            },
         ];
     }
 

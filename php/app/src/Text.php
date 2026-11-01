@@ -40,6 +40,34 @@ final class Text
     }
 
     /**
+     * GSM 03.38 letters, keyed by their code: VoIP.ms passes some texts on as
+     * GSM codes, so the letters below arrive as control characters ("Premi\x04re"
+     * for "Première", from a short code). Escape (0x1B) starts GSM's extension
+     * table. Line feed and carriage return are the same in both.
+     */
+    private const GSM = [
+        "\x00" => '@', "\x01" => '£', "\x02" => '$', "\x03" => '¥', "\x04" => 'è', "\x05" => 'é', "\x06" => 'ù', "\x07" => 'ì',
+        "\x08" => 'ò', "\x09" => 'Ç', "\x0B" => 'Ø', "\x0C" => 'ø', "\x0E" => 'Å', "\x0F" => 'å', "\x10" => 'Δ', "\x11" => '_',
+        "\x12" => 'Φ', "\x13" => 'Γ', "\x14" => 'Λ', "\x15" => 'Ω', "\x16" => 'Π', "\x17" => 'Ψ', "\x18" => 'Σ', "\x19" => 'Θ',
+        "\x1A" => 'Ξ', "\x1C" => 'Æ', "\x1D" => 'æ', "\x1E" => 'ß', "\x1F" => 'É', "\x7F" => 'à',
+        "\x1B\x0A" => "\n", "\x1B\x14" => '^', "\x1B(" => '{', "\x1B)" => '}', "\x1B/" => '\\', "\x1B<" => '[',
+        "\x1B=" => '~', "\x1B>" => ']', "\x1B@" => '|', "\x1Be" => '€', "\x1B" => '',
+    ];
+
+    /** Control characters that stand for GSM letters (all but line feed and carriage return). */
+    public const GSM_CONTROLS = '/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/';
+
+    /**
+     * The GSM letters of a text that came as control characters. They never
+     * mean anything else in a text message, and are never part of a UTF-8
+     * multibyte sequence, so the rest of the text is left alone.
+     */
+    public static function gsmLetters(string $text): string
+    {
+        return preg_match(self::GSM_CONTROLS, $text) ? strtr($text, self::GSM) : $text;
+    }
+
+    /**
      * Some VoIP.ms bodies come back with quotes escaped, at times more than
      * once ("l\\\'accès"); a backslash right before a quote never means
      * anything in a text message.

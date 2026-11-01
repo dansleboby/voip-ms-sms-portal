@@ -78,3 +78,23 @@ test('empties bodies stored as only line breaks or invisible characters', functi
     assertSame(" Allo\n", $repo->getMessage($ids['text'])['body']);
     assertSame('🎤', $repo->getMessage($ids['emoji'])['body']);
 });
+
+test('gives back the GSM letters of bodies stored as control characters', function (): void {
+    $ids = [];
+    $file = oldDatabase(16, function (PDO $db) use (&$ids): void {
+        insert($db, "INSERT INTO dids (did, color) VALUES ('4506575294', '#1a73e8')");
+        $conversationId = insert($db, "INSERT INTO conversations (did, phone) VALUES ('4506575294', '560560')");
+        $add = static fn (string $remoteId, string $body) => insert(
+            $db,
+            "INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, created_at) VALUES (?, 'sms', ?, 'in', ?, ?, 0, 'received', 0)",
+            [$conversationId, $remoteId, $body, $body],
+        );
+        $ids = ['gsm' => $add('1', "Premi\x04re utilisation"), 'text' => $add('2', "Allo\nça va")];
+    });
+    $repo = new Repo(Db::open($file));
+    assertSame('Première utilisation', $repo->getMessage($ids['gsm'])['body']);
+    assertSame("Allo\nça va", $repo->getMessage($ids['text'])['body']);
+    // Found by search with its letters back.
+    $db = Db::open($file);
+    assertSame('premiere utilisation', $db->query("SELECT search_text FROM messages WHERE id = {$ids['gsm']}")->fetchColumn());
+});

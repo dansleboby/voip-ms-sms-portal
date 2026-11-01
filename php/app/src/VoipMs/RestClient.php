@@ -222,7 +222,7 @@ final class RestClient implements VoipMsApi
             'direction' => self::str($row['type'] ?? '') === '1' ? 'in' : 'out',
             'did' => self::str($row['did'] ?? ''),
             'contact' => self::str($row['contact'] ?? ''),
-            'body' => Text::isBlank($body = Text::unescapeQuotes(self::str($row['message'] ?? ''))) ? '' : $body,
+            'body' => Text::isBlank($body = Text::gsmLetters(Text::unescapeQuotes(self::str($row['message'] ?? '')))) ? '' : $body,
             'carrierStatus' => $carrier !== '' ? $carrier : null,
             'media' => array_values(array_unique($media)),
         ];

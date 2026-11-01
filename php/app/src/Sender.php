@@ -47,7 +47,7 @@ final class Sender
         if (!$didInfo['smsEnabled']) {
             throw new HttpError(400, 'sms_not_enabled');
         }
-        if (!Phone::isValidNanp($to)) {
+        if (!Phone::isTextable($to)) {
             throw new HttpError(400, 'invalid_destination');
         }
         foreach ($files as $file) {

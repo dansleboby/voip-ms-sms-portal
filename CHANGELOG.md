@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## 2.0.1 (2026-11-01)
+
+- **Texting short codes.** A text can now go to a 5- or 6-digit short code, for the services that answer a keyword (transit times, for instance), from a conversation it started or from *Start a conversation*. The portal refused them as an invalid number ([#24](https://github.com/dansleboby/voip-ms-sms-portal/issues/24)).
+- Texts from some short codes no longer lose their accented letters ("Premire" for "Première"): VoIP.ms passes them on as GSM codes, which the portal now reads as letters, also in the texts already received.
+
 ## 2.0.0 (2026-10-30)
 
 - **Team mode.** Several people can use the same portal, each with their own email and password. The owner turns it on in *Settings* → *Team mode* by creating the first administrator; it does not turn off. Administrators add users, give them a new password when they forget theirs, suspend or delete them, and choose the numbers each user texts from, read only or with sending. Users see only the settings that concern them: notifications, appearance and their account. The server's `APP_PASSWORD` still opens the portal as its owner, with *Owner sign-in* on the sign-in page. Without Team mode, nothing changes: `APP_PASSWORD` alone opens the portal. The [Team mode guide](docs/team.md) ([en français](docs/team.fr.md)) takes it step by step.
