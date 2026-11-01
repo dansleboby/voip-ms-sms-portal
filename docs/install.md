@@ -132,6 +132,7 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
    - On cPanel, or with Docker over HTTPS: choose **Instantly, through a VoIP.ms webhook**. The portal sets up your numbers at VoIP.ms itself, and texts then show up within seconds.
    - If a number already sends its texts somewhere else (another app), it says so: click **Replace** to have it call the portal instead. Going back to regular checks gives it its old setting back.
    - With Docker at home, without an HTTPS address, keep **Regular checks**.
+   - Later, *Settings* → *Receiving texts* sets each number on its own.
 
    Click **Continue**.
 7. **History**: choose how much of your past texts to bring in, then click **Finish**.
@@ -151,7 +152,7 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
 
 ## 5. Several people? (optional)
 
-For an office, a family or an agency, Team mode gives each person their own email, password and numbers: see the [Team mode guide](team.md).
+For an office, a family or an agency, Team mode gives each person their own email, password and numbers: see the [Team mode guide](team.md). Several VoIP.ms accounts, one per client say, are added in *Settings* → *VoIP.ms accounts*: see [One VoIP.ms account per client](team.md#8-one-voipms-account-per-client).
 
 ## Something went wrong?
 

@@ -132,6 +132,7 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
    - Sur cPanel, ou avec Docker en HTTPS : choisissez **Instantanée, par webhook VoIP.ms**. Le portail règle lui-même vos numéros chez VoIP.ms, et les textos apparaissent alors en quelques secondes.
    - Si un numéro envoie déjà ses textos ailleurs (une autre application), c'est indiqué : cliquez sur **Remplacer** pour qu'il appelle plutôt le portail. Revenir à la vérification régulière lui rend son ancien réglage.
    - Avec Docker à la maison, sans adresse HTTPS, gardez **Vérification régulière**.
+   - Plus tard, *Réglages* → *Réception des textos* règle chaque numéro à part.
 
    Cliquez sur **Continuer**.
 7. **Historique** : choisissez combien de vos anciens textos récupérer, puis cliquez sur **Terminer**.
@@ -151,7 +152,7 @@ Ouvrez maintenant `https://sms.votredomaine.com` et passez à l'[étape 3](#3-as
 
 ## 5. Plusieurs personnes? (facultatif)
 
-Pour un bureau, une famille ou une agence, le mode Équipe donne à chacun son courriel, son mot de passe et ses numéros : voir le [guide du mode Équipe](team.fr.md).
+Pour un bureau, une famille ou une agence, le mode Équipe donne à chacun son courriel, son mot de passe et ses numéros : voir le [guide du mode Équipe](team.fr.md). Plusieurs comptes VoIP.ms, par exemple un par client, s'ajoutent dans *Réglages* → *Comptes VoIP.ms* : voir [Un compte VoIP.ms par client](team.fr.md#8-un-compte-voipms-par-client).
 
 ## Un problème?
 

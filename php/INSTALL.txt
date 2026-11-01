@@ -35,6 +35,10 @@ Updating: Settings > Updates says when a new version is out and installs it
 in one click (config.php and the data folder are kept). If PHP cannot write
 to its own files on your host, extract the new zip over the old folders.
 
+Updating from 1.x: choose PHP 8.4 or later in cPanel first, then Settings >
+Updates installs 2.0 (from 1.8.1 on, it waits for that PHP). What to turn on
+afterwards: https://github.com/dansleboby/voip-ms-sms-portal#upgrading-to-20
+
 More: https://github.com/dansleboby/voip-ms-sms-portal#shared-hosting-cpanel
 
 
@@ -76,5 +80,10 @@ Mise à jour : Réglages > Mises à jour indique quand une nouvelle version sort
 et l'installe en un clic (config.php et le dossier des données sont
 conservés). Si PHP ne peut pas modifier ses propres fichiers chez votre
 hébergeur, décompressez le nouveau zip par-dessus les anciens dossiers.
+
+Passer de la 1.x à la 2.0 : choisissez d'abord PHP 8.4 ou plus récent dans
+cPanel, puis Réglages > Mises à jour installe la 2.0 (à partir de la 1.8.1,
+elle attend ce PHP). Quoi activer ensuite :
+https://github.com/dansleboby/voip-ms-sms-portal/blob/main/README.fr.md#passer-à-la-20
 
 Plus : https://github.com/dansleboby/voip-ms-sms-portal/blob/main/README.fr.md#hébergement-mutualisé-cpanel

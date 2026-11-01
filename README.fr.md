@@ -6,6 +6,8 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 
 **Première fois que vous hébergez une application?** Le [guide d'installation pas à pas](docs/install.fr.md) part de zéro : ce qu'il vous faut, puis chaque clic, sur un hébergement cPanel ou avec Docker.
 
+**Vous utilisez déjà la 1.x?** La 2.0 se met à jour sur place et garde tout : voyez [Passer à la 2.0](#passer-à-la-20) pour quoi faire avant, et quoi activer après.
+
 ![Conversations sur deux numéros, avec une photo reçue par MMS](docs/screenshots/fr/hero.png)
 
 - **Tous vos numéros au même endroit.** Un menu latéral (des pastilles sur mobile) bascule entre « tous les numéros » et chaque DID. Donnez un nom et une couleur à chaque numéro ; chaque conversation indique à quel numéro elle appartient et les réponses partent toujours de ce numéro.
@@ -127,6 +129,33 @@ L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles d
 | ![Liste des conversations sur téléphone](docs/screenshots/fr/mobile-list.png) | ![Conversation sur téléphone](docs/screenshots/fr/mobile-thread.png) |
 
 ![Thème sombre](docs/screenshots/fr/dark.png)
+
+## Nouveautés de la 2.0
+
+- **Mode Équipe.** Plusieurs personnes, chacune avec son courriel, son mot de passe et ses numéros, en lecture seule ou avec l'envoi; chaque texto dit qui l'a envoyé. Voir le [guide du mode Équipe](docs/team.fr.md).
+- **Plusieurs comptes VoIP.ms**, par exemple un par client. *Réglages* → *Comptes VoIP.ms* en ajoute un pas à pas, avec l'adresse IP à autoriser affichée dès le début, puis propose d'importer ses anciens textos et de les recevoir instantanément.
+- **Réception instantanée, numéro par numéro, pour tous les comptes**, dans *Réglages* → *Réception des textos*. Un numéro relié à une autre application peut rester en vérification régulière.
+- **Carnets de contacts par numéro**, et un carnet personnel pour chacun.
+- **Mes numéros** : masquer un numéro ou couper ses notifications pour soi seulement.
+- **Journal d'activité** pour les administrateurs, et **Mes sessions** pour voir les navigateurs connectés à votre compte et les déconnecter.
+- **Un seul serveur pour Docker et l'hébergement mutualisé** : l'image Docker fait maintenant tourner le même serveur PHP que le paquet cPanel.
+
+Le [journal des modifications](CHANGELOG.md) donne tous les détails.
+
+## Passer à la 2.0
+
+La mise à jour garde vos conversations, contacts, réglages, notifications push et identifiants VoIP.ms : la base de données est mise à jour au premier démarrage. Tout le monde se reconnecte une fois.
+
+**Docker.** Là où se trouve `docker-compose.yml` : `docker compose pull && docker compose up -d`. Le premier démarrage prend quelques secondes de plus, le temps de relire une fois les identifiants saisis dans l'assistant et de les enregistrer de nouveau. `LIVE_UPDATES`, `LOG_LEVEL`, `HOST` et `WEB_DIR` ne sont plus lus; vous pouvez les retirer. Pour recevoir les textos instantanément, le portail doit être joignable en HTTPS : réglez `PUBLIC_URL`, et `TRUST_PROXY` derrière un proxy inverse.
+
+**Hébergement mutualisé (cPanel).** La 2.0 demande PHP 8.4 ou plus récent. Choisissez-le dans cPanel (*MultiPHP Manager*, ou *Select PHP Version*), puis *Réglages* → *Mises à jour* installe la 2.0. Les versions 1.8.1 et suivantes attendent ce PHP avant d'installer, et le disent; sur une version plus ancienne, choisissez PHP 8.4 d'abord.
+
+**Ensuite, activez ce qu'il vous faut :**
+
+1. *Réglages* → *Réception des textos* : instantanée ou vérification régulière, numéro par numéro.
+2. *Réglages* → *Comptes VoIP.ms* → **Ajouter un compte VoIP.ms**, pour chaque autre compte.
+3. *Réglages* → *Mode Équipe*, pour donner à chacun sa propre connexion (il ne se désactive pas), puis ajoutez les utilisateurs et leurs numéros. Vos contacts sont dans le carnet *Tous les numéros* : si les utilisateurs ne doivent pas voir les contacts des autres clients, déplacez-les dans le carnet de leur numéro.
+4. Chaque personne : *Réglages* → *Mes numéros*, pour masquer des numéros ou couper leurs notifications pour elle-même.
 
 ## Démarrage rapide (Docker)
 

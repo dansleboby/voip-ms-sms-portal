@@ -6,6 +6,8 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 
 **New to self-hosting?** The [step-by-step installation guide](docs/install.md) starts from zero: what you need, then every click, on cPanel web hosting or with Docker.
 
+**Already running 1.x?** 2.0 updates in place and keeps everything: see [Upgrading to 2.0](#upgrading-to-20) for what to do before, and what to turn on after.
+
 ![Conversations from two numbers, with a picture received by MMS](docs/screenshots/en/hero.png)
 
 - **All your numbers in one place.** A side rail (filter chips on mobile) switches between "all numbers" and each DID. Give every number a name and a color to recognize it at a glance; each conversation shows which of your numbers it belongs to and replies always leave from that number.
@@ -127,6 +129,33 @@ The layout adapts to small screens (numbers become filter chips). On a phone, a 
 | ![Conversation list on a phone](docs/screenshots/en/mobile-list.png) | ![Conversation on a phone](docs/screenshots/en/mobile-thread.png) |
 
 ![Dark theme](docs/screenshots/en/dark.png)
+
+## What's new in 2.0
+
+- **Team mode.** Several people, each with their own email, password and numbers, read only or with sending; each text says who sent it. See the [Team mode guide](docs/team.md).
+- **Several VoIP.ms accounts**, one per client for instance. *Settings* → *VoIP.ms accounts* adds one step by step, with the IP address to allow shown from the start, then offers to import its older texts and to receive them instantly.
+- **Instant receiving, number by number, for every account**, in *Settings* → *Receiving texts*. A number wired to another app can stay on regular checks.
+- **Address books per number**, and a personal one for each person.
+- **My numbers**: hide or mute a number for yourself only.
+- **Activity log** for the administrators, and **My sessions** to see the browsers signed in to your account and sign them out.
+- **One server for Docker and shared hosting**: the Docker image now runs the same PHP server as the cPanel package.
+
+The [changelog](CHANGELOG.md) has every detail.
+
+## Upgrading to 2.0
+
+The update keeps your conversations, contacts, settings, push notifications and VoIP.ms credentials: the database is brought up to date on the first start. Everyone signs in again once.
+
+**Docker.** Where `docker-compose.yml` is: `docker compose pull && docker compose up -d`. The first start takes a few seconds more, while the credentials typed in the wizard are read once and stored again. `LIVE_UPDATES`, `LOG_LEVEL`, `HOST` and `WEB_DIR` are no longer read; you can remove them. To receive texts instantly, the portal must be reachable over HTTPS: set `PUBLIC_URL`, and `TRUST_PROXY` behind a reverse proxy.
+
+**Shared hosting (cPanel).** 2.0 needs PHP 8.4 or later. Choose it in cPanel (*MultiPHP Manager*, or *Select PHP Version*), then *Settings* → *Updates* installs 2.0. Version 1.8.1 and later wait for that PHP before installing, and say so; on an older version, choose PHP 8.4 first.
+
+**Then turn on what you need:**
+
+1. *Settings* → *Receiving texts*: instant or regular checks, number by number.
+2. *Settings* → *VoIP.ms accounts* → **Add a VoIP.ms account**, for each other account.
+3. *Settings* → *Team mode*, to give each person their own sign-in (it does not turn off), then add the users and their numbers. Your contacts are in the *All numbers* book: if users must not see other clients' contacts, move those to their number's book.
+4. Each person: *Settings* → *My numbers*, to hide or mute numbers for themselves.
 
 ## Quick start (Docker)
 
