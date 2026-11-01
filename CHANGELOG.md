@@ -2,7 +2,7 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
-## Unreleased
+## 2.0.2 (2026-11-01)
 
 - On phones and tablets, the message box no longer has an emoji button: their keyboard has emoji already, and the box keeps the room.
 
