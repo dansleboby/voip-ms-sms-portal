@@ -282,6 +282,11 @@ export interface AccountDto {
   error: string | null;
 }
 
+/** The IP address VoIP.ms sees the server at, for a new account to allow before it is added; null when no account could ask. */
+export interface ServerIpDto {
+  ip: string | null;
+}
+
 /** An account added, given new credentials or tested: and what VoIP.ms answered. */
 export interface AccountCheckDto {
   account: AccountDto;

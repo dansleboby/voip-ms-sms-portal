@@ -7,6 +7,7 @@ import { notifyIncoming } from './lib/notify';
 import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
 import type {
+  AccountDto,
   ContactDto,
   ConversationDto,
   DidDto,
@@ -33,6 +34,8 @@ export interface Toast {
 export interface State {
   session: SessionDto | null;
   dids: DidDto[];
+  /** The VoIP.ms accounts, for admins; null until loaded. */
+  accounts: AccountDto[] | null;
   contacts: ContactDto[];
   /** Main list: conversations that are not archived. */
   conversations: ConversationDto[];
@@ -59,6 +62,7 @@ export interface State {
 let state: State = {
   session: null,
   dids: [],
+  accounts: null,
   contacts: [],
   conversations: [],
   conversationsLoaded: false,
@@ -132,6 +136,15 @@ export async function loadDids(): Promise<void> {
     dids,
     didFilter: s.didFilter && dids.some((d) => d.did === s.didFilter && isShown(d)) ? s.didFilter : null,
   }));
+}
+
+export async function loadAccounts(): Promise<void> {
+  setState({ accounts: await api.accounts() });
+}
+
+/** After an account is added or changed, without asking the server again. */
+export function updateAccounts(change: (accounts: AccountDto[]) => AccountDto[]): void {
+  setState((s) => ({ accounts: change(s.accounts ?? []) }));
 }
 
 export async function loadContacts(): Promise<void> {
@@ -447,6 +460,7 @@ export function resetData(): void {
     threads: {},
     contacts: [],
     dids: [],
+    accounts: null,
     sync: null,
   });
 }

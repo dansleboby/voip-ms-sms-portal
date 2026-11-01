@@ -1,6 +1,6 @@
 import { locale, t } from '../i18n';
 import { formatPhone } from '../../../shared/phone';
-import type { ContactRef, DidDto } from '../../../shared/types';
+import type { AccountDto, ContactRef, DidDto } from '../../../shared/types';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -115,4 +115,8 @@ export function isEmojiOnly(text: string): boolean {
   if (stripped.length) return false;
   const count = [...trimmed.matchAll(/\p{Extended_Pictographic}/gu)].length;
   return count > 0 && count <= 3;
+}
+
+export function accountName(account: AccountDto | null): string {
+  return account?.label || account?.username || t('accounts.unnamed');
 }

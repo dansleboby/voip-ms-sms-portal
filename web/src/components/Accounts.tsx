@@ -1,12 +1,16 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, Copy, ExternalLink, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, t } from '../i18n';
 import { navigate } from '../lib/router';
-import { loadDids, toast, toastError, useStore } from '../store';
+import { groupByAccount } from '../lib/accounts';
+import { accountName } from '../lib/format';
+import { loadAccounts, loadDids, toast, toastError, updateAccounts, useStore } from '../store';
 import { DidEditor } from './DidEditor';
+import { HistoryImportRow } from './HistoryImport';
+import { AccountReceiving } from './Receiving';
 import { Dialog } from './ui';
-import type { AccountCheckDto, AccountDto, ConnectionTestDto } from '../../../shared/types';
+import type { AccountCheckDto, AccountDto, ConnectionTestDto, DidDto } from '../../../shared/types';
 
 const API_PAGE = 'https://voip.ms/m/api.php';
 
@@ -15,16 +19,32 @@ function failed(err: unknown): ConnectionTestDto {
   return { ip: null, status: err instanceof ApiError ? err.code : 'offline', balance: null };
 }
 
-/** VoIP.ms's answer: the balance, or what is wrong; the IP to allow when that is it. */
-function ConnectionResult({ connection }: { connection: ConnectionTestDto }) {
+/** The IP address to allow at VoIP.ms, with a button to copy it. */
+function IpBox({ ip }: { ip: string }) {
   const [copied, setCopied] = useState(false);
-  const ok = connection.status === 'success';
   const copy = async () => {
-    if (!connection.ip) return;
-    await navigator.clipboard?.writeText(connection.ip).catch(() => undefined);
+    await navigator.clipboard?.writeText(ip).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+  return (
+    <div className="ip-box">
+      <div style={{ flex: 1 }}>
+        <div className="muted" style={{ fontSize: 12 }}>
+          {t('setup.ip.yourIp')}
+        </div>
+        <code>{ip}</code>
+      </div>
+      <button type="button" className="icon-btn" onClick={copy} aria-label={t('common.copy')}>
+        {copied ? <Check size={20} /> : <Copy size={20} />}
+      </button>
+    </div>
+  );
+}
+
+/** VoIP.ms's answer: the balance, or what is wrong; the IP to allow when that is it. */
+function ConnectionResult({ connection }: { connection: ConnectionTestDto }) {
+  const ok = connection.status === 'success';
   return (
     <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {ok ? (
@@ -37,17 +57,7 @@ function ConnectionResult({ connection }: { connection: ConnectionTestDto }) {
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             {t('setup.ip.intro')}
           </p>
-          <div className="ip-box">
-            <div style={{ flex: 1 }}>
-              <div className="muted" style={{ fontSize: 12 }}>
-                {t('setup.ip.yourIp')}
-              </div>
-              <code>{connection.ip}</code>
-            </div>
-            <button type="button" className="icon-btn" onClick={copy} aria-label={t('common.copy')}>
-              {copied ? <Check size={20} /> : <Copy size={20} />}
-            </button>
-          </div>
+          <IpBox ip={connection.ip} />
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             {t('setup.ip.waiting')}
           </p>
@@ -57,22 +67,38 @@ function ConnectionResult({ connection }: { connection: ConnectionTestDto }) {
   );
 }
 
+/** The numbers of each account in a card of their own, under the account's name when there are several. */
+export function AccountGroups({ dids, render }: { dids: DidDto[]; render: (did: DidDto) => ReactNode }) {
+  const accounts = useStore((s) => s.accounts);
+  const groups = useMemo(() => groupByAccount(dids, accounts), [dids, accounts]);
+  return (
+    <>
+      {groups.map((g) => (
+        <div className="account-group" key={g.account?.id ?? 'other'}>
+          {groups.length > 1 && <h4 className="account-group-title">{accountName(g.account)}</h4>}
+          <div className="card">{g.dids.map(render)}</div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 /**
  * The VoIP.ms accounts the portal uses (an agency keeps one per client): each
  * one's name, credentials and connection, and adding another.
  */
 export function AccountsSection() {
   const demo = useStore((s) => s.session?.demo ?? false);
-  const [accounts, setAccounts] = useState<AccountDto[] | null>(null);
+  const accounts = useStore((s) => s.accounts);
   const [results, setResults] = useState<Record<number, ConnectionTestDto | 'busy'>>({});
   const [editing, setEditing] = useState<AccountDto | 'new' | null>(null);
 
-  const load = () => api.accounts().then(setAccounts).catch(toastError);
+  const load = () => loadAccounts().catch(toastError);
   useEffect(() => {
     void load();
   }, []);
 
-  const replace = (account: AccountDto) => setAccounts((list) => list?.map((a) => (a.id === account.id ? account : a)) ?? null);
+  const replace = (account: AccountDto) => updateAccounts((list) => list.map((a) => (a.id === account.id ? account : a)));
 
   const test = async (account: AccountDto) => {
     setResults((r) => ({ ...r, [account.id]: 'busy' }));
@@ -97,7 +123,7 @@ export function AccountsSection() {
           return (
             <div className="row" key={a.id}>
               <div className="row-main">
-                <div className="row-title">{a.label || a.username || t('accounts.unnamed')}</div>
+                <div className="row-title">{accountName(a)}</div>
                 <div className="row-sub">
                   {[
                     a.label && a.username,
@@ -140,7 +166,7 @@ export function AccountsSection() {
       </button>
       {editing === 'new' && (
         <AddAccountDialog
-          onAdded={(account) => setAccounts((list) => [...(list ?? []), account])}
+          onAdded={(account) => updateAccounts((list) => [...list, account])}
           onChange={replace}
           onClose={() => setEditing(null)}
         />
@@ -208,6 +234,20 @@ function AddAccountDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<AccountCheckDto | null>(null);
+  // Known from the accounts already set up, so the IP is allowed in the same visit to VoIP.ms as the API password.
+  // Undefined while VoIP.ms answers, which takes seconds.
+  const [serverIp, setServerIp] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .serverIp()
+      .then((r) => live && setServerIp(r.ip))
+      .catch(() => live && setServerIp(null));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -250,11 +290,20 @@ function AddAccountDialog({
           <>
             <p className="dialog-text">{t(numbers.length ? 'accounts.addedNumbers' : 'accounts.addedNoNumbers')}</p>
             {numbers.length > 0 && (
-              <div className="card">
-                {numbers.map((d) => (
-                  <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />
-                ))}
-              </div>
+              <>
+                <div className="card">
+                  {numbers.map((d) => (
+                    <DidEditor key={d.did} did={d} onChange={() => void loadDids()} />
+                  ))}
+                </div>
+                <h4 className="account-group-title" style={{ marginTop: 8 }}>
+                  {t('receiving.title')}
+                </h4>
+                <AccountReceiving accountId={added.account.id} offer />
+                <div className="card">
+                  <HistoryImportRow title={t('accounts.importHistory')} accountId={added.account.id} />
+                </div>
+              </>
             )}
           </>
         )}
@@ -282,7 +331,21 @@ function AddAccountDialog({
           <ol style={{ margin: 0, paddingLeft: 20 }}>
             <li>{t('setup.api.step1')}</li>
             <li>{t('setup.api.step2')}</li>
-            <li>{t('accounts.ipLater')}</li>
+            {serverIp === undefined ? (
+              <li className="muted">
+                <Loader2 size={14} className="spin" style={{ verticalAlign: '-2px', marginRight: 6 }} />
+                {t('accounts.ipLoading')}
+              </li>
+            ) : serverIp ? (
+              <li>
+                {t('accounts.ipNow')}
+                <div style={{ marginTop: 8 }}>
+                  <IpBox ip={serverIp} />
+                </div>
+              </li>
+            ) : (
+              <li>{t('accounts.ipLater')}</li>
+            )}
           </ol>
         </div>
         <a className="btn outlined" href={API_PAGE} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'flex-start' }}>

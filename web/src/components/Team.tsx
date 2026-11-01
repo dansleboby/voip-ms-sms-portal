@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LogOut, Plus, Trash2, Users } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { errorText, t } from '../i18n';
-import { didName, formatDateTime } from '../lib/format';
+import { assignableDids, groupByAccount } from '../lib/accounts';
+import { accountName, didName, formatDateTime } from '../lib/format';
 import { navigate } from '../lib/router';
 import { loadSession, resetData, toast, toastError, useStore } from '../store';
 import { Ago, Avatar, Dialog, Logo, Switch } from './ui';
@@ -131,7 +132,12 @@ function TeamDialog({ onClose }: { onClose: () => void }) {
 
 /** Adds a user (`user` null) or changes one. */
 function UserDialog({ user, self, onClose, onSaved }: { user: UserDto | null; self: boolean; onClose: () => void; onSaved: () => void }) {
-  const dids = useStore((s) => s.dids);
+  const allDids = useStore((s) => s.dids);
+  const accounts = useStore((s) => s.accounts);
+  // As given when the dialog opened, so a number taken away stays in the list until it closes.
+  const [granted] = useState(() => new Set((user?.numbers ?? []).map((n) => n.did)));
+  const dids = useMemo(() => assignableDids(allDids, granted), [allDids, granted]);
+  const didGroups = useMemo(() => groupByAccount(dids, accounts), [dids, accounts]);
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [role, setRole] = useState<UserDto['role']>(user?.role ?? 'user');
@@ -217,25 +223,34 @@ function UserDialog({ user, self, onClose, onSaved }: { user: UserDto | null; se
           <div className="field">
             <span>{t('team.numbers')}</span>
             {dids.length === 0 && <span className="muted">{t('team.noNumbers')}</span>}
-            {dids.map((d) => {
-              const access = numbers[d.did] === undefined ? 'none' : numbers[d.did] ? 'send' : 'read';
-              return (
-                <div key={d.did} className="row" style={{ padding: '4px 0', minHeight: 0, border: 'none' }}>
-                  <div className="row-main row-title">{didName(d, d.did)}</div>
-                  <select
-                    className="input"
-                    style={{ width: 'auto', height: 36 }}
-                    aria-label={didName(d, d.did)}
-                    value={access}
-                    onChange={(e) => setNumber(d.did, e.target.value as 'none' | 'read' | 'send')}
-                  >
-                    <option value="none">{t('team.accessNone')}</option>
-                    <option value="read">{t('team.accessRead')}</option>
-                    <option value="send">{t('team.accessSend')}</option>
-                  </select>
-                </div>
-              );
-            })}
+            {didGroups.map((g) => (
+              <Fragment key={g.account?.id ?? 'other'}>
+                {didGroups.length > 1 && <div className="group-label">{accountName(g.account)}</div>}
+                {g.dids.map((d) => {
+                  const access = numbers[d.did] === undefined ? 'none' : numbers[d.did] ? 'send' : 'read';
+                  return (
+                    <div key={d.did} className="row" style={{ padding: '4px 0', minHeight: 0, border: 'none' }}>
+                      <div className="row-main">
+                        <div className="row-title">{didName(d, d.did)}</div>
+                        {/* Access can be given ahead: it applies once SMS is on. */}
+                        {!d.smsEnabled && <div className="row-sub">{t(d.smsAvailable ? 'settings.smsDisabled' : 'settings.smsUnavailable')}</div>}
+                      </div>
+                      <select
+                        className="input"
+                        style={{ width: 'auto', height: 36 }}
+                        aria-label={didName(d, d.did)}
+                        value={access}
+                        onChange={(e) => setNumber(d.did, e.target.value as 'none' | 'read' | 'send')}
+                      >
+                        <option value="none">{t('team.accessNone')}</option>
+                        <option value="read">{t('team.accessRead')}</option>
+                        <option value="send">{t('team.accessSend')}</option>
+                      </select>
+                    </div>
+                  );
+                })}
+              </Fragment>
+            ))}
           </div>
         )}
         {user && !self && (
@@ -451,6 +466,15 @@ export function MyAccountSection() {
     }
   };
 
+  const endOthers = async () => {
+    try {
+      await api.endOtherSessions();
+      load();
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
   if (!user) return null;
   const owner = user.role === 'owner';
   return (
@@ -499,6 +523,12 @@ export function MyAccountSection() {
           </div>
         ))}
       </div>
+      {sessions?.some((s) => !s.current) && (
+        <button className="btn text" style={{ marginTop: 8 }} onClick={() => void endOthers()}>
+          <LogOut size={18} />
+          {t('team.endOthers')}
+        </button>
+      )}
       {dialog === 'name' && <NameDialog name={user.name} onClose={() => setDialog(null)} />}
       {dialog === 'password' && <PasswordDialog onClose={() => setDialog(null)} onChanged={load} />}
     </section>

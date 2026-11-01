@@ -72,15 +72,20 @@ final class SetupRoutes
             return Response::json($app->repo->listDids());
         });
 
-        /** Queues the last `days` of history; progress shows in the sync status. */
+        /** Queues the last `days` of history of every account, or of the one in `account`; progress shows in the sync status. */
         $r->admin('POST', '/api/setup/import', function (Request $req) use ($app): Response {
-            $days = (new Input($req->json()))->int('days', 0, 3650);
+            $body = new Input($req->json());
+            $days = $body->int('days', 0, 3650);
             self::client($app);
+            $only = $body->has('account') ? ($app->accounts->get($body->int('account', 1)) ?? throw new HttpError(404, 'not_found')) : null;
             if ($days > 0) {
-                // The history of the account the wizard sets up.
-                $sync = $app->accounts->primary()->sync;
-                $sync->startImport($days);
-                $app->defer(fn () => $sync->continueImport(microtime(true) + 20));
+                $accounts = $app->accounts->startImport($days, $only);
+                $app->defer(function () use ($accounts): void {
+                    $deadline = microtime(true) + 20;
+                    foreach ($accounts as $account) {
+                        $account->sync->continueImport($deadline);
+                    }
+                });
                 $app->activity->record($req, 'history_imported', null, ['days' => $days]);
             }
             return Response::json(['ok' => true], 202);

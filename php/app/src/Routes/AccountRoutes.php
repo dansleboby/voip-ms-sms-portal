@@ -25,6 +25,25 @@ final class AccountRoutes
 
         $r->admin('GET', '/api/accounts', fn () => Response::json($app->accounts->list()));
 
+        /**
+         * The IP address VoIP.ms sees this server at, so a new account can allow it before it is added.
+         * getIP only needs valid credentials, and every account shares the server's address: the first
+         * account VoIP.ms answers for tells it. Null when none does.
+         */
+        $r->admin('GET', '/api/accounts/ip', function () use ($app): Response {
+            foreach ($app->accounts->all() as $account) {
+                try {
+                    $ip = $account->client()?->getIP();
+                } catch (VoipMsError) {
+                    continue;
+                }
+                if ($ip) {
+                    return Response::json(['ip' => $ip]);
+                }
+            }
+            return Response::json(['ip' => null]);
+        });
+
         /** Checks the credentials, keeps them encrypted like the first account's, and fetches the account's numbers. */
         $r->admin('POST', '/api/accounts', function (Request $req) use ($app): Response {
             $body = new Input($req->json());

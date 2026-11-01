@@ -475,6 +475,7 @@ describe('The server with texts announced by VoIP.ms', () => {
     expect((await stranger.get('/api/webhook')).status).toBe(401);
     expect((await stranger.post('/api/webhook/enable', {})).status).toBe(401);
     expect((await stranger.post('/api/webhook/disable')).status).toBe(401);
+    expect((await stranger.post('/api/webhook/numbers', { instant: [MONTREAL] })).status).toBe(401);
   });
 
   it('points the numbers at the portal, leaving another callback alone unless asked', async () => {
@@ -519,6 +520,48 @@ describe('The server with texts announced by VoIP.ms', () => {
     expect(states(off)).toEqual({ [MONTREAL]: 'none', [LAVAL]: 'other', [GATINEAU]: 'none' });
     expect(off.numbers.find((n: { did: string }) => n.did === LAVAL).otherUrl).toBe(CRM);
     expect((await client.get('/api/sync/status')).json.webhook).toBeNull();
+  });
+
+  it('chooses number by number which ones VoIP.ms calls, and which are checked as usual', async () => {
+    const one = (await client.post('/api/webhook/numbers', { instant: [MONTREAL] })).json;
+    expect(one).toMatchObject({ enabled: true, complete: false });
+    expect(states(one)).toEqual({ [MONTREAL]: 'ours', [LAVAL]: 'other', [GATINEAU]: 'none' });
+    // Gatineau stays on the usual checks: they keep their pace.
+    expect((await client.get('/api/sync/status')).json.webhook).toMatchObject({ complete: false });
+
+    // Listed as instant, a number wired to another system gives it up, kept to give back.
+    const replaced = (await client.post('/api/webhook/numbers', { instant: [LAVAL] })).json;
+    expect(states(replaced)).toEqual({ [MONTREAL]: 'ours', [LAVAL]: 'ours', [GATINEAU]: 'none' });
+
+    const back = (await client.post('/api/webhook/numbers', { regular: [LAVAL, MONTREAL] })).json;
+    expect(back).toMatchObject({ enabled: false, url: null, complete: false });
+    expect(states(back)).toEqual({ [MONTREAL]: 'none', [LAVAL]: 'other', [GATINEAU]: 'none' });
+    expect(back.numbers.find((n: { did: string }) => n.did === LAVAL).otherUrl).toBe(CRM);
+    expect((await client.get('/api/sync/status')).json.webhook).toBeNull();
+
+    expect((await client.post('/api/webhook/numbers', { instant: ['450'] })).status).toBe(400);
+    expect((await client.post('/api/webhook/numbers', { account: 9, instant: [MONTREAL] })).status).toBe(404);
+  });
+
+  it('sets up the webhooks of another VoIP.ms account, with its own secret', async () => {
+    const QUEBEC = '4185550142';
+    expect((await client.post('/api/accounts', { label: 'Boulangerie', username: 'b@example.com', password: 'secret' })).status).toBe(201);
+    const before = (await client.get('/api/webhook?account=2')).json;
+    expect(before).toMatchObject({ enabled: false, url: null });
+    expect(states(before)).toEqual({ [QUEBEC]: 'none' });
+    expect((await client.get('/api/webhook?account=9')).status).toBe(404);
+
+    const first = (await client.post('/api/webhook/numbers', { instant: [MONTREAL] })).json;
+    const second = (await client.post('/api/webhook/numbers', { account: 2, instant: [QUEBEC] })).json;
+    expect(second).toMatchObject({ enabled: true, complete: true });
+    expect(states(second)).toEqual({ [QUEBEC]: 'ours' });
+    expect(second.url).toMatch(/^https:\/\/sms\.example\.com\/api\/voipms\/callback\/[\w-]{32}$/);
+    expect(second.url).not.toBe(first.url);
+    // Each account's numbers stay its own.
+    expect(states((await client.get('/api/webhook')).json)).toEqual({ [MONTREAL]: 'ours', [LAVAL]: 'other', [GATINEAU]: 'none' });
+
+    const call = await new Client(backend.url).get(`${new URL(second.url).pathname}?to=${QUEBEC}&from=4185550177&message=Allo&id=2`);
+    expect(call.status).toBe(200);
   });
 });
 
@@ -567,10 +610,15 @@ describe('The server with several VoIP.ms accounts', () => {
     const stranger = new Client(backend.url);
     expect((await stranger.get('/api/accounts')).status).toBe(401);
     expect((await stranger.post('/api/accounts', { username: 'b@example.com', password: 'x' })).status).toBe(401);
+    expect((await stranger.get('/api/accounts/ip')).status).toBe(401);
   });
 
   it('lists the account set up first', async () => {
     expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'demo@example.com', credentialsSource: 'env', numbers: 3, error: null }]);
+  });
+
+  it('gives the IP address VoIP.ms sees the server at, for a new account to allow before it is added', async () => {
+    expect((await client.get('/api/accounts/ip')).json).toEqual({ ip: '203.0.113.10' });
   });
 
   it('adds an account once, checking its credentials, with its own numbers', async () => {
@@ -629,6 +677,24 @@ describe('The server with several VoIP.ms accounts', () => {
     expect((await client.request('PATCH', '/api/accounts/2', { label: 'Boulangerie Fortin' })).json).toMatchObject({ id: 2, label: 'Boulangerie Fortin' });
     expect((await client.request('PATCH', '/api/accounts/99', { label: 'x' })).status).toBe(404);
   });
+
+  it('imports the history of every account, or of the one named', async () => {
+    // Two days old: only a history import brings it, not the first check.
+    const pains = 'Bonjour, est-ce que la commande de pains est prête pour vendredi?';
+    const bodies = async () => {
+      const conversations = (await client.get('/api/conversations')).json as ConversationDto[];
+      const bakery = conversations.find((c) => c.did === QUEBEC && c.phone === '4185550177');
+      return bakery ? ((await client.get(`/api/conversations/${bakery.id}/messages`)).json as MessageDto[]).map((m) => m.body) : [];
+    };
+    expect(await bodies()).not.toContain(pains);
+    expect((await client.post('/api/setup/import', { days: 30 })).status).toBe(202);
+    await waitFor(async () => {
+      await tick();
+      return (await bodies()).includes(pains);
+    });
+    expect((await client.post('/api/setup/import', { days: 30, account: 2 })).status).toBe(202);
+    expect((await client.post('/api/setup/import', { days: 30, account: 9 })).status).toBe(404);
+  }, 30_000);
 });
 
 describe('The server in the Team mode', () => {
@@ -707,7 +773,7 @@ describe('The server in the Team mode', () => {
   it('keeps users out of what only admins change', async () => {
     marc = (await signIn('marc@example.com', 'marc password')).client;
     expect((await marc.get('/api/session')).json).toMatchObject({ user: { id: marcId, email: 'marc@example.com', role: 'user' } });
-    for (const url of ['/api/users', '/api/setup/status', '/api/accounts', '/api/webhook']) {
+    for (const url of ['/api/users', '/api/setup/status', '/api/accounts', '/api/accounts/ip', '/api/webhook']) {
       expect(await marc.get(url)).toMatchObject({ status: 403, json: { error: 'forbidden' } });
     }
     expect((await marc.request('PATCH', `/api/dids/${MONTREAL}`, { label: 'x' })).status).toBe(403);
@@ -911,6 +977,17 @@ describe('The server in the Team mode', () => {
     expect((await marc.request('DELETE', `/api/sessions/${other.id}`)).json).toEqual({ ok: true });
     expect((await phone.get('/api/conversations')).status).toBe(401);
     expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+  });
+
+  it('signs someone out of every other browser at once, keeping this one', async () => {
+    // One more sign-in only: more would reach the sign-in rate limit of the next cases.
+    const phone = (await signIn('marc@example.com', 'new marc password')).client;
+    expect((await marc.get('/api/sessions')).json).toHaveLength(2);
+    expect((await marc.request('DELETE', '/api/sessions')).json).toEqual({ ended: 1 });
+    expect((await phone.get('/api/conversations')).status).toBe(401);
+    expect((await marc.get('/api/sessions')).json).toHaveLength(1);
+    // Only his: the admin stays signed in.
+    expect((await admin.get('/api/conversations')).status).toBe(200);
   });
 
   it('keeps a log of sign-ins and changes for the admins', async () => {

@@ -77,7 +77,7 @@ final class Sync
         $last = $this->repo->getSetting($this->key(self::LAST_SUCCESS_KEY));
         $checked = $this->repo->getSetting($this->key(self::LAST_CHECK_KEY));
         $error = $this->repo->getSetting($this->key(self::LAST_ERROR_KEY));
-        $import = $this->import();
+        $import = $this->importing();
         $cron = $this->repo->getSetting(self::CRON_KEY);
         if (!($this->isEnabled)()) {
             $state = 'disabled';
@@ -167,11 +167,36 @@ final class Sync
 
     // ------------------------------------------------------------ history import
 
+    /**
+     * The import queued, or the last one done: a finished job (no windows left)
+     * is kept until the next import starts, so that while other accounts still
+     * import, the progress of all of them counts what this one did.
+     */
     private function import(): ?array
     {
         $raw = $this->repo->getSetting($this->key(self::IMPORT_KEY));
         $job = $raw !== null ? json_decode($raw, true) : null;
         return is_array($job) ? $job : null;
+    }
+
+    private function importing(): ?array
+    {
+        $job = $this->import();
+        return $job !== null && $job['windows'] !== [] ? $job : null;
+    }
+
+    /** @return ?array{done: int, total: int, running: bool} */
+    public function importProgress(): ?array
+    {
+        $job = $this->import();
+        return $job === null ? null : ['done' => $job['done'], 'total' => $job['total'], 'running' => $job['windows'] !== []];
+    }
+
+    public function forgetFinishedImport(): void
+    {
+        if ($this->import() !== null && $this->importing() === null) {
+            $this->repo->deleteSetting($this->key(self::IMPORT_KEY));
+        }
     }
 
     /**
@@ -182,7 +207,7 @@ final class Sync
      */
     public function startImport(int $days): void
     {
-        if ($this->import() !== null) {
+        if ($this->importing() !== null) {
             return;
         }
         $now = Time::nowMs();
@@ -201,7 +226,7 @@ final class Sync
     /** Imports queued history until $deadline (microtime). */
     public function continueImport(float $deadline): void
     {
-        $job = $this->import();
+        $job = $this->importing();
         $client = ($this->getClient)();
         if ($job === null || $client === null) {
             return;
@@ -219,16 +244,13 @@ final class Sync
                 $this->events->broadcast(['type' => 'reload']);
                 $this->publishStatus();
             }
-            if (!$job['windows']) {
-                $this->repo->deleteSetting($this->key(self::IMPORT_KEY));
-            }
         } catch (\Throwable $e) {
             Log::error('History import failed', ['err' => $e]);
             $this->repo->deleteSetting($this->key(self::IMPORT_KEY));
         } finally {
             $lock->release();
         }
-        if ($this->import() === null) {
+        if ($this->importing() === null) {
             $this->publishStatus();
         }
     }
