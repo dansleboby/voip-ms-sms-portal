@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## Unreleased
+
+- On phones and tablets, the message box no longer has an emoji button: their keyboard has emoji already, and the box keeps the room.
+
 ## 2.0.1 (2026-11-01)
 
 - **Texting short codes.** A text can now go to a 5- or 6-digit short code, for the services that answer a keyword (transit times, for instance), from a conversation it started or from *Start a conversation*. The portal refused them as an invalid number ([#24](https://github.com/dansleboby/voip-ms-sms-portal/issues/24)).

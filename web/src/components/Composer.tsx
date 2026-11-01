@@ -182,17 +182,20 @@ export function Composer({
               >
                 <Paperclip size={20} />
               </button>
-              <button
-                className="icon-btn"
-                data-emoji-toggle
-                aria-label={t('composer.emoji')}
-                title={t('composer.emoji')}
-                aria-expanded={emojiOpen}
-                disabled={disabled}
-                onClick={() => setEmojiOpen((open) => !open)}
-              >
-                <Smile size={20} />
-              </button>
+              {/* Phones and tablets have emoji on their keyboard. */}
+              {!coarsePointer && (
+                <button
+                  className="icon-btn"
+                  data-emoji-toggle
+                  aria-label={t('composer.emoji')}
+                  title={t('composer.emoji')}
+                  aria-expanded={emojiOpen}
+                  disabled={disabled}
+                  onClick={() => setEmojiOpen((open) => !open)}
+                >
+                  <Smile size={20} />
+                </button>
+              )}
               <input
                 ref={fileInput}
                 type="file"
