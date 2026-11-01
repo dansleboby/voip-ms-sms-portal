@@ -11,4 +11,5 @@ declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
 
-exit(SmsPortal\Cron::run(__DIR__));
+// "--check": only check the settings (the Docker image does, before it starts).
+exit(($argv[1] ?? '') === '--check' ? SmsPortal\Cron::check(__DIR__) : SmsPortal\Cron::run(__DIR__));

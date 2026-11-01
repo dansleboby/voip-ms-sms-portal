@@ -6,7 +6,7 @@ namespace SmsPortal\Http;
 
 /**
  * Typed reads from a decoded body or query, refusing anything unexpected
- * the way the zod schemas of the Docker version do.
+ * with a 400.
  */
 final class Input
 {
@@ -50,6 +50,12 @@ final class Input
     public function nullableString(string $key, int $max = PHP_INT_MAX): ?string
     {
         return ($this->data[$key] ?? null) === null ? null : $this->string($key, 0, $max);
+    }
+
+    /** The value as decoded from JSON, for shapes the other readers do not cover. */
+    public function raw(string $key): mixed
+    {
+        return $this->data[$key] ?? null;
     }
 
     public function bool(string $key): bool

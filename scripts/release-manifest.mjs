@@ -11,10 +11,10 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const { version, engines } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-// The oldest PHP the release runs on (engines.php, ">=8.1"): servers on an older one do not install it.
+// The oldest PHP the release runs on (engines.php, ">=8.4"): servers on an older one do not install it.
 const php = /^>=\s*(\d+\.\d+)$/.exec(engines?.php ?? '')?.[1];
 if (!php) {
-  console.error('package.json must give the oldest PHP the release runs on, as engines.php (">=8.1").');
+  console.error('package.json must give the oldest PHP the release runs on, as engines.php (">=8.4").');
   process.exit(1);
 }
 const repository = process.env.GITHUB_REPOSITORY ?? 'dansleboby/voip-ms-sms-portal';

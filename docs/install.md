@@ -27,6 +27,7 @@ The steps:
 2. Install: [A. on cPanel](#2a-install-on-cpanel-web-hosting) or [B. with Docker](#2b-install-with-docker)
 3. [Run the setup wizard](#3-run-the-setup-wizard) (everyone)
 4. [Use it on your phone](#4-use-it-on-your-phone)
+5. [Several people?](#5-several-people-optional) (optional)
 
 ## 1. Prepare your VoIP.ms account
 
@@ -41,7 +42,7 @@ Your numbers must also have SMS turned on: the setup wizard does it for you.
 
 ## 2A. Install on cPanel web hosting
 
-Your hosting needs PHP 8.1 or later, which most hosts have by default.
+Your hosting needs PHP 8.4 or later. Most hosts offer it, though not always by default: step 2A-8 shows where to choose it.
 
 **Put the files on your hosting**
 
@@ -62,6 +63,8 @@ Your hosting needs PHP 8.1 or later, which most hosts have by default.
 
    On older cPanel versions, the page is called **Subdomains**: set its **Document Root** to `sms-portal-site` the same way.
 8. Open **SSL/TLS Status** and click **Run AutoSSL**. This gives the site HTTPS (the padlock), which notifications need. It can take a few minutes.
+
+   Then open **MultiPHP Manager** (or **Select PHP Version**), tick the new address, choose **PHP 8.4** or a later one and click **Apply**. If the list stops before 8.4, ask your host.
 
 **Choose your portal password**
 
@@ -129,6 +132,7 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
    - On cPanel, or with Docker over HTTPS: choose **Instantly, through a VoIP.ms webhook**. The portal sets up your numbers at VoIP.ms itself, and texts then show up within seconds.
    - If a number already sends its texts somewhere else (another app), it says so: click **Replace** to have it call the portal instead. Going back to regular checks gives it its old setting back.
    - With Docker at home, without an HTTPS address, keep **Regular checks**.
+   - Later, *Settings* → *Receiving texts* sets each number on its own.
 
    Click **Continue**.
 7. **History**: choose how much of your past texts to bring in, then click **Finish**.
@@ -146,12 +150,16 @@ Now open `https://sms.yourdomain.com` and go on to [part 3](#3-run-the-setup-wiz
 
 **Send a test notification**, in **Settings**, checks that everything works.
 
+## 5. Several people? (optional)
+
+For an office, a family or an agency, Team mode gives each person their own email, password and numbers: see the [Team mode guide](team.md). Several VoIP.ms accounts, one per client say, are added in *Settings* → *VoIP.ms accounts*: see [One VoIP.ms account per client](team.md#8-one-voipms-account-per-client).
+
 ## Something went wrong?
 
 | What you see | What to do |
 |---|---|
 | A page saying **"Forbidden"**, or **"This is the private folder of SMS Portal"** | The address's document root is not `sms-portal-site`. In cPanel → **Domains**, it must end with `/sms-portal-site`, and that folder must be next to `sms-portal`, not inside it (step 2A-7). If it is right, check the permissions in File Manager: 644 for files, 755 for folders. |
-| The sign-in page says **"The server is not ready yet"** | It says what is missing. Most often `config.php` (step 2A-9) or the password in it (step 2A-10). If it mentions PHP 8.1: in cPanel, open **MultiPHP Manager** (or **Select PHP Version**) and choose PHP 8.1 or later for the address. |
+| The sign-in page says **"The server is not ready yet"** | It says what is missing. Most often `config.php` (step 2A-9) or the password in it (step 2A-10). If it mentions PHP 8.4: in cPanel, open **MultiPHP Manager** (or **Select PHP Version**) and choose PHP 8.4 or later for the address. |
 | **"Wrong password."** when you sign in | The password is the `APP_PASSWORD` you wrote in `config.php` (cPanel) or in `docker-compose.yml` (Docker), not your VoIP.ms password. |
 | **"Wrong email or API password."** in the wizard | Use the API password from part 1, not your VoIP.ms sign-in password, and the email you sign in to VoIP.ms with. If in doubt, save a new API password on the VoIP.ms page and type it again. |
 | **"This IP address is not allowed in VoIP.ms."** | The address the wizard shows is not saved in **Enable IP Addresses** yet: paste it, click **Save IP Addresses**, wait a minute, then click **Check access** again. |

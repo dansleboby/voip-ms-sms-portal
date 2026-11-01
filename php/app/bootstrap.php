@@ -8,8 +8,8 @@ declare(strict_types=1);
  * root, so neither can ever be downloaded.
  */
 
-if (PHP_VERSION_ID < 80100) {
-    throw new RuntimeException('SMS Portal needs PHP 8.1 or later; this server runs ' . PHP_VERSION . '.');
+if (PHP_VERSION_ID < 80400) {
+    throw new RuntimeException('SMS Portal needs PHP 8.4 or later; this server runs ' . PHP_VERSION . '.');
 }
 
 spl_autoload_register(static function (string $class): void {

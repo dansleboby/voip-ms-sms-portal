@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { displayName, didName } from './format';
+import { displayName, didName, isShown } from './format';
 import { prefs } from './prefs';
 import { pushEnabledHere, serviceWorker } from './push';
 import { navigate } from './router';
@@ -56,12 +56,13 @@ function chime(): void {
 export function notifyIncoming(message: MessageDto, conversation: ConversationDto, dids: DidDto[]): void {
   // With push on, the server notifies this device itself whenever the app is not on screen.
   if (document.visibilityState !== 'visible' && pushEnabledHere()) return;
+  const did = dids.find((d) => d.did === conversation.did);
+  if (did && (did.muted || !isShown(did))) return;
   if (soundEnabled()) chime();
   if (!notificationsEnabled()) return;
-  const did = dids.find((d) => d.did === conversation.did);
   const title = displayName(conversation.phone, conversation.contact);
   const text = message.body || (message.attachments.length ? `📎 ${t('list.photo')}` : '');
-  const body = dids.filter((d) => d.visible).length > 1 ? `${text}\n— ${didName(did, conversation.did)}` : text;
+  const body = dids.filter(isShown).length > 1 ? `${text}\n— ${didName(did, conversation.did)}` : text;
   const tag = `conversation-${conversation.id}`;
   void serviceWorker().then((reg) => {
     // Mobile browsers only allow notifications from a service worker, which also handles the click.

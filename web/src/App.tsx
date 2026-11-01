@@ -5,6 +5,7 @@ import { refreshPush, serviceWorker } from './lib/push';
 import { navigate, useRoute } from './lib/router';
 import { connectEvents, disconnectEvents, loadAll, loadSession, useStore } from './store';
 import { Login } from './components/Login';
+import { NotReady } from './components/Team';
 import { Setup } from './components/Setup';
 import { Shell } from './components/Shell';
 import { Logo, Toasts } from './components/ui';
@@ -46,13 +47,23 @@ export function App() {
   if (!session?.authenticated) {
     return (
       <>
-        <Login problem={problem} onSuccess={() => void loadSession()} />
+        <Login problem={problem} mode={session?.mode} onSuccess={() => void loadSession()} />
         <Toasts />
       </>
     );
   }
 
-  if (!session.setupCompleted || route.name === 'setup') {
+  // The wizard is for whoever manages the portal; a user waits for them.
+  if (session.user?.role === 'user') {
+    if (!session.setupCompleted) {
+      return (
+        <>
+          <NotReady />
+          <Toasts />
+        </>
+      );
+    }
+  } else if (!session.setupCompleted || route.name === 'setup') {
     return (
       <>
         <Setup

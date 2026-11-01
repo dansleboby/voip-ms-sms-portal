@@ -8,7 +8,7 @@ use SmsPortal\Http\HttpError;
 
 /**
  * New versions: whether one was published (from the release.json each
- * release carries, as server/updates.ts reads it), and installing it in
+ * release carries), and installing it in
  * place from Settings. The update replaces the files of the sms-portal
  * folder and of the site; config.php and the data folder are never touched.
  *
@@ -31,6 +31,8 @@ final class Updates
 
     public function __construct(
         private readonly Repo $repo,
+        /** "docker": a new image replaces this one, the server never touches its own files. */
+        private readonly string $install,
         private readonly string $version,
         private readonly bool $enabled,
         private readonly string $manifestUrl,
@@ -52,10 +54,10 @@ final class Updates
             $this->check();
         }
         $latest = $this->latest();
-        [$blocked, $paths] = $this->blocked($latest);
+        [$blocked, $paths] = $this->install === 'docker' ? [null, []] : $this->blocked($latest);
         $status = [
             'current' => $this->version,
-            'install' => 'php',
+            'install' => $this->install,
             'enabled' => $this->enabled,
             'latest' => $latest === null ? null : [
                 'version' => $latest['version'],
@@ -66,7 +68,7 @@ final class Updates
             'available' => $latest !== null && self::isNewer($latest['version'], $this->version),
             'checkedAt' => ((int) ($this->repo->getSetting(self::CHECKED_KEY) ?? 0)) ?: null,
             'error' => $this->repo->getSetting(self::ERROR_KEY),
-            'canInstall' => $blocked === null,
+            'canInstall' => $this->install !== 'docker' && $blocked === null,
             'blocked' => $blocked,
         ];
         if ($paths) {
@@ -187,6 +189,9 @@ final class Updates
         class_exists(HttpError::class);
         class_exists(Log::class);
 
+        if ($this->install === 'docker') {
+            throw new HttpError(409, 'install_unsupported');
+        }
         $lock = Lock::take($this->lockDir, 'update') ?? throw new HttpError(409, 'update_in_progress');
         try {
             $this->check();

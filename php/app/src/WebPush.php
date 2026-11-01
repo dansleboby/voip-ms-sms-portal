@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace SmsPortal;
 
 /**
- * Web Push with the openssl extension, no library (server/webpush.ts): the
+ * Web Push with the openssl extension, no library: the
  * payload is encrypted for the browser (RFC 8291, "aes128gcm" from RFC 8188)
  * and the request signed with the server's VAPID key (RFC 8292). Push
  * services only ever see ciphertext.
  *
  * Keys are base64url: the public one as the raw uncompressed point (65
- * bytes), the private one as the scalar (32 bytes), as the Docker version
- * stores them.
+ * bytes), the private one as the scalar (32 bytes), as the Node server of
+ * 1.x stored them too.
  */
 final class WebPush
 {

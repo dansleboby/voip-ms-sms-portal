@@ -7,25 +7,46 @@ namespace SmsPortal;
 use PDO;
 
 /**
- * Reads and writes the database; port of Repo in server/db.ts. Methods
- * returning "Dto" arrays give the JSON shapes of shared/types.ts.
+ * Reads and writes the database. Methods returning "Dto" arrays give the
+ * JSON shapes of shared/types.ts.
  */
 final class Repo
 {
     /** Distinct colors that read well on light and dark surfaces. */
     public const DID_COLORS = ['#1a73e8', '#e8710a', '#188038', '#a142f4', '#d93025', '#007b83', '#c5221f', '#9334e6'];
 
-    private const MESSAGE_COLUMNS = 'id, conversation_id, kind, remote_id, direction, body, sent_at, status, error, carrier_status, created_at';
+    private const MESSAGE_COLUMNS = 'id, conversation_id, kind, remote_id, direction, body, sent_at, status, error, carrier_status, created_at, sent_by_user, sent_by_name';
 
-    private const CONVERSATION_SELECT = <<<'SQL'
-        SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, c.unread_count, c.archived_at,
+    /**
+     * A conversation's unread count and archive date, as the viewer sees them: the shared ones,
+     * unless the number keeps them per person (dids.shared_state = 0) and the viewer has their own
+     * (conversation_states, joined as s, with the number as d).
+     */
+    private const UNREAD_SQL = <<<'SQL'
+        CASE WHEN COALESCE(d.shared_state, 1) = 1 OR s.read_at IS NULL THEN c.unread_count
+        ELSE (SELECT COUNT(*) FROM messages mu WHERE mu.conversation_id = c.id AND mu.direction = 'in' AND mu.deleted_at IS NULL
+              AND (mu.sent_at > s.read_at OR (mu.sent_at = s.read_at AND mu.id > s.read_message_id))) END
+        SQL;
+    private const ARCHIVED_SQL = 'CASE WHEN COALESCE(d.shared_state, 1) = 1 OR s.conversation_id IS NULL THEN c.archived_at ELSE s.archived_at END';
+
+    private const CONVERSATION_SELECT = 'SELECT c.id, c.did, c.phone, c.last_message_id, c.last_message_at, '
+        . self::UNREAD_SQL . ' AS unread_count, ' . self::ARCHIVED_SQL . <<<'SQL'
+         AS archived_at,
                m.body AS last_body, m.direction AS last_direction, m.status AS last_status,
+               m.sent_by_user AS last_sent_by_user, m.sent_by_name AS last_sent_by_name,
                (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) AS last_attachments,
                ct.id AS contact_id, ct.name AS contact_name, ct.color AS contact_color, ct.icon AS contact_icon
         FROM conversations c
+        LEFT JOIN dids d ON d.did = c.did
+        LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
         LEFT JOIN messages m ON m.id = c.last_message_id
-        LEFT JOIN contact_phones cp ON cp.phone = c.phone
-        LEFT JOIN contacts ct ON ct.id = cp.contact_id
+        LEFT JOIN contacts ct ON ct.id = (
+          SELECT k.id FROM contact_phones cp JOIN contacts k ON k.id = cp.contact_id
+          WHERE cp.phone = c.phone AND (k.owner_key = ? OR (k.owner_key IS NULL AND (k.all_dids = 1
+            OR EXISTS (SELECT 1 FROM contact_dids kd WHERE kd.contact_id = k.id AND kd.did = c.did))))
+          -- The viewer's own contact first, then the number's.
+          ORDER BY k.owner_key IS NULL, k.id LIMIT 1
+        )
         SQL;
 
     private int $depth = 0;
@@ -33,12 +54,30 @@ final class Repo
     /**
      * @param list<string>|null $allowedDids the only numbers of the account the configuration lets the portal use (null: all of them)
      * @param list<string> $excludedDids numbers it leaves alone
+     * @param ?Viewer $viewer whom reads are for (forViewer); null for the server's own work, which sees everything
      */
     public function __construct(
         public readonly PDO $db,
         private readonly ?array $allowedDids = null,
         private readonly array $excludedDids = [],
+        private readonly ?Viewer $viewer = null,
     ) {
+    }
+
+    /**
+     * The same database, as $viewer sees it: only their numbers, with their own unread
+     * counts and archive where a number keeps them per person. Writes that are not
+     * about that state are the same as through this Repo.
+     */
+    public function forViewer(?Viewer $viewer): self
+    {
+        return new self($this->db, $this->allowedDids, $this->excludedDids, $viewer);
+    }
+
+    /** The key conversation_states uses for the viewer; -1, which matches none, for the server's own work. */
+    private function viewerKey(): int
+    {
+        return $this->viewer?->key ?? -1;
     }
 
     /**
@@ -60,13 +99,19 @@ final class Repo
     private function didScope(string $column): array
     {
         $conditions = [];
-        if ($this->allowedDids !== null) {
-            $conditions[] = "$column IN (" . implode(', ', array_fill(0, count($this->allowedDids), '?')) . ')';
+        $params = [];
+        // The viewer's own numbers (Team mode), within those of the configuration.
+        foreach ([$this->allowedDids, $this->viewer?->dids()] as $only) {
+            if ($only !== null) {
+                $conditions[] = $only ? "$column IN (" . self::placeholders($only) . ')' : '0';
+                array_push($params, ...$only);
+            }
         }
         if ($this->excludedDids) {
-            $conditions[] = "$column NOT IN (" . implode(', ', array_fill(0, count($this->excludedDids), '?')) . ')';
+            $conditions[] = "$column NOT IN (" . self::placeholders($this->excludedDids) . ')';
+            array_push($params, ...$this->excludedDids);
         }
-        return [$conditions ? implode(' AND ', $conditions) : '1', [...($this->allowedDids ?? []), ...$this->excludedDids]];
+        return [$conditions ? implode(' AND ', $conditions) : '1', $params];
     }
 
     /**
@@ -135,17 +180,235 @@ final class Repo
         $this->run('DELETE FROM settings WHERE key = ?', [$key]);
     }
 
+    // -------------------------------------------------------------------- users
+
+    public function createUser(string $email, ?string $name, string $passwordHash, string $role): int
+    {
+        $now = Time::nowMs();
+        $this->run(
+            'INSERT INTO users (email, name, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [$email, $name, $passwordHash, $role, $now, $now],
+        );
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function getUserRow(int $id): ?array
+    {
+        return $this->one('SELECT * FROM users WHERE id = ?', [$id]);
+    }
+
+    public function findUserByEmail(string $email): ?array
+    {
+        return $this->one('SELECT * FROM users WHERE email = ?', [$email]);
+    }
+
+    public function listUsers(): array
+    {
+        $numbers = [];
+        foreach ($this->all('SELECT user_id, did, can_send FROM user_dids ORDER BY did') as $n) {
+            $numbers[$n['user_id']][] = ['did' => $n['did'], 'canSend' => $n['can_send'] === 1];
+        }
+        return array_map(static fn (array $r) => [
+            'id' => $r['id'],
+            'email' => $r['email'],
+            'name' => $r['name'],
+            'role' => $r['role'],
+            'disabled' => $r['disabled_at'] !== null,
+            'createdAt' => $r['created_at'],
+            'numbers' => $numbers[$r['id']] ?? [],
+        ], $this->all('SELECT * FROM users ORDER BY email'));
+    }
+
+    public function getUser(int $id): ?array
+    {
+        foreach ($this->listUsers() as $user) {
+            if ($user['id'] === $id) {
+                return $user;
+            }
+        }
+        return null;
+    }
+
+    /** @param array{name?: ?string, role?: string, passwordHash?: string, disabled?: bool} $patch */
+    public function updateUser(int $id, array $patch): bool
+    {
+        $sets = ['updated_at = ?'];
+        $values = [Time::nowMs()];
+        if (array_key_exists('name', $patch)) {
+            $sets[] = 'name = ?';
+            $values[] = $patch['name'];
+        }
+        if (isset($patch['role'])) {
+            $sets[] = 'role = ?';
+            $values[] = $patch['role'];
+        }
+        if (isset($patch['passwordHash'])) {
+            $sets[] = 'password_hash = ?';
+            $values[] = $patch['passwordHash'];
+        }
+        if (isset($patch['disabled'])) {
+            $sets[] = 'disabled_at = ?';
+            $values[] = $patch['disabled'] ? Time::nowMs() : null;
+        }
+        $values[] = $id;
+        return $this->run('UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = ?', $values)->rowCount() > 0;
+    }
+
+    /** Also forgets what the user read, archived and chose for themselves, their own contacts, and their devices' notifications. */
+    public function deleteUser(int $id): bool
+    {
+        return $this->transaction(function () use ($id): bool {
+            $this->run('DELETE FROM conversation_states WHERE user_key = ?', [$id]);
+            $this->run('DELETE FROM did_prefs WHERE user_key = ?', [$id]);
+            $this->run('DELETE FROM contacts WHERE owner_key = ?', [$id]);
+            $this->deleteUserPushSubscriptions($id);
+            return $this->run('DELETE FROM users WHERE id = ?', [$id])->rowCount() > 0;
+        });
+    }
+
+    /** @return array<string, bool> the numbers given to a user: did => may send from it */
+    public function userNumbers(int $id): array
+    {
+        $numbers = [];
+        foreach ($this->all('SELECT did, can_send FROM user_dids WHERE user_id = ?', [$id]) as $n) {
+            $numbers[(string) $n['did']] = $n['can_send'] === 1;
+        }
+        return $numbers;
+    }
+
+    /** @param list<array{did: string, canSend: bool}> $numbers in place of those the user had */
+    public function setUserNumbers(int $id, array $numbers): void
+    {
+        $this->transaction(function () use ($id, $numbers): void {
+            $had = $this->userNumbers($id);
+            $this->run('DELETE FROM user_dids WHERE user_id = ?', [$id]);
+            foreach ($numbers as $n) {
+                $this->run('INSERT INTO user_dids (user_id, did, can_send) VALUES (?, ?, ?)', [$id, $n['did'], $n['canSend'] ? 1 : 0]);
+                if (!array_key_exists($n['did'], $had)) {
+                    // On a number that keeps them per person, what came before they were given it is no news to them.
+                    $this->run(
+                        'INSERT OR REPLACE INTO conversation_states (conversation_id, user_key, read_at, read_message_id, archived_at)
+                         SELECT c.id, ?, m.sent_at, m.id, c.archived_at FROM conversations c
+                         JOIN dids d ON d.did = c.did AND d.shared_state = 0 JOIN messages m ON m.id = c.last_message_id
+                         WHERE c.did = ?',
+                        [$id, $n['did']],
+                    );
+                }
+            }
+        });
+    }
+
+    // ----------------------------------------------------------------- sessions
+
+    public function createSession(string $id, ?int $userId, ?string $userAgent, int $now): void
+    {
+        $this->run('INSERT INTO sessions (id, user_id, created_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)', [$id, $userId, $now, $now, $userAgent]);
+    }
+
+    public function getSession(string $id): ?array
+    {
+        return $this->one('SELECT * FROM sessions WHERE id = ?', [$id]);
+    }
+
+    public function touchSession(string $id, int $now): void
+    {
+        $this->run('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [$now, $id]);
+    }
+
+    public function deleteSession(string $id): bool
+    {
+        return $this->run('DELETE FROM sessions WHERE id = ?', [$id])->rowCount() > 0;
+    }
+
+    /** Signs a user out everywhere but $exceptId (null user: the owner's sessions). */
+    public function deleteUserSessions(?int $userId, ?string $exceptId = null): void
+    {
+        $this->run('DELETE FROM sessions WHERE user_id IS ? AND id IS NOT ?', [$userId, $exceptId]);
+    }
+
+    /** A user's sessions, the latest first (null: the owner's). */
+    public function listSessions(?int $userId): array
+    {
+        return $this->all('SELECT * FROM sessions WHERE user_id IS ? ORDER BY last_seen_at DESC', [$userId]);
+    }
+
+    public function pruneSessions(int $createdBefore): void
+    {
+        $this->run('DELETE FROM sessions WHERE created_at < ?', [$createdBefore]);
+    }
+
+    // ----------------------------------------------------------------- accounts
+
+    /** The account set up first: the only one of a 1.x install, and the one the setup wizard is about. */
+    public const PRIMARY_ACCOUNT = 1;
+
+    /**
+     * The settings key of something each VoIP.ms account has (credentials,
+     * sync state, webhook): the first account keeps the plain keys of 1.x.
+     */
+    public static function accountKey(int $accountId, string $key): string
+    {
+        return $accountId === self::PRIMARY_ACCOUNT ? $key : "account.$accountId.$key";
+    }
+
+    /**
+     * A VoIP.ms message id as stored: those of the accounts after the first
+     * carry the account ("2:1234"), so that two accounts' ids never clash.
+     */
+    public static function storedRemoteId(int $accountId, string $id): string
+    {
+        return $accountId === self::PRIMARY_ACCOUNT ? $id : "$accountId:$id";
+    }
+
+    /** The id VoIP.ms knows a stored message by. */
+    public static function voipmsId(string $stored): string
+    {
+        $colon = strpos($stored, ':');
+        return $colon === false ? $stored : substr($stored, $colon + 1);
+    }
+
+    /** @return list<array{id: int, label: ?string, numbers: int}> */
+    public function listAccounts(): array
+    {
+        return $this->all(
+            'SELECT a.id, a.label, (SELECT COUNT(*) FROM dids d WHERE d.account_id = a.id) AS numbers FROM voipms_accounts a ORDER BY a.id',
+        );
+    }
+
+    public function createAccount(?string $label): int
+    {
+        $label = $label !== null && trim($label) !== '' ? trim($label) : null;
+        $this->run('INSERT INTO voipms_accounts (label, created_at) VALUES (?, ?)', [$label, Time::nowMs()]);
+        return (int) $this->db->lastInsertId();
+    }
+
+    public function updateAccount(int $id, ?string $label): bool
+    {
+        $label = $label !== null && trim($label) !== '' ? trim($label) : null;
+        return $this->run('UPDATE voipms_accounts SET label = ? WHERE id = ?', [$label, $id])->rowCount() > 0;
+    }
+
+    /** The account a number belongs to, or null for a number not seen yet. */
+    public function accountOfDid(string $did): ?int
+    {
+        $row = $this->one('SELECT account_id FROM dids WHERE did = ?', [$did]);
+        return $row === null ? null : (int) $row['account_id'];
+    }
+
     // --------------------------------------------------------------------- dids
 
     public function listDids(): array
     {
         [$scope, $scopeParams] = $this->didScope('d.did');
         $rows = $this->all(
-            "SELECT d.*, (SELECT SUM(unread_count) FROM conversations c WHERE c.did = d.did AND c.archived_at IS NULL) AS unread
-             FROM dids d WHERE $scope ORDER BY d.position, d.did",
-            $scopeParams,
+            'SELECT d.*, p.hidden, p.muted, (SELECT SUM(' . self::UNREAD_SQL . ') FROM conversations c
+                LEFT JOIN conversation_states s ON s.conversation_id = c.id AND s.user_key = ?
+                WHERE c.did = d.did AND (' . self::ARCHIVED_SQL . ") IS NULL) AS unread
+             FROM dids d LEFT JOIN did_prefs p ON p.did = d.did AND p.user_key = ?
+             WHERE $scope ORDER BY d.position, d.did",
+            [$this->viewerKey(), $this->viewerKey(), ...$scopeParams],
         );
-        return array_map(static fn (array $r) => [
+        return array_map(fn (array $r) => [
             'did' => $r['did'],
             'label' => $r['label'],
             'color' => $r['color'],
@@ -156,7 +419,27 @@ final class Repo
             'description' => $r['description'],
             'position' => $r['position'],
             'unreadCount' => (int) ($r['unread'] ?? 0),
+            'accountId' => (int) $r['account_id'],
+            'sharedState' => $r['shared_state'] === 1,
+            'canSend' => $this->viewer?->canSend($r['did']) ?? true,
+            'hidden' => $r['hidden'] === 1,
+            'muted' => $r['muted'] === 1,
         ], $rows);
+    }
+
+    /**
+     * What the viewer chose for a number, for themselves.
+     *
+     * @param array{hidden?: bool, muted?: bool} $patch
+     */
+    public function setDidPrefs(string $did, array $patch): void
+    {
+        $this->run('INSERT OR IGNORE INTO did_prefs (user_key, did) VALUES (?, ?)', [$this->viewerKey(), $did]);
+        foreach (['hidden', 'muted'] as $column) {
+            if (array_key_exists($column, $patch)) {
+                $this->run("UPDATE did_prefs SET $column = ? WHERE user_key = ? AND did = ?", [$patch[$column] ? 1 : 0, $this->viewerKey(), $did]);
+            }
+        }
     }
 
     public function getDid(string $did): ?array
@@ -184,9 +467,14 @@ final class Repo
      * Inserts or refreshes a DID from VoIP.ms, keeping the user's label, color
      * and visibility; a number that just got SMS shows up, like a new one.
      */
-    public function upsertDid(array $info): void
+    /** A number already known under another account stays with it (false). */
+    public function upsertDid(array $info, int $accountId = self::PRIMARY_ACCOUNT): bool
     {
-        if ($this->one('SELECT did FROM dids WHERE did = ?', [$info['did']])) {
+        $owner = $this->accountOfDid($info['did']);
+        if ($owner !== null && $owner !== $accountId) {
+            return false;
+        }
+        if ($owner !== null) {
             $this->run(
                 'UPDATE dids SET visible = CASE WHEN sms_enabled = 0 AND ? = 1 THEN 1 ELSE visible END,
                    description = ?, sms_enabled = ?, sms_available = ?, mms_available = ? WHERE did = ?',
@@ -199,12 +487,12 @@ final class Repo
                     $info['did'],
                 ],
             );
-            return;
+            return true;
         }
         $position = (int) $this->run('SELECT COUNT(*) FROM dids')->fetchColumn();
         $this->run(
-            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position)
-             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO dids (did, label, color, visible, sms_enabled, sms_available, mms_available, description, position, account_id)
+             VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $info['did'],
                 $this->nextDidColor(),
@@ -214,15 +502,17 @@ final class Repo
                 $info['mmsAvailable'] ? 1 : 0,
                 $info['description'],
                 $position,
+                $accountId,
             ],
         );
+        return true;
     }
 
     /** Makes sure a DID seen in message history exists locally. */
-    public function ensureDid(string $did): void
+    public function ensureDid(string $did, int $accountId = self::PRIMARY_ACCOUNT): void
     {
         if (!$this->one('SELECT did FROM dids WHERE did = ?', [$did])) {
-            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true]);
+            $this->upsertDid(['did' => $did, 'description' => null, 'smsEnabled' => true, 'smsAvailable' => true, 'mmsAvailable' => true], $accountId);
         }
     }
 
@@ -250,11 +540,44 @@ final class Repo
             $sets[] = 'position = ?';
             $values[] = $patch['position'];
         }
-        if (!$sets) {
+        if (!$sets && !array_key_exists('sharedState', $patch)) {
             return $this->getDid($did) !== null;
         }
-        $values[] = $did;
-        return $this->run('UPDATE dids SET ' . implode(', ', $sets) . ' WHERE did = ?', $values)->rowCount() > 0;
+        return $this->transaction(function () use ($did, $sets, $values, $patch): bool {
+            if (array_key_exists('sharedState', $patch)) {
+                $this->setSharedState($did, (bool) $patch['sharedState']);
+            }
+            if (!$sets) {
+                return $this->one('SELECT did FROM dids WHERE did = ?', [$did]) !== null;
+            }
+            $values[] = $did;
+            return $this->run('UPDATE dids SET ' . implode(', ', $sets) . ' WHERE did = ?', $values)->rowCount() > 0;
+        });
+    }
+
+    /**
+     * Whether everyone shares the number's unread counts and archive, or each
+     * person keeps their own. Going back to shared, what someone read counts as
+     * read; either way each person starts again from the shared state.
+     */
+    private function setSharedState(string $did, bool $shared): void
+    {
+        $was = $this->run('SELECT shared_state FROM dids WHERE did = ?', [$did])->fetchColumn();
+        if ($was === false || ((int) $was === 1) === $shared) {
+            return;
+        }
+        if ($shared) {
+            $this->run(
+                "UPDATE conversations SET unread_count = (
+                   SELECT COUNT(*) FROM messages mu WHERE mu.conversation_id = conversations.id AND mu.direction = 'in' AND mu.deleted_at IS NULL
+                     AND (mu.sent_at, mu.id) > (SELECT s.read_at, s.read_message_id FROM conversation_states s
+                       WHERE s.conversation_id = conversations.id AND s.read_at IS NOT NULL ORDER BY s.read_at DESC, s.read_message_id DESC LIMIT 1))
+                 WHERE did = ? AND EXISTS (SELECT 1 FROM conversation_states s WHERE s.conversation_id = conversations.id AND s.read_at IS NOT NULL)",
+                [$did],
+            );
+        }
+        $this->run('DELETE FROM conversation_states WHERE conversation_id IN (SELECT id FROM conversations WHERE did = ?)', [$did]);
+        $this->run('UPDATE dids SET shared_state = ? WHERE did = ?', [$shared ? 1 : 0, $did]);
     }
 
     // ------------------------------------------------------------ conversations
@@ -278,7 +601,7 @@ final class Repo
     public function getConversation(int $id): ?array
     {
         [$scope, $scopeParams] = $this->didScope('c.did');
-        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$id, ...$scopeParams]);
+        $row = $this->one(self::CONVERSATION_SELECT . " WHERE c.id = ? AND $scope", [$this->viewerKey(), $this->viewerKey(), $id, ...$scopeParams]);
         return $row ? self::conversationDto($row) : null;
     }
 
@@ -288,18 +611,22 @@ final class Repo
      */
     public function listConversations(?string $did = null, ?string $query = null, ?bool $archived = null, int $limit = 500): array
     {
-        [$scope, $params] = $this->didScope('c.did');
+        [$scope, $scopeParams] = $this->didScope('c.did');
+        $params = [$this->viewerKey(), $this->viewerKey(), ...$scopeParams];
         $where = ['c.last_message_id IS NOT NULL', $scope];
         $q = trim($query ?? '');
         $archived ??= $q !== '' ? null : false;
         if ($archived !== null) {
-            $where[] = $archived ? 'c.archived_at IS NOT NULL' : 'c.archived_at IS NULL';
+            $where[] = '(' . self::ARCHIVED_SQL . ($archived ? ') IS NOT NULL' : ') IS NULL');
         }
         if ($did) {
             $where[] = 'c.did = ?';
             $params[] = $did;
         } else {
+            // Numbers an admin hid for everyone, or the viewer for themselves.
             $where[] = 'c.did IN (SELECT did FROM dids WHERE visible = 1)';
+            $where[] = 'c.did NOT IN (SELECT did FROM did_prefs WHERE user_key = ? AND hidden = 1)';
+            $params[] = $this->viewerKey();
         }
         if ($q !== '') {
             $like = '%' . addcslashes(Text::fold($q), '\\%_') . '%';
@@ -376,8 +703,12 @@ final class Repo
     public function pendingRemoteDeletes(int $limit): array
     {
         return array_map(
-            static fn (array $r) => ['id' => $r['id'], 'kind' => $r['kind'], 'remoteId' => (string) $r['remote_id']],
-            $this->all('SELECT id, kind, remote_id FROM messages WHERE delete_remote = 1 ORDER BY id LIMIT ?', [$limit]),
+            static fn (array $r) => ['id' => $r['id'], 'kind' => $r['kind'], 'remoteId' => (string) $r['remote_id'], 'did' => $r['did']],
+            $this->all(
+                'SELECT m.id, m.kind, m.remote_id, c.did FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                 WHERE m.delete_remote = 1 ORDER BY m.id LIMIT ?',
+                [$limit],
+            ),
         );
     }
 
@@ -386,23 +717,67 @@ final class Repo
         $this->run('UPDATE messages SET delete_remote = 0 WHERE id = ?', [$id]);
     }
 
+    /** For the viewer only, on a number that keeps its archive per person; for everyone otherwise. */
     public function setArchived(int $id, bool $archived): bool
     {
+        if ($this->personalState($id)) {
+            return $this->run(
+                'UPDATE conversation_states SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END
+                 WHERE conversation_id = ? AND user_key = ?',
+                [$archived ? 1 : 0, Time::nowMs(), $id, $this->viewerKey()],
+            )->rowCount() > 0;
+        }
         return $this->run(
             'UPDATE conversations SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) ELSE NULL END WHERE id = ?',
             [$archived ? 1 : 0, Time::nowMs(), $id],
         )->rowCount() > 0;
     }
 
-    /** A new message brings an archived conversation back to the list. */
+    /** A new message brings an archived conversation back to the list, everyone's. */
     public function unarchiveConversation(int $id): bool
     {
-        return $this->run('UPDATE conversations SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL', [$id])->rowCount() > 0;
+        $mine = $this->run('UPDATE conversation_states SET archived_at = NULL WHERE conversation_id = ? AND archived_at IS NOT NULL', [$id])->rowCount();
+        return $this->run('UPDATE conversations SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL', [$id])->rowCount() + $mine > 0;
     }
 
+    /** True when there was something unread. For the viewer only where the number keeps unread counts per person. */
     public function markConversationRead(int $id): bool
     {
+        if ($this->personalState($id)) {
+            $unread = $this->getConversation($id)['unreadCount'] ?? 0;
+            $this->run(
+                'UPDATE conversation_states SET (read_at, read_message_id) = (
+                   SELECT sent_at, id FROM messages WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY sent_at DESC, id DESC LIMIT 1
+                 ) WHERE conversation_id = ? AND user_key = ?',
+                [$id, $id, $this->viewerKey()],
+            );
+            return $unread > 0;
+        }
         return $this->run('UPDATE conversations SET unread_count = 0 WHERE id = ? AND unread_count > 0', [$id])->rowCount() > 0;
+    }
+
+    /**
+     * Whether the viewer has a state of their own for this conversation, its number
+     * keeping one per person; it starts as the shared one (archived or not, with the
+     * shared unread count until they read it).
+     */
+    private function personalState(int $conversationId): bool
+    {
+        if ($this->viewer === null) {
+            return false;
+        }
+        $shared = $this->run(
+            'SELECT d.shared_state FROM conversations c JOIN dids d ON d.did = c.did WHERE c.id = ?',
+            [$conversationId],
+        )->fetchColumn();
+        if ($shared === false || (int) $shared === 1) {
+            return false;
+        }
+        $this->run(
+            'INSERT OR IGNORE INTO conversation_states (conversation_id, user_key, archived_at) SELECT id, ?, archived_at FROM conversations WHERE id = ?',
+            [$this->viewerKey(), $conversationId],
+        );
+        return true;
     }
 
     // ----------------------------------------------------------------- messages
@@ -410,8 +785,8 @@ final class Repo
     public function insertMessage(array $m): int
     {
         $this->run(
-            'INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, carrier_status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO messages (conversation_id, kind, remote_id, direction, body, search_text, sent_at, status, carrier_status, created_at, sent_by_user, sent_by_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $m['conversationId'],
                 $m['kind'],
@@ -423,6 +798,8 @@ final class Repo
                 $m['status'],
                 $m['carrierStatus'] ?? null,
                 Time::nowMs(),
+                $m['sentBy']['key'] ?? null,
+                $m['sentBy']['name'] ?? null,
             ],
         );
         return (int) $this->db->lastInsertId();
@@ -516,7 +893,14 @@ final class Repo
             'error' => $row['error'],
             'carrierStatus' => $row['carrier_status'],
             'attachments' => array_map([self::class, 'attachmentDto'], $attachments[$row['id']] ?? []),
+            'sentBy' => self::sentByDto($row['sent_by_user'], $row['sent_by_name']),
         ];
+    }
+
+    /** Who sent a text from the portal: the owner has no id; null when nobody known did. */
+    private static function sentByDto(?int $key, ?string $name): ?array
+    {
+        return $key === null ? null : ['userId' => $key === Viewer::OWNER ? null : $key, 'name' => $name];
     }
 
     // -------------------------------------------------------------- attachments
@@ -592,14 +976,46 @@ final class Repo
 
     // ----------------------------------------------------------------- contacts
 
+    /** Every number's book: where contacts went before 2.0, and where they go unless told otherwise. */
+    public const ALL_NUMBERS = ['kind' => 'all'];
+
+    /**
+     * The contacts the viewer sees: their own, those of every number's book, and
+     * those in the book of a number they see.
+     *
+     * @return list<array> ContactDto
+     */
     public function listContacts(): array
     {
-        $contacts = $this->all('SELECT id, name, color, icon, notes FROM contacts ORDER BY name COLLATE NOCASE');
-        $byContact = [];
+        $dids = $this->viewer?->dids();
+        $inTheirBooks = $dids === null
+            ? '1'
+            : ($dids ? 'EXISTS (SELECT 1 FROM contact_dids kd WHERE kd.contact_id = k.id AND kd.did IN (' . self::placeholders($dids) . '))' : '0');
+        $contacts = $this->all(
+            "SELECT k.id, k.name, k.color, k.icon, k.notes, k.owner_key, k.all_dids FROM contacts k
+             WHERE k.owner_key = ? OR (k.owner_key IS NULL AND (k.all_dids = 1 OR $inTheirBooks))
+             ORDER BY k.name COLLATE NOCASE, k.id",
+            [$this->viewerKey(), ...($dids ?? [])],
+        );
+        $phones = [];
         foreach ($this->all('SELECT phone, contact_id FROM contact_phones ORDER BY rowid') as $p) {
-            $byContact[$p['contact_id']][] = $p['phone'];
+            $phones[$p['contact_id']][] = $p['phone'];
         }
-        return array_map(static fn (array $c) => $c + ['phones' => $byContact[$c['id']] ?? []], $contacts);
+        $books = $this->contactDids();
+        $canSend = $this->canSendMap();
+        return array_map(function (array $c) use ($phones, $books, $canSend): array {
+            $book = self::book($c, $books[$c['id']] ?? []);
+            return [
+                'id' => $c['id'],
+                'name' => $c['name'],
+                'color' => $c['color'],
+                'icon' => $c['icon'],
+                'notes' => $c['notes'],
+                'phones' => $phones[$c['id']] ?? [],
+                'book' => $book,
+                'editable' => $this->mayChange($c['owner_key'], $book, $canSend),
+            ];
+        }, $contacts);
     }
 
     public function getContact(int $id): ?array
@@ -612,49 +1028,141 @@ final class Repo
         return null;
     }
 
-    /** Phones already attached to another contact than $exceptId. */
-    public function conflictingPhones(array $phones, ?int $exceptId): array
+    /** @return array<int, list<string>> contact id => the numbers whose books it is in */
+    private function contactDids(?array $ids = null): array
+    {
+        $books = [];
+        $rows = $ids === null
+            ? $this->all('SELECT contact_id, did FROM contact_dids ORDER BY did')
+            : ($ids ? $this->all('SELECT contact_id, did FROM contact_dids WHERE contact_id IN (' . self::placeholders($ids) . ') ORDER BY did', $ids) : []);
+        foreach ($rows as $row) {
+            $books[$row['contact_id']][] = (string) $row['did'];
+        }
+        return $books;
+    }
+
+    /**
+     * A contact's book, as ContactDto has it: someone's own (personal), every number's
+     * (all), or those of some numbers.
+     *
+     * @return array{kind: 'personal'}|array{kind: 'all'}|array{kind: 'numbers', dids: list<string>}
+     */
+    private static function book(array $row, array $dids): array
+    {
+        return match (true) {
+            $row['owner_key'] !== null => ['kind' => 'personal'],
+            $row['all_dids'] === 1 => self::ALL_NUMBERS,
+            default => ['kind' => 'numbers', 'dids' => $dids],
+        };
+    }
+
+    /**
+     * Whether the viewer may put a contact in $book: their own book, every number's
+     * when they see every number (the owner and the admins), or those of numbers they
+     * may text from.
+     */
+    public function mayUseBook(array $book, ?array $canSend = null): bool
+    {
+        $canSend ??= $this->canSendMap();
+        return match ($book['kind']) {
+            'personal' => $this->viewer !== null,
+            'all' => $this->viewer?->dids() === null,
+            'numbers' => $book['dids'] !== [] && array_all($book['dids'], static fn (string $did): bool => $canSend[$did] ?? false),
+            default => false,
+        };
+    }
+
+    /** Whether the viewer may change or delete a contact (its owner's key and its book). */
+    private function mayChange(?int $ownerKey, array $book, array $canSend): bool
+    {
+        return $book['kind'] === 'personal' ? $ownerKey === $this->viewerKey() : $this->mayUseBook($book, $canSend);
+    }
+
+    /** @return array<string, bool> the numbers the viewer sees: did => may text from it */
+    private function canSendMap(): array
+    {
+        return array_column($this->listDids(), 'canSend', 'did');
+    }
+
+    /** Whether the viewer sees the contact and may change it; null when they do not see it. */
+    public function contactEditable(int $id): ?bool
+    {
+        return $this->getContact($id)['editable'] ?? null;
+    }
+
+    /**
+     * Phones that already belong to another contact than $exceptId in a book
+     * that overlaps $book (a phone is one contact's per book).
+     *
+     * @return list<array{phone: string, contactId: int, editable: bool}>
+     */
+    public function phoneConflicts(array $phones, ?int $exceptId, array $book = self::ALL_NUMBERS): array
     {
         if (!$phones) {
             return [];
         }
-        $rows = $this->all('SELECT phone, contact_id FROM contact_phones WHERE phone IN (' . self::placeholders($phones) . ')', array_values($phones));
-        return array_values(array_map(
-            static fn (array $r) => $r['phone'],
-            array_filter($rows, static fn (array $r) => $r['contact_id'] !== $exceptId),
-        ));
+        $rows = $this->all(
+            'SELECT cp.phone, k.id, k.owner_key, k.all_dids FROM contact_phones cp JOIN contacts k ON k.id = cp.contact_id
+             WHERE cp.phone IN (' . self::placeholders($phones) . ') AND k.id IS NOT ?',
+            [...array_values($phones), $exceptId],
+        );
+        $books = $this->contactDids(array_values(array_unique(array_column($rows, 'id'))));
+        $canSend = $this->canSendMap();
+        $conflicts = [];
+        foreach ($rows as $row) {
+            $other = self::book($row, $books[$row['id']] ?? []);
+            $overlap = match (true) {
+                $book['kind'] === 'personal' || $other['kind'] === 'personal' => $book['kind'] === $other['kind'] && $row['owner_key'] === $this->viewerKey(),
+                $book['kind'] === 'all' || $other['kind'] === 'all' => true,
+                default => array_intersect($book['dids'], $other['dids']) !== [],
+            };
+            if ($overlap) {
+                $conflicts[] = ['phone' => $row['phone'], 'contactId' => $row['id'], 'editable' => $this->mayChange($row['owner_key'], $other, $canSend)];
+            }
+        }
+        return $conflicts;
     }
 
-    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null): int
+    /**
+     * Creates or replaces a contact, in $book (a personal one is the viewer's). Its
+     * phones that another contact of the same book had move here: the caller asked
+     * (phoneConflicts).
+     */
+    public function saveContact(?int $id, string $name, ?string $notes, array $phones, ?string $color = null, ?string $icon = null, array $book = self::ALL_NUMBERS): int
     {
-        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon): int {
+        return $this->transaction(function () use ($id, $name, $notes, $phones, $color, $icon, $book): int {
             $now = Time::nowMs();
+            $owner = $book['kind'] === 'personal' ? $this->viewerKey() : null;
+            $all = $book['kind'] === 'all' ? 1 : 0;
             if ($id) {
                 $this->run(
-                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, updated_at = ? WHERE id = ?',
-                    [$name, $color, $icon, $notes, $now, $id],
+                    'UPDATE contacts SET name = ?, color = ?, icon = ?, notes = ?, owner_key = ?, all_dids = ?, updated_at = ? WHERE id = ?',
+                    [$name, $color, $icon, $notes, $owner, $all, $now, $id],
                 );
                 $this->run('DELETE FROM contact_phones WHERE contact_id = ?', [$id]);
+                $this->run('DELETE FROM contact_dids WHERE contact_id = ?', [$id]);
             } else {
                 $this->run(
-                    'INSERT INTO contacts (name, color, icon, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$name, $color, $icon, $notes, $now, $now],
+                    'INSERT INTO contacts (name, color, icon, notes, owner_key, all_dids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$name, $color, $icon, $notes, $owner, $all, $now, $now],
                 );
                 $id = (int) $this->db->lastInsertId();
             }
+            foreach ($book['kind'] === 'numbers' ? array_unique($book['dids']) : [] as $did) {
+                $this->run('INSERT INTO contact_dids (contact_id, did) VALUES (?, ?)', [$id, $did]);
+            }
             $phones = array_values(array_unique($phones));
-            $previousOwners = $phones
-                ? array_unique(array_column($this->all('SELECT contact_id FROM contact_phones WHERE phone IN (' . self::placeholders($phones) . ')', $phones), 'contact_id'))
-                : [];
+            $previousOwners = [];
+            foreach ($this->phoneConflicts($phones, $id, $book) as $conflict) {
+                $this->run('DELETE FROM contact_phones WHERE contact_id = ? AND phone = ?', [$conflict['contactId'], $conflict['phone']]);
+                $previousOwners[$conflict['contactId']] = true;
+            }
             foreach ($phones as $phone) {
-                $this->run(
-                    'INSERT INTO contact_phones (phone, contact_id) VALUES (?, ?) ON CONFLICT(phone) DO UPDATE SET contact_id = excluded.contact_id',
-                    [$phone, $id],
-                );
+                $this->run('INSERT INTO contact_phones (contact_id, phone) VALUES (?, ?)', [$id, $phone]);
             }
             // A contact whose only numbers were just moved here has nothing left to identify it.
-            foreach ($previousOwners as $owner) {
-                if ($owner !== $id && !$this->one('SELECT 1 FROM contact_phones WHERE contact_id = ? LIMIT 1', [$owner])) {
+            foreach (array_keys($previousOwners) as $owner) {
+                if (!$this->one('SELECT 1 FROM contact_phones WHERE contact_id = ? LIMIT 1', [$owner])) {
                     $this->run('DELETE FROM contacts WHERE id = ?', [$owner]);
                 }
             }
@@ -667,9 +1175,11 @@ final class Repo
         return $this->run('DELETE FROM contacts WHERE id = ?', [$id])->rowCount() > 0;
     }
 
-    /** Deletes the contacts that still exist among $ids; returns how many there were. */
+    /** Deletes the contacts among $ids that still exist and that the viewer may change; returns how many there were. */
     public function deleteContacts(array $ids): int
     {
+        $mine = array_column(array_filter($this->listContacts(), static fn (array $c) => $c['editable']), 'id');
+        $ids = array_values(array_intersect($ids, $mine));
         return $this->transaction(function () use ($ids): int {
             $deleted = 0;
             // In slices: the SQLite of older hosts takes at most 999 parameters.
@@ -684,23 +1194,30 @@ final class Repo
 
     public function listPushSubscriptions(): array
     {
-        return $this->all('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions');
+        return $this->all('SELECT endpoint, p256dh, auth, device, lang, user_key FROM push_subscriptions');
     }
 
     public function getPushSubscription(string $endpoint): ?array
     {
-        return $this->one('SELECT endpoint, p256dh, auth, device, lang FROM push_subscriptions WHERE endpoint = ?', [$endpoint]);
+        return $this->one('SELECT endpoint, p256dh, auth, device, lang, user_key FROM push_subscriptions WHERE endpoint = ?', [$endpoint]);
     }
 
+    /** $sub['userKey']: whose browser it is (Viewer::key), the owner's by default. */
     public function savePushSubscription(array $sub): void
     {
         $now = Time::nowMs();
         $this->run(
-            'INSERT INTO push_subscriptions (endpoint, p256dh, auth, device, lang, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+            'INSERT INTO push_subscriptions (endpoint, p256dh, auth, device, lang, user_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
-               device = excluded.device, lang = excluded.lang, updated_at = excluded.updated_at',
-            [$sub['endpoint'], $sub['p256dh'], $sub['auth'], $sub['device'], $sub['lang'], $now, $now],
+               device = excluded.device, lang = excluded.lang, user_key = excluded.user_key, updated_at = excluded.updated_at',
+            [$sub['endpoint'], $sub['p256dh'], $sub['auth'], $sub['device'], $sub['lang'], $sub['userKey'] ?? Viewer::OWNER, $now, $now],
         );
+    }
+
+    /** A user's browsers stop getting notifications: they lost access, or the account is gone. */
+    public function deleteUserPushSubscriptions(int $userId): int
+    {
+        return $this->run('DELETE FROM push_subscriptions WHERE user_key = ?', [$userId])->rowCount();
     }
 
     public function deletePushSubscription(string $endpoint): bool
@@ -733,6 +1250,7 @@ final class Repo
                     'direction' => $row['last_direction'],
                     'status' => $row['last_status'] ?? 'sent',
                     'attachmentCount' => $row['last_attachments'] ?? 0,
+                    'sentBy' => self::sentByDto($row['last_sent_by_user'], $row['last_sent_by_name']),
                 ]
                 : null,
         ];

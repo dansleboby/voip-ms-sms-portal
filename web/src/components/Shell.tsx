@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { errorText, t } from '../i18n';
-import { didName, displayName, formatListDate } from '../lib/format';
+import { didName, displayName, formatListDate, isShown } from '../lib/format';
 import { setIconBadge } from '../lib/install';
 import { navigate, type Route } from '../lib/router';
 import { setArchiveView, setDidFilter, toastError, useStore } from '../store';
@@ -35,7 +35,7 @@ function didMark(did: DidDto): string {
 export function Shell({ route }: { route: Route }) {
   const dids = useStore((s) => s.dids);
   const conversations = useStore((s) => s.conversations);
-  const visibleDids = useMemo(() => dids.filter((d) => d.visible), [dids]);
+  const visibleDids = useMemo(() => dids.filter(isShown), [dids]);
   const totalUnread = useMemo(() => conversations.reduce((n, c) => n + c.unreadCount, 0), [conversations]);
 
   const loaded = useStore((s) => s.conversationsLoaded);
@@ -234,7 +234,9 @@ function Sidebar({ route, dids }: { route: Route; dids: DidDto[] }) {
           />
         ))}
         {loaded && list.length === 0 && (
-          <div className="list-empty">{results ? t('list.emptySearch', { q: query.trim() }) : t('list.empty')}</div>
+          <div className="list-empty">
+            {results ? t('list.emptySearch', { q: query.trim() }) : dids.length === 0 && session?.user?.role === 'user' ? t('list.noNumbers') : t('list.empty')}
+          </div>
         )}
       </div>
     </aside>
@@ -372,6 +374,12 @@ function ConversationItem({
 }) {
   const name = displayName(c.phone, c.contact);
   const last = c.lastMessage;
+  const session = useStore((s) => s.session);
+  // In the Team mode, a text someone else sent from the number shows their name.
+  const sender =
+    session?.mode === 'team' && last?.direction === 'out' && last.sentBy && last.sentBy.userId !== (session.user?.id ?? null)
+      ? last.sentBy.name ?? t('team.owner')
+      : null;
   let snippet = last?.body ?? '';
   if (last && !snippet && last.attachmentCount > 0) {
     snippet = last.attachmentCount > 1 ? t('list.photos', { n: last.attachmentCount }) : `📎 ${t('list.photo')}`;
@@ -395,7 +403,7 @@ function ConversationItem({
             {last?.status === 'failed' ? (
               <span className="failed">{t('list.failed')} · </span>
             ) : (
-              last?.direction === 'out' && t('list.you')
+              last?.direction === 'out' && (sender ? t('list.by', { name: sender }) : t('list.you'))
             )}
             {snippet}
           </span>

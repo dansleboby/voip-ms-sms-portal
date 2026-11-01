@@ -2,10 +2,12 @@ import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
 import { errorText, t } from './i18n';
 import { openLiveUpdates } from './lib/live';
+import { isShown } from './lib/format';
 import { notifyIncoming } from './lib/notify';
 import { deviceId, tabId } from './lib/push';
 import { prefs } from './lib/prefs';
 import type {
+  AccountDto,
   ContactDto,
   ConversationDto,
   DidDto,
@@ -32,6 +34,8 @@ export interface Toast {
 export interface State {
   session: SessionDto | null;
   dids: DidDto[];
+  /** The VoIP.ms accounts, for admins; null until loaded. */
+  accounts: AccountDto[] | null;
   contacts: ContactDto[];
   /** Main list: conversations that are not archived. */
   conversations: ConversationDto[];
@@ -58,6 +62,7 @@ export interface State {
 let state: State = {
   session: null,
   dids: [],
+  accounts: null,
   contacts: [],
   conversations: [],
   conversationsLoaded: false,
@@ -129,8 +134,17 @@ export async function loadDids(): Promise<void> {
   const dids = await api.dids();
   setState((s) => ({
     dids,
-    didFilter: s.didFilter && dids.some((d) => d.did === s.didFilter && d.visible) ? s.didFilter : null,
+    didFilter: s.didFilter && dids.some((d) => d.did === s.didFilter && isShown(d)) ? s.didFilter : null,
   }));
+}
+
+export async function loadAccounts(): Promise<void> {
+  setState({ accounts: await api.accounts() });
+}
+
+/** After an account is added or changed, without asking the server again. */
+export function updateAccounts(change: (accounts: AccountDto[]) => AccountDto[]): void {
+  setState((s) => ({ accounts: change(s.accounts ?? []) }));
 }
 
 export async function loadContacts(): Promise<void> {
@@ -259,7 +273,7 @@ function upsertConversation(conversation: ConversationDto): void {
   setState((s) => {
     const known = { ...s.known, [conversation.id]: conversation };
     const did = s.dids.find((d) => d.did === conversation.did);
-    const shown = !!conversation.lastMessage && !(did && !did.visible);
+    const shown = !!conversation.lastMessage && !(did && !isShown(did));
     const conversations = s.conversations.filter((c) => c.id !== conversation.id);
     if (shown && !conversation.archived) conversations.push(conversation);
     conversations.sort(byRecent);
@@ -407,7 +421,7 @@ function catchUp(): void {
 export function connectEvents(): void {
   if (closeLive) return;
   document.addEventListener('visibilitychange', reportVisibility);
-  closeLive = openLiveUpdates(state.session?.liveUpdates ?? 'stream', { device: deviceId(), tab: tabId, visible }, {
+  closeLive = openLiveUpdates({ device: deviceId(), tab: tabId, visible }, {
     onOpen: () => {
       const wasDisconnected = !state.connected;
       setState({ connected: true });
@@ -418,7 +432,7 @@ export function connectEvents(): void {
     onEvent: handleEvent,
     onError: () => {
       setState({ connected: false });
-      // EventSource hides the status code: check whether the session expired.
+      // A poll that fails may mean the session expired.
       loadSession()
         .then((session) => {
           if (!session.authenticated) disconnectEvents();
@@ -446,6 +460,7 @@ export function resetData(): void {
     threads: {},
     contacts: [],
     dids: [],
+    accounts: null,
     sync: null,
   });
 }

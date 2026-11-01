@@ -19,8 +19,8 @@ function setupProblem(string $message): void
 }
 
 // Checked here, in code that older PHP still runs: the portal's own code would only fail with a blank error.
-if (PHP_VERSION_ID < 80100) {
-    setupProblem('SMS Portal needs PHP 8.1 or later, and this site runs PHP ' . PHP_VERSION . '. In cPanel, choose PHP 8.1 or later for this domain under MultiPHP Manager (or Select PHP Version).');
+if (PHP_VERSION_ID < 80400) {
+    setupProblem('SMS Portal needs PHP 8.4 or later, and this site runs PHP ' . PHP_VERSION . '. In cPanel, choose PHP 8.4 or later for this domain under MultiPHP Manager (or Select PHP Version).');
     return;
 }
 

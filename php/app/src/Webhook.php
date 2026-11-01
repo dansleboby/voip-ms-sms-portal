@@ -10,7 +10,7 @@ use SmsPortal\VoipMs\VoipMsError;
 
 /**
  * Texts announced by VoIP.ms (each number's "SMS/MMS URL Callback") instead
- * of found by checking on a schedule (server/webhook.ts). A call is only a
+ * of found by checking on a schedule. A call is only a
  * signal to check VoIP.ms right away: what it says is never stored, since
  * nothing proves it comes from VoIP.ms. The secret in its address only keeps
  * strangers from making the portal check more often.
@@ -44,18 +44,36 @@ final class Webhook
         private readonly \Closure $getClient,
         private readonly ?string $publicOrigin,
         private readonly \Closure $onCall,
+        /** Each VoIP.ms account has its own secret and state (Accounts). */
+        private readonly int $accountId = Repo::PRIMARY_ACCOUNT,
     ) {
+    }
+
+    /** This account's setting. */
+    private function get(string $key): ?string
+    {
+        return $this->repo->getSetting(Repo::accountKey($this->accountId, $key));
+    }
+
+    private function set(string $key, string $value): void
+    {
+        $this->repo->setSetting(Repo::accountKey($this->accountId, $key), $value);
+    }
+
+    private function delete(string $key): void
+    {
+        $this->repo->deleteSetting(Repo::accountKey($this->accountId, $key));
     }
 
     public function enabled(): bool
     {
-        return $this->repo->getSetting(self::ENABLED_KEY) === '1';
+        return $this->get(self::ENABLED_KEY) === '1';
     }
 
     /** Every number with SMS on calls back: checks can slow down to the safety net. */
     public function complete(): bool
     {
-        return $this->enabled() && $this->repo->getSetting(self::COMPLETE_KEY) === '1';
+        return $this->enabled() && $this->get(self::COMPLETE_KEY) === '1';
     }
 
     public function summary(): ?array
@@ -70,18 +88,18 @@ final class Webhook
      */
     public function callbackForNewNumber(): ?array
     {
-        $url = $this->repo->getSetting(self::URL_KEY);
+        $url = $this->get(self::URL_KEY);
         return $this->enabled() && $url !== null ? ['url' => $url, 'retry' => true] : null;
     }
 
     /** A call to the callback address: true when its secret is right. */
     public function receive(string $token): bool
     {
-        $expected = $this->repo->getSetting(self::TOKEN_KEY);
+        $expected = $this->get(self::TOKEN_KEY);
         if ($expected === null || !hash_equals($expected, $token)) {
             return false;
         }
-        $this->repo->setSetting(self::LAST_CALL_KEY, (string) Time::nowMs());
+        $this->set(self::LAST_CALL_KEY, (string) Time::nowMs());
         ($this->onCall)();
         return true;
     }
@@ -94,7 +112,7 @@ final class Webhook
     public function status(array $errors = []): array
     {
         $client = $this->client();
-        $token = $this->repo->getSetting(self::TOKEN_KEY);
+        $token = $this->get(self::TOKEN_KEY);
         $numbers = [];
         foreach ($client->getDids() as $d) {
             $did = Phone::normalize($d['did']);
@@ -124,10 +142,10 @@ final class Webhook
                 $complete = false;
             }
         }
-        $this->repo->setSetting(self::COMPLETE_KEY, $complete ? '1' : '0');
+        $this->set(self::COMPLETE_KEY, $complete ? '1' : '0');
         return [
             'enabled' => $enabled,
-            'url' => $enabled ? $this->repo->getSetting(self::URL_KEY) : null,
+            'url' => $enabled ? $this->get(self::URL_KEY) : null,
             'lastCallAt' => $this->lastCallAt(),
             'complete' => $complete,
             'publicUrl' => $this->publicOrigin,
@@ -147,21 +165,11 @@ final class Webhook
     public function enable(?string $origin, array $replace): array
     {
         $client = $this->client();
-        $base = $this->publicOrigin ?? $origin;
-        // VoIP.ms must reach the address from the Internet, and the secret must not travel in clear.
-        if ($base === null || !str_starts_with($base, 'https://')) {
-            throw new HttpError(400, 'webhook_needs_https');
-        }
-        $token = $this->repo->getSetting(self::TOKEN_KEY);
-        if ($token === null) {
-            $token = Base64Url::encode(random_bytes(24));
-            $this->repo->setSetting(self::TOKEN_KEY, $token);
-        }
-        $url = rtrim($base, '/') . self::CALLBACK_PATH . $token;
+        [$url, $token] = $this->callbackUrl($origin);
         // VoIP.ms answers first: refused (an IP not allowed, say), nothing changes.
         $dids = $client->getDids();
-        $this->repo->setSetting(self::URL_KEY, $url);
-        $this->repo->setSetting(self::ENABLED_KEY, '1');
+        $this->set(self::URL_KEY, $url);
+        $this->set(self::ENABLED_KEY, '1');
 
         $previous = $this->previous();
         $errors = [];
@@ -185,7 +193,62 @@ final class Webhook
                 $errors[$did] = $e->errorCode;
             }
         }
-        $this->repo->setSetting(self::PREVIOUS_KEY, json_encode((object) $previous));
+        $this->set(self::PREVIOUS_KEY, json_encode((object) $previous));
+        return $this->status($errors);
+    }
+
+    /**
+     * Number by number: those in $instant call this portal, giving up another
+     * address they called (kept to give back); those in $regular that call it
+     * get back what they had, or none, and are checked on a schedule. Webhooks
+     * stay on for the account while one of its numbers calls, so numbers whose
+     * SMS is turned on later call too.
+     *
+     * @param list<string> $instant
+     * @param list<string> $regular
+     */
+    public function setNumbers(?string $origin, array $instant, array $regular): array
+    {
+        $client = $this->client();
+        $url = $instant ? $this->callbackUrl($origin)[0] : null;
+        $dids = $client->getDids();
+        if ($url !== null) {
+            $this->set(self::URL_KEY, $url);
+        }
+        $token = $this->get(self::TOKEN_KEY);
+        $previous = $this->previous();
+        $errors = [];
+        $calling = false;
+        foreach ($dids as $d) {
+            $did = Phone::normalize($d['did']);
+            if (!$this->repo->allowsDid($did)) {
+                continue;
+            }
+            $callback = $d['callback'] ?? null;
+            $ours = $callback !== null && $token !== null && self::isOurs($callback['url'], $token);
+            try {
+                if ($url !== null && in_array($did, $instant, true) && $d['smsEnabled'] && ($callback['url'] ?? null) !== $url) {
+                    $client->setCallback($d['did'], ['url' => $url, 'retry' => true]);
+                    if ($callback !== null && !$ours) {
+                        $previous[$did] = $callback;
+                    }
+                    $ours = true;
+                } elseif ($ours && in_array($did, $regular, true)) {
+                    $client->setCallback($d['did'], $previous[$did] ?? null);
+                    unset($previous[$did]);
+                    $ours = false;
+                }
+            } catch (VoipMsError $e) {
+                $errors[$did] = $e->errorCode;
+            }
+            $calling = $calling || $ours;
+        }
+        $this->set(self::PREVIOUS_KEY, json_encode((object) $previous));
+        if ($calling) {
+            $this->set(self::ENABLED_KEY, '1');
+        } else {
+            $this->delete(self::ENABLED_KEY);
+        }
         return $this->status($errors);
     }
 
@@ -197,9 +260,9 @@ final class Webhook
     public function disable(): array
     {
         $client = $this->client();
-        $this->repo->deleteSetting(self::ENABLED_KEY);
-        $this->repo->deleteSetting(self::COMPLETE_KEY);
-        $token = $this->repo->getSetting(self::TOKEN_KEY);
+        $this->delete(self::ENABLED_KEY);
+        $this->delete(self::COMPLETE_KEY);
+        $token = $this->get(self::TOKEN_KEY);
         $previous = $this->previous();
         $errors = [];
         foreach ($client->getDids() as $d) {
@@ -215,8 +278,28 @@ final class Webhook
                 $errors[$did] = $e->errorCode;
             }
         }
-        $this->repo->setSetting(self::PREVIOUS_KEY, json_encode((object) $previous));
+        $this->set(self::PREVIOUS_KEY, json_encode((object) $previous));
         return $this->status($errors);
+    }
+
+    /**
+     * The address VoIP.ms calls, and its secret (made the first time).
+     *
+     * @return array{string, string}
+     */
+    private function callbackUrl(?string $origin): array
+    {
+        $base = $this->publicOrigin ?? $origin;
+        // VoIP.ms must reach the address from the Internet, and the secret must not travel in clear.
+        if ($base === null || !str_starts_with($base, 'https://')) {
+            throw new HttpError(400, 'webhook_needs_https');
+        }
+        $token = $this->get(self::TOKEN_KEY);
+        if ($token === null) {
+            $token = Base64Url::encode(random_bytes(24));
+            $this->set(self::TOKEN_KEY, $token);
+        }
+        return [rtrim($base, '/') . self::CALLBACK_PATH . $token, $token];
     }
 
     private function client(): VoipMsApi
@@ -226,14 +309,14 @@ final class Webhook
 
     private function lastCallAt(): ?int
     {
-        $value = $this->repo->getSetting(self::LAST_CALL_KEY);
+        $value = $this->get(self::LAST_CALL_KEY);
         return $value !== null ? (int) $value : null;
     }
 
     /** @return array<string, array{url: string, retry: bool}> */
     private function previous(): array
     {
-        $value = json_decode($this->repo->getSetting(self::PREVIOUS_KEY) ?? '{}', true);
+        $value = json_decode($this->get(self::PREVIOUS_KEY) ?? '{}', true);
         return is_array($value) ? $value : [];
     }
 

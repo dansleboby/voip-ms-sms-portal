@@ -1,6 +1,6 @@
 import { locale, t } from '../i18n';
 import { formatPhone } from '../../../shared/phone';
-import type { ContactRef, DidDto } from '../../../shared/types';
+import type { AccountDto, ContactRef, DidDto } from '../../../shared/types';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -66,6 +66,9 @@ export function didName(did: DidDto | undefined, fallback: string): string {
   return did?.label || formatPhone(did?.did ?? fallback);
 }
 
+/** A number on screen: neither hidden by the admins for everyone, nor by whoever is signed in for themselves. */
+export const isShown = (did: DidDto): boolean => did.visible && !did.hidden;
+
 /** Up to two initials, or null when the name is a phone number. */
 export function initials(name: string): string | null {
   if (!/\p{L}/u.test(name)) return null;
@@ -112,4 +115,8 @@ export function isEmojiOnly(text: string): boolean {
   if (stripped.length) return false;
   const count = [...trimmed.matchAll(/\p{Extended_Pictographic}/gu)].length;
   return count > 0 && count <= 3;
+}
+
+export function accountName(account: AccountDto | null): string {
+  return account?.label || account?.username || t('accounts.unnamed');
 }
