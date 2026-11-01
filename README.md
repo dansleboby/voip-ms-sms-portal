@@ -97,7 +97,7 @@ By default the portal checks VoIP.ms on a schedule, which works anywhere, even o
 
 - *Settings* → *Receiving texts* sets each number of each VoIP.ms account on its own: instant, or regular checks. Keep a number on regular checks when another app must keep getting its texts at VoIP.ms; its account is then checked at the usual pace.
 - A number that already sends its texts to another address (a CRM, another app) keeps it unless you choose *Replace* (or *Instant* for that number in *Settings*); going back to regular checks gives it back.
-- A call from VoIP.ms only makes the portal check VoIP.ms right away, so a call that does not come from VoIP.ms cannot bring in a fake text. Its address holds a secret all the same.
+- A call from VoIP.ms only makes the portal check VoIP.ms right away, so a call that does not come from VoIP.ms cannot bring in a fake text. VoIP.ms can put the text in its call, but does not sign it: nothing would prove it came from VoIP.ms, even with the secret its address holds, which could leak. So the portal reads the text from the API, a few seconds later.
 - A check still runs every 15 minutes: VoIP.ms only calls for texts your numbers receive, not for those sent from other apps, and a call can be missed while the server is down.
 
 ![Wizard step choosing how texts are received, with the webhook on](docs/screenshots/en/setup-receiving.png)
@@ -265,7 +265,7 @@ location / {
 
 ## How it works
 
-- **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread. With the webhook on, a call from VoIP.ms (`/api/voipms/callback/<secret>`) only starts a check; what it says is never stored, since nothing proves it comes from VoIP.ms.
+- **Sync.** `getSMS` and `getMMS` are called separately (with `all_messages=1` VoIP.ms mixes both kinds without saying which is which, and their ids overlap). Each message is stored once, keyed by kind and VoIP.ms id; messages sent from elsewhere (your phone, the VoIP.ms portal) show up too. The very first sync and history imports do not mark anything unread. With the webhook on, a call from VoIP.ms (`/api/voipms/callback/<secret>`) only starts a check; what it says is never stored, since VoIP.ms does not sign its calls and nothing proves one comes from VoIP.ms.
 - **Media.** VoIP.ms media links are public and can answer 404 for a while after a message is sent, so downloads are retried with backoff for about 6 hours (and on demand from the conversation).
 - **Dates.** VoIP.ms returns US Eastern wall-clock times; its `timezone` parameter ignores daylight saving time, so dates are converted with the IANA zone instead.
 - **Push.** Each browser has a random id, shared by its tabs and its push subscription; open tabs report whether they are visible, and the server skips the browsers showing the app. Payloads are encrypted per RFC 8291 and signed with VAPID (RFC 8292) using PHP's openssl, without a third-party library.

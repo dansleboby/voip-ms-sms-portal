@@ -12,8 +12,9 @@ use SmsPortal\VoipMs\VoipMsError;
  * Texts announced by VoIP.ms (each number's "SMS/MMS URL Callback") instead
  * of found by checking on a schedule. A call is only a
  * signal to check VoIP.ms right away: what it says is never stored, since
- * nothing proves it comes from VoIP.ms. The secret in its address only keeps
- * strangers from making the portal check more often.
+ * VoIP.ms does not sign its calls and nothing proves one comes from VoIP.ms.
+ * The secret in its address only keeps strangers from making the portal check
+ * more often; it could leak, so it is not trusted with the texts.
  */
 final class Webhook
 {
