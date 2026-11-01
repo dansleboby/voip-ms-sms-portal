@@ -75,7 +75,7 @@ final class ContactRoutes
             $phones = array_values(array_unique(array_map([Phone::class, 'normalize'], $body->stringList('phones', 1, 20))));
             $force = $body->has('force') && $body->bool('force');
             $book = $bookOf($body, $repo) ?? $current['book'] ?? $defaultBook($repo);
-            $invalid = array_values(array_filter($phones, static fn (string $p) => !Phone::isValidNanp($p) && !preg_match('/^\d{5,6}$/', $p)));
+            $invalid = array_values(array_filter($phones, static fn (string $p) => !Phone::isTextable($p)));
             if ($invalid) {
                 throw new HttpError(400, 'invalid_phone', ['phones' => $invalid]);
             }

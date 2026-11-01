@@ -84,7 +84,7 @@ export const fr = {
   'delete.atVoipMs': 'Supprimer aussi chez VoIP.ms',
   'delete.atVoipMsOff': 'VoIP.ms en garde une copie dans l’historique de votre compte.',
   'delete.atVoipMsOn': 'Effacé aussi de votre compte VoIP.ms : c’est définitif.',
-  'thread.noReply': 'Ce numéro est un code court : la plupart n’acceptent pas de réponse.',
+  'thread.noReply': 'Ce numéro est un code court : beaucoup n’acceptent pas de réponse, mais certains services répondent à un mot-clé.',
   'thread.readOnly': 'Ce numéro est en lecture seule pour vous : vous voyez ses textos, sans pouvoir y répondre.',
   'thread.sentByYou': 'Vous',
 

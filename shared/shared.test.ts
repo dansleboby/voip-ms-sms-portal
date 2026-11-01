@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkOutgoing, pickMessageKind, utf8Length } from './message.js';
-import { formatPhone, formatPhoneInput, isValidNanp, normalizePhone, searchDigits } from './phone.js';
+import { formatPhone, formatPhoneInput, isShortCode, isTextable, isValidNanp, normalizePhone, searchDigits } from './phone.js';
 import { foldText, isBlank } from './text.js';
 
 describe('phone', () => {
@@ -16,6 +16,16 @@ describe('phone', () => {
     expect(isValidNanp('1506575294')).toBe(false);
     expect(isValidNanp('4501575294')).toBe(false);
     expect(isValidNanp('32665')).toBe(false);
+  });
+
+  it('recognizes short codes, which can be texted like a number', () => {
+    expect(isShortCode('32665')).toBe(true);
+    expect(isShortCode('511123')).toBe(true);
+    expect(isShortCode('911')).toBe(false);
+    expect(isShortCode('1234567')).toBe(false);
+    expect(isTextable('511123')).toBe(true);
+    expect(isTextable('4506575294')).toBe(true);
+    expect(isTextable('911')).toBe(false);
   });
 
   it('extracts search digits without the country code', () => {

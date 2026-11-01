@@ -7,7 +7,7 @@ import { navigate } from '../lib/router';
 import { useStore } from '../store';
 import { Composer } from './Composer';
 import { Avatar } from './ui';
-import { formatPhone, isValidNanp, normalizePhone, searchDigits } from '../../../shared/phone';
+import { formatPhone, isTextable, normalizePhone, searchDigits } from '../../../shared/phone';
 import { foldText } from '../../../shared/text';
 import type { ContactDto } from '../../../shared/types';
 
@@ -61,7 +61,7 @@ export function NewConversation({ initialPhone }: { initialPhone?: string }) {
     const q = foldText(query.trim());
     const digits = searchDigits(q);
     const list: Suggestion[] = [];
-    if (isValidNanp(digits)) list.push({ name: formatPhone(digits), phone: digits });
+    if (isTextable(digits)) list.push({ name: formatPhone(digits), phone: digits });
     if (q) {
       for (const c of contacts) {
         for (const phone of c.phones) {

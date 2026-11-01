@@ -18,6 +18,16 @@ export function isValidNanp(phone: string): boolean {
   return /^[2-9]\d{2}[2-9]\d{6}$/.test(phone);
 }
 
+/** A 5- or 6-digit short code: services text from them, and some answer a keyword sent back. */
+export function isShortCode(phone: string): boolean {
+  return /^\d{5,6}$/.test(phone);
+}
+
+/** What VoIP.ms can text: a North American number or a short code. */
+export function isTextable(phone: string): boolean {
+  return isValidNanp(phone) || isShortCode(phone);
+}
+
 /** "4506575294" -> "(450) 657-5294". Anything that is not 10 digits is returned untouched. */
 export function formatPhone(phone: string): string {
   const d = normalizePhone(phone);
