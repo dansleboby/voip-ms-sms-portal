@@ -199,6 +199,19 @@ final class UserRoutes
             }
             throw new HttpError(404, 'not_found');
         });
+
+        /** Signs the user out of every browser but this one. */
+        $r->add('DELETE', '/api/sessions', function (Request $req) use ($app, $repo): Response {
+            $ended = 0;
+            foreach ($repo->listSessions($req->user['userId']) as $row) {
+                if ($row['id'] !== $req->user['sessionId']) {
+                    $app->auth->close($row['id']);
+                    $app->activity->record($req, 'session_ended', $row['user_agent']);
+                    $ended++;
+                }
+            }
+            return Response::json(['ended' => $ended]);
+        });
     }
 
     private static function email(Input $body): string

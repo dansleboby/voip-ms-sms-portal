@@ -165,17 +165,7 @@ final class Webhook
     public function enable(?string $origin, array $replace): array
     {
         $client = $this->client();
-        $base = $this->publicOrigin ?? $origin;
-        // VoIP.ms must reach the address from the Internet, and the secret must not travel in clear.
-        if ($base === null || !str_starts_with($base, 'https://')) {
-            throw new HttpError(400, 'webhook_needs_https');
-        }
-        $token = $this->get(self::TOKEN_KEY);
-        if ($token === null) {
-            $token = Base64Url::encode(random_bytes(24));
-            $this->set(self::TOKEN_KEY, $token);
-        }
-        $url = rtrim($base, '/') . self::CALLBACK_PATH . $token;
+        [$url, $token] = $this->callbackUrl($origin);
         // VoIP.ms answers first: refused (an IP not allowed, say), nothing changes.
         $dids = $client->getDids();
         $this->set(self::URL_KEY, $url);
@@ -208,6 +198,61 @@ final class Webhook
     }
 
     /**
+     * Number by number: those in $instant call this portal, giving up another
+     * address they called (kept to give back); those in $regular that call it
+     * get back what they had, or none, and are checked on a schedule. Webhooks
+     * stay on for the account while one of its numbers calls, so numbers whose
+     * SMS is turned on later call too.
+     *
+     * @param list<string> $instant
+     * @param list<string> $regular
+     */
+    public function setNumbers(?string $origin, array $instant, array $regular): array
+    {
+        $client = $this->client();
+        $url = $instant ? $this->callbackUrl($origin)[0] : null;
+        $dids = $client->getDids();
+        if ($url !== null) {
+            $this->set(self::URL_KEY, $url);
+        }
+        $token = $this->get(self::TOKEN_KEY);
+        $previous = $this->previous();
+        $errors = [];
+        $calling = false;
+        foreach ($dids as $d) {
+            $did = Phone::normalize($d['did']);
+            if (!$this->repo->allowsDid($did)) {
+                continue;
+            }
+            $callback = $d['callback'] ?? null;
+            $ours = $callback !== null && $token !== null && self::isOurs($callback['url'], $token);
+            try {
+                if ($url !== null && in_array($did, $instant, true) && $d['smsEnabled'] && ($callback['url'] ?? null) !== $url) {
+                    $client->setCallback($d['did'], ['url' => $url, 'retry' => true]);
+                    if ($callback !== null && !$ours) {
+                        $previous[$did] = $callback;
+                    }
+                    $ours = true;
+                } elseif ($ours && in_array($did, $regular, true)) {
+                    $client->setCallback($d['did'], $previous[$did] ?? null);
+                    unset($previous[$did]);
+                    $ours = false;
+                }
+            } catch (VoipMsError $e) {
+                $errors[$did] = $e->errorCode;
+            }
+            $calling = $calling || $ours;
+        }
+        $this->set(self::PREVIOUS_KEY, json_encode((object) $previous));
+        if ($calling) {
+            $this->set(self::ENABLED_KEY, '1');
+        } else {
+            $this->delete(self::ENABLED_KEY);
+        }
+        return $this->status($errors);
+    }
+
+    /**
      * Back to checking on a schedule: the numbers calling this portal get back
      * the callback they had, or none. Checks speed up again even if VoIP.ms
      * refuses some changes; those numbers keep calling, which does no harm.
@@ -235,6 +280,26 @@ final class Webhook
         }
         $this->set(self::PREVIOUS_KEY, json_encode((object) $previous));
         return $this->status($errors);
+    }
+
+    /**
+     * The address VoIP.ms calls, and its secret (made the first time).
+     *
+     * @return array{string, string}
+     */
+    private function callbackUrl(?string $origin): array
+    {
+        $base = $this->publicOrigin ?? $origin;
+        // VoIP.ms must reach the address from the Internet, and the secret must not travel in clear.
+        if ($base === null || !str_starts_with($base, 'https://')) {
+            throw new HttpError(400, 'webhook_needs_https');
+        }
+        $token = $this->get(self::TOKEN_KEY);
+        if ($token === null) {
+            $token = Base64Url::encode(random_bytes(24));
+            $this->set(self::TOKEN_KEY, $token);
+        }
+        return [rtrim($base, '/') . self::CALLBACK_PATH . $token, $token];
     }
 
     private function client(): VoipMsApi

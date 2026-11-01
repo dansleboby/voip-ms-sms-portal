@@ -126,6 +126,24 @@ final class Accounts
     }
 
     /**
+     * Queues the last $days of history of every account, or of $only.
+     *
+     * @return list<Account> the accounts importing, for the caller to carry on with
+     */
+    public function startImport(int $days, ?Account $only = null): array
+    {
+        // Finished imports count in the progress of the next one otherwise.
+        foreach ($this->all() as $account) {
+            $account->sync->forgetFinishedImport();
+        }
+        $accounts = $only !== null ? [$only] : $this->all();
+        foreach ($accounts as $account) {
+            $account->sync->startImport($days);
+        }
+        return $accounts;
+    }
+
+    /**
      * One status for the tabs: an error or a check in progress on any account
      * shows; dates are those of the account checked least recently.
      */
@@ -140,7 +158,8 @@ final class Accounts
         $oldest = static function (array $values): ?int {
             return in_array(null, $values, true) || !$values ? null : min($values);
         };
-        $importing = array_values(array_filter(array_column($all, 'importing')));
+        // Accounts done importing still count while the others go on, so the progress never goes back.
+        $jobs = array_values(array_filter(array_map(static fn (Account $a) => $a->sync->importProgress(), $this->all())));
         $webhooks = array_values(array_filter(array_column($all, 'webhook')));
         $lastCalls = array_values(array_filter(array_column($webhooks, 'lastCallAt'), static fn ($v) => $v !== null));
         $lastError = null;
@@ -153,8 +172,8 @@ final class Accounts
             'lastSyncAt' => $oldest(array_column($live, 'lastSyncAt')),
             'lastCheckAt' => $oldest(array_column($live, 'lastCheckAt')),
             'lastError' => $lastError,
-            'importing' => $importing
-                ? ['done' => array_sum(array_column($importing, 'done')), 'total' => array_sum(array_column($importing, 'total'))]
+            'importing' => in_array(true, array_column($jobs, 'running'), true)
+                ? ['done' => array_sum(array_column($jobs, 'done')), 'total' => array_sum(array_column($jobs, 'total'))]
                 : null,
             'webhook' => $webhooks
                 ? ['lastCallAt' => $lastCalls ? max($lastCalls) : null, 'complete' => !in_array(false, array_column($webhooks, 'complete'), true)]

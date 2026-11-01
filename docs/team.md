@@ -37,7 +37,7 @@ From then on, the sign-in page asks for an email and a password.
 *Settings* → *Users* → **Add a user**:
 
 - **Email and name.** The email is what they sign in with.
-- **Password.** At least 8 characters. Give it to them; they can change it in *Settings* → *My account*.
+- **Password.** At least 8 characters. Give it to them; they can change it in *Settings* → *My sessions*.
 - **Role.** *Administrator* or *User*.
 - **Numbers**, for a user. For each number: *No access*, *Read only*, or *Read and send*.
 
@@ -56,7 +56,7 @@ An administrator cannot suspend or demote themselves, so the portal always keeps
 - **Their numbers only.** The conversations, search results, pictures and notifications of the other numbers do not reach them.
 - **Read only.** On a number given to them read only, they read the texts but cannot send, retry, or delete any. A notice takes the place of the message box.
 - **Who sent each text.** Under each text sent from the portal: the sender's name (or email), *Owner*, or *You*. Texts sent from another app, or before 2.0, show no name.
-- **Their own settings:** notifications, *My numbers*, appearance, and *My account* (name, password, signed-in devices).
+- **Their own settings:** notifications, *My numbers*, appearance, and *My sessions* (name, password, signed-in devices).
 
 ## 5. Shared numbers: who has read what
 
@@ -88,9 +88,9 @@ The same phone number can be a different contact in each book: "Marie" in the *P
 
 ## 8. One VoIP.ms account per client
 
-An agency can add one VoIP.ms account per client: *Settings* → *VoIP.ms accounts* → **Add a VoIP.ms account**. The steps are those of the setup wizard: the account's API access, its email and API password, the IP address to allow at VoIP.ms, then its numbers to name and show. Then give those numbers to the client's users.
+An agency can add one VoIP.ms account per client: *Settings* → *VoIP.ms accounts* → **Add a VoIP.ms account**. The steps are those of the setup wizard: the account's API access, its email and API password, the IP address to allow at VoIP.ms, then its numbers to name and show. The address shows from the start, next to the API steps: allow it at VoIP.ms along with the API password. In *Settings* → *Numbers* and in each user's numbers, the numbers are then listed under the name of their account. Then give those numbers to the client's users.
 
-Each account can be renamed, tested, and given a new API password. Instant receiving (*Settings* → *Receiving texts*) is set up for the first account; the texts of the other accounts are checked on the regular schedule.
+Each account can be renamed, tested, and given a new API password. Once an account is added, the dialog offers to import its older texts and to receive its texts instantly; *Settings* → *Receiving texts* then sets each number of each account on its own, instant or regular checks.
 
 ![Adding a second VoIP.ms account: its numbers, ready to name](screenshots/en/account-added.png)
 
@@ -115,4 +115,4 @@ Each entry says who did it and from which IP address.
 
 **Can I go back to a single password?** No, but the owner can keep using the portal alone, and a suspended or deleted user no longer counts.
 
-**Where are the passwords?** In the portal's database, as PBKDF2-SHA256 hashes, never in clear. Each sign-in is a session that its owner can end from *My account*.
+**Where are the passwords?** In the portal's database, as PBKDF2-SHA256 hashes, never in clear. Each sign-in is a session that its owner can end from *My sessions*.

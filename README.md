@@ -6,6 +6,8 @@ A clean, modern, self-hosted web interface for the texts (SMS/MMS) of your [VoIP
 
 **New to self-hosting?** The [step-by-step installation guide](docs/install.md) starts from zero: what you need, then every click, on cPanel web hosting or with Docker.
 
+**Already running 1.x?** 2.0 updates in place and keeps everything: see [Upgrading to 2.0](#upgrading-to-20) for what to do before, and what to turn on after.
+
 ![Conversations from two numbers, with a picture received by MMS](docs/screenshots/en/hero.png)
 
 - **All your numbers in one place.** A side rail (filter chips on mobile) switches between "all numbers" and each DID. Give every number a name and a color to recognize it at a glance; each conversation shows which of your numbers it belongs to and replies always leave from that number.
@@ -93,7 +95,8 @@ Turn them on in Settings, on each device: phone, computer, tablet. They arrive e
 
 By default the portal checks VoIP.ms on a schedule, which works anywhere, even on a home network with nothing open to the Internet. When the portal is reachable over HTTPS (shared hosting always is; with Docker, set `PUBLIC_URL`), choose *Instantly, through a VoIP.ms webhook* in the wizard or in *Settings* → *Receiving texts*: the portal sets each number's "SMS/MMS URL Callback" at VoIP.ms itself, and VoIP.ms then calls the portal as soon as one of your numbers receives a text.
 
-- A number that already sends its texts to another address (a CRM, another app) keeps it unless you choose *Replace*; going back to regular checks gives it back.
+- *Settings* → *Receiving texts* sets each number of each VoIP.ms account on its own: instant, or regular checks. Keep a number on regular checks when another app must keep getting its texts at VoIP.ms; its account is then checked at the usual pace.
+- A number that already sends its texts to another address (a CRM, another app) keeps it unless you choose *Replace* (or *Instant* for that number in *Settings*); going back to regular checks gives it back.
 - A call from VoIP.ms only makes the portal check VoIP.ms right away, so a call that does not come from VoIP.ms cannot bring in a fake text. Its address holds a secret all the same.
 - A check still runs every 15 minutes: VoIP.ms only calls for texts your numbers receive, not for those sent from other apps, and a call can be missed while the server is down.
 
@@ -107,7 +110,7 @@ Rename or recolor numbers, turn off the ones you do not use, sync now or import 
 
 ### Team mode
 
-For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*; each person can also hide a number for themselves, or mute it, in *Settings* → *My numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My account*, and administrators see who signed in and what changed in *Settings* → *Activity log*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can. The [Team mode guide](docs/team.md) takes it step by step.
+For an office or a family, where several people answer the texts. The owner turns it on in *Settings* → *Team mode* by creating the first administrator, for good. Each person then signs in with their own email and password. Administrators add the users and choose the numbers each one texts from, read only or with sending; they give a new password to whoever forgot theirs, and suspend or delete an account. A user sees the conversations and notifications of their numbers only, and their own settings. Each text sent from the portal shows who sent it. For each number, administrators choose whether everyone shares what is read and archived (the default) or each person keeps their own, in *Settings* → *Numbers*; each person can also hide a number for themselves, or mute it, in *Settings* → *My numbers*. Everyone can see the browsers signed in to their account and sign any of them out, in *Settings* → *My sessions*, and administrators see who signed in and what changed in *Settings* → *Activity log*. `APP_PASSWORD` still opens the portal as its owner (*Owner sign-in*), for when no administrator can. The [Team mode guide](docs/team.md) takes it step by step.
 
 | A number given read only: who sent each text | The users and their numbers |
 | --- | --- |
@@ -126,6 +129,33 @@ The layout adapts to small screens (numbers become filter chips). On a phone, a 
 | ![Conversation list on a phone](docs/screenshots/en/mobile-list.png) | ![Conversation on a phone](docs/screenshots/en/mobile-thread.png) |
 
 ![Dark theme](docs/screenshots/en/dark.png)
+
+## What's new in 2.0
+
+- **Team mode.** Several people, each with their own email, password and numbers, read only or with sending; each text says who sent it. See the [Team mode guide](docs/team.md).
+- **Several VoIP.ms accounts**, one per client for instance. *Settings* → *VoIP.ms accounts* adds one step by step, with the IP address to allow shown from the start, then offers to import its older texts and to receive them instantly.
+- **Instant receiving, number by number, for every account**, in *Settings* → *Receiving texts*. A number wired to another app can stay on regular checks.
+- **Address books per number**, and a personal one for each person.
+- **My numbers**: hide or mute a number for yourself only.
+- **Activity log** for the administrators, and **My sessions** to see the browsers signed in to your account and sign them out.
+- **One server for Docker and shared hosting**: the Docker image now runs the same PHP server as the cPanel package.
+
+The [changelog](CHANGELOG.md) has every detail.
+
+## Upgrading to 2.0
+
+The update keeps your conversations, contacts, settings, push notifications and VoIP.ms credentials: the database is brought up to date on the first start. Everyone signs in again once.
+
+**Docker.** Where `docker-compose.yml` is: `docker compose pull && docker compose up -d`. The first start takes a few seconds more, while the credentials typed in the wizard are read once and stored again. `LIVE_UPDATES`, `LOG_LEVEL`, `HOST` and `WEB_DIR` are no longer read; you can remove them. To receive texts instantly, the portal must be reachable over HTTPS: set `PUBLIC_URL`, and `TRUST_PROXY` behind a reverse proxy.
+
+**Shared hosting (cPanel).** 2.0 needs PHP 8.4 or later. Choose it in cPanel (*MultiPHP Manager*, or *Select PHP Version*), then *Settings* → *Updates* installs 2.0. Version 1.8.1 and later wait for that PHP before installing, and say so; on an older version, choose PHP 8.4 first.
+
+**Then turn on what you need:**
+
+1. *Settings* → *Receiving texts*: instant or regular checks, number by number.
+2. *Settings* → *VoIP.ms accounts* → **Add a VoIP.ms account**, for each other account.
+3. *Settings* → *Team mode*, to give each person their own sign-in (it does not turn off), then add the users and their numbers. Your contacts are in the *All numbers* book: if users must not see other clients' contacts, move those to their number's book.
+4. Each person: *Settings* → *My numbers*, to hide or mute numbers for themselves.
 
 ## Quick start (Docker)
 
@@ -198,7 +228,7 @@ The same app runs on ordinary PHP web hosting, without Docker: the server is the
 
 - The VoIP.ms API password **gives access to the whole account** (ordering and cancelling numbers, call routing, voicemail…) and cannot be restricted. Keep this instance private and protected by a strong `APP_PASSWORD`.
 - Put it behind HTTPS if you open it to the Internet (see below) and set `TRUST_PROXY=true`. Then make sure the app's port is only reachable through the proxy (for example `127.0.0.1:8080:8080` in `docker-compose.yml`).
-- Sign-in attempts are rate limited, sessions are signed `HttpOnly`/`SameSite=Lax` cookies and cross-site writes are refused. Sessions are kept in the database, which stores only a hash of their ids: signing out, or out of another device from *Settings* → *My account*, ends one for good. In Team mode, passwords are stored as PBKDF2-SHA256 hashes (600,000 rounds). Received files are served with a sandboxing CSP. The app's own CSP runs only its own scripts, plus WebAssembly (`'wasm-unsafe-eval'`), which decodes AMR voice messages.
+- Sign-in attempts are rate limited, sessions are signed `HttpOnly`/`SameSite=Lax` cookies and cross-site writes are refused. Sessions are kept in the database, which stores only a hash of their ids: signing out, or out of another device from *Settings* → *My sessions*, ends one for good. In Team mode, passwords are stored as PBKDF2-SHA256 hashes (600,000 rounds). Received files are served with a sandboxing CSP. The app's own CSP runs only its own scripts, plus WebAssembly (`'wasm-unsafe-eval'`), which decodes AMR voice messages.
 
 ### Behind a reverse proxy
 

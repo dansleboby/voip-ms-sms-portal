@@ -37,7 +37,7 @@ Dès lors, la page de connexion demande un courriel et un mot de passe.
 *Réglages* → *Utilisateurs* → **Ajouter un utilisateur** :
 
 - **Courriel et nom.** Le courriel sert à se connecter.
-- **Mot de passe.** Au moins 8 caractères. Donnez-le à la personne; elle peut le changer dans *Réglages* → *Mon compte*.
+- **Mot de passe.** Au moins 8 caractères. Donnez-le à la personne; elle peut le changer dans *Réglages* → *Mes sessions*.
 - **Rôle.** *Administrateur* ou *Utilisateur*.
 - **Numéros**, pour un utilisateur. Pour chaque numéro : *Aucun accès*, *Lecture seule* ou *Lire et envoyer*.
 
@@ -56,7 +56,7 @@ Un administrateur ne peut pas se suspendre ni se retirer le rôle d'administrate
 - **Ses numéros seulement.** Les conversations, résultats de recherche, images et notifications des autres numéros ne lui parviennent pas.
 - **Lecture seule.** Sur un numéro qu'on lui donne en lecture seule, il lit les textos mais ne peut ni en envoyer, ni en renvoyer, ni en supprimer. Un avis remplace la zone de saisie.
 - **Qui a envoyé chaque texto.** Sous chaque texto envoyé du portail : le nom de la personne (ou son courriel), *Propriétaire* ou *Vous*. Les textos envoyés d'une autre application, ou avant la 2.0, n'affichent pas de nom.
-- **Ses propres réglages :** notifications, *Mes numéros*, apparence et *Mon compte* (nom, mot de passe, appareils connectés).
+- **Ses propres réglages :** notifications, *Mes numéros*, apparence et *Mes sessions* (nom, mot de passe, appareils connectés).
 
 ## 5. Numéros partagés : qui a lu quoi
 
@@ -88,9 +88,9 @@ Un même numéro de téléphone peut être un contact différent dans chaque car
 
 ## 8. Un compte VoIP.ms par client
 
-Une agence peut ajouter un compte VoIP.ms par client : *Réglages* → *Comptes VoIP.ms* → **Ajouter un compte VoIP.ms**. Les étapes sont celles de l'assistant de configuration : l'accès API du compte, son courriel et son mot de passe API, l'adresse IP à autoriser chez VoIP.ms, puis ses numéros à nommer et à afficher. Donnez ensuite ces numéros aux utilisateurs du client.
+Une agence peut ajouter un compte VoIP.ms par client : *Réglages* → *Comptes VoIP.ms* → **Ajouter un compte VoIP.ms**. Les étapes sont celles de l'assistant de configuration : l'accès API du compte, son courriel et son mot de passe API, l'adresse IP à autoriser chez VoIP.ms, puis ses numéros à nommer et à afficher. L'adresse s'affiche dès le début, à côté des étapes de l'accès API : autorisez-la chez VoIP.ms en même temps que vous enregistrez le mot de passe API. Dans *Réglages* → *Numéros* et dans les numéros de chaque utilisateur, les numéros sont ensuite regroupés sous le nom de leur compte. Donnez ensuite ces numéros aux utilisateurs du client.
 
-Chaque compte peut être renommé, testé, et recevoir un nouveau mot de passe API. La réception instantanée (*Réglages* → *Réception des textos*) se règle pour le premier compte; les textos des autres comptes sont vérifiés au rythme habituel.
+Chaque compte peut être renommé, testé, et recevoir un nouveau mot de passe API. Une fois le compte ajouté, la fenêtre propose d'importer ses anciens textos et de recevoir ses textos instantanément; *Réglages* → *Réception des textos* règle ensuite chaque numéro de chaque compte à part, en instantanée ou en vérification régulière.
 
 ![Ajout d'un deuxième compte VoIP.ms : ses numéros, prêts à nommer](screenshots/fr/account-added.png)
 
@@ -115,4 +115,4 @@ Chaque ligne dit qui a agi et depuis quelle adresse IP.
 
 **Puis-je revenir à un seul mot de passe?** Non, mais le propriétaire peut continuer à utiliser le portail seul, et un utilisateur suspendu ou supprimé ne compte plus.
 
-**Où sont les mots de passe?** Dans la base de données du portail, hachés en PBKDF2-SHA256, jamais en clair. Chaque connexion est une session que son propriétaire peut fermer depuis *Mon compte*.
+**Où sont les mots de passe?** Dans la base de données du portail, hachés en PBKDF2-SHA256, jamais en clair. Chaque connexion est une session que son propriétaire peut fermer depuis *Mes sessions*.

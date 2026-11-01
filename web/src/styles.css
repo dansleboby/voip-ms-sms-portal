@@ -1733,6 +1733,118 @@ fieldset.bare {
   border-top: 1px solid var(--outline-variant);
 }
 
+/* The numbers of each VoIP.ms account, when there are several. */
+.account-group + .account-group {
+  margin-top: 24px;
+}
+
+.account-group-title {
+  margin: 0 0 8px 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* Newer and older pages of a list, around where the list stands. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* What instant and regular receiving mean, above the numbers. */
+.receiving-legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.receiving-legend > div {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface-container);
+}
+
+.receiving-legend svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--primary);
+}
+
+.receiving-legend strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.receiving-legend span {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+@media (max-width: 600px) {
+  .receiving-legend {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Each number of an account: regular checks or instant, one radio per column. */
+.receiving-matrix .matrix-head,
+.receiving-matrix .matrix-row {
+  display: grid;
+  grid-template-columns: 1fr 84px 84px;
+  align-items: center;
+  padding: 10px 16px;
+}
+
+.receiving-matrix .matrix-head {
+  padding-block: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--on-surface-variant);
+}
+
+.receiving-matrix .matrix-row,
+.receiving-matrix .matrix-head + .row,
+.receiving-matrix .matrix-row + .row,
+.receiving-matrix .row + .matrix-head {
+  border-top: 1px solid var(--outline-variant);
+}
+
+.receiving-matrix .matrix-row input {
+  justify-self: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.receiving-matrix .row-sub svg {
+  vertical-align: -2px;
+}
+
+@media (max-width: 480px) {
+  .receiving-matrix .matrix-head,
+  .receiving-matrix .matrix-row {
+    grid-template-columns: 1fr 64px 64px;
+  }
+}
+
+/* The same, inside a form field. */
+.group-label {
+  padding: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
 .did-row .did-label-input {
   grid-column: 2 / 4;
 }
@@ -1766,8 +1878,11 @@ fieldset.bare {
   gap: 16px;
 }
 
+/* As wide as the messages above it, like the message box it stands in for. */
 .read-only-note {
-  margin: 0 16px 16px;
+  width: calc(100% - 32px);
+  max-width: 880px;
+  margin: 0 auto 16px;
 }
 
 .switch:disabled {
@@ -2280,6 +2395,11 @@ fieldset.bare {
 
   .composer {
     padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .read-only-note {
+    width: calc(100% - 16px);
+    margin-bottom: calc(8px + env(safe-area-inset-bottom));
   }
 
   /* The dialog's three buttons would not fit: deleting keeps its bin, and its title. */

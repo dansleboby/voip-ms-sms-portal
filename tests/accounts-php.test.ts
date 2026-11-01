@@ -84,6 +84,15 @@ describe('PHP server: several VoIP.ms accounts', () => {
     await other.stop();
   });
 
+  it('asks VoIP.ms which IP address the server calls from, with the credentials it has', async () => {
+    const asked = calls(first, 'getIP').length;
+    expect((await client.get('/api/accounts/ip')).json).toEqual({ ip: '198.51.100.7' });
+    expect(calls(first, 'getIP')).toHaveLength(asked + 1);
+    // No account VoIP.ms answers for: the address shows after the new one is added, as before.
+    first.failNext.getIP = 'invalid_credentials';
+    expect((await client.get('/api/accounts/ip')).json).toEqual({ ip: null });
+  });
+
   it('adds an account with its own numbers, once', async () => {
     expect((await client.get('/api/accounts')).json).toEqual([{ id: 1, label: null, username: 'me@example.com', credentialsSource: 'env', numbers: 2, error: null }]);
     const added = await addOther();
@@ -108,6 +117,27 @@ describe('PHP server: several VoIP.ms accounts', () => {
     );
     expect(stored.credentials).toEqual({ username: 'b@example.com', password: 'secret' });
     expect(stored.setting).not.toContain('secret');
+  });
+
+  it('counts the history import of every account until the last one is done', async () => {
+    // Driven by hand: the route would carry on with the import after answering.
+    const progress = await php<unknown[]>(
+      backend,
+      `$app->accounts->startImport(30);
+      $start = $app->accounts->status()['importing'];
+      $app->accounts->get(1)->sync->continueImport(microtime(true) + 20);
+      $between = $app->accounts->status()['importing'];
+      $app->accounts->get(2)->sync->continueImport(microtime(true) + 20);
+      return [$start, $between, $app->accounts->status()['importing']];`,
+    );
+    expect(progress).toEqual([{ done: 0, total: 4 }, { done: 2, total: 4 }, null]);
+  });
+
+  it('asks another account for the IP address when the first one is refused', async () => {
+    first.failNext.getIP = 'invalid_credentials';
+    const asked = calls(other, 'getIP').length;
+    expect((await client.get('/api/accounts/ip')).json).toEqual({ ip: '198.51.100.7' });
+    expect(calls(other, 'getIP')).toHaveLength(asked + 1);
   });
 
   it('checks each account for its own numbers only', async () => {

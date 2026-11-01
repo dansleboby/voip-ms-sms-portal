@@ -9,6 +9,7 @@ import type {
   DidDto,
   EventsPollDto,
   MessageDto,
+  ServerIpDto,
   SessionDto,
   SessionInfoDto,
   SetupStatusDto,
@@ -89,6 +90,7 @@ export const api = {
   updateMe: (patch: { name?: string | null; password?: { current: string; next: string } }) => request<UserDto>('PATCH', '/api/me', patch),
   sessions: () => request<SessionInfoDto[]>('GET', '/api/sessions'),
   endSession: (id: string) => request<{ ok: true }>('DELETE', `/api/sessions/${encodeURIComponent(id)}`),
+  endOtherSessions: () => request<{ ended: number }>('DELETE', '/api/sessions'),
 
   setupStatus: () => request<SetupStatusDto>('GET', '/api/setup/status'),
   saveCredentials: (username: string, password: string) =>
@@ -97,12 +99,14 @@ export const api = {
 
   activity: (before?: number) => request<ActivityPageDto>('GET', `/api/activity${before ? `?before=${before}` : ''}`),
   accounts: () => request<AccountDto[]>('GET', '/api/accounts'),
+  serverIp: () => request<ServerIpDto>('GET', '/api/accounts/ip'),
   addAccount: (a: { label: string | null; username: string; password: string }) => request<AccountCheckDto>('POST', '/api/accounts', a),
   renameAccount: (id: number, label: string | null) => request<AccountDto>('PATCH', `/api/accounts/${id}`, { label }),
   setAccountCredentials: (id: number, c: { username: string; password: string }) => request<AccountCheckDto>('PUT', `/api/accounts/${id}/credentials`, c),
   testAccount: (id: number) => request<AccountCheckDto>('POST', `/api/accounts/${id}/test`),
   refreshDids: () => request<DidDto[]>('GET', '/api/setup/dids'),
-  importHistory: (days: number) => request<{ ok: true }>('POST', '/api/setup/import', { days }),
+  /** Every account's history unless `account` names one. */
+  importHistory: (days: number, account?: number) => request<{ ok: true }>('POST', '/api/setup/import', account ? { days, account } : { days }),
   completeSetup: () => request<{ ok: true }>('POST', '/api/setup/complete'),
 
   dids: () => request<DidDto[]>('GET', '/api/dids'),
@@ -184,7 +188,9 @@ export const api = {
   installUpdate: () => request<{ version: string }>('POST', '/api/update/install'),
   syncNow: () => request<SyncStatusDto>('POST', '/api/sync/now'),
   /** How VoIP.ms's URL callback is set on each number (asks VoIP.ms). */
-  webhook: () => request<WebhookStatusDto>('GET', '/api/webhook'),
+  webhook: (account?: number) => request<WebhookStatusDto>('GET', account ? `/api/webhook?account=${account}` : '/api/webhook'),
+  setWebhookNumbers: (account: number, change: { instant?: string[]; regular?: string[] }) =>
+    request<WebhookStatusDto>('POST', '/api/webhook/numbers', { account, ...change }),
   /** `replace`: numbers whose callback to another address may be replaced. */
   enableWebhook: (replace: string[] = []) => request<WebhookStatusDto>('POST', '/api/webhook/enable', { replace }),
   disableWebhook: () => request<WebhookStatusDto>('POST', '/api/webhook/disable'),

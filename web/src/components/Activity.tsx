@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '../api';
 import { t } from '../i18n';
 import type { MessageKey } from '../i18n/fr';
@@ -9,8 +9,8 @@ import { describeAgent } from './Team';
 import { formatPhone } from '../../../shared/phone';
 import type { ActivityDto } from '../../../shared/types';
 
-/** Entries shown before "Older". */
-const FIRST = 15;
+/** Entries per page: the section keeps its height however far back one goes. */
+const PAGE = 15;
 
 /** What an entry was about, readable: a device for sign-ins, a phone number for numbers and conversations. */
 function target(entry: ActivityDto): string | null {
@@ -24,7 +24,7 @@ export function ActivitySection() {
   const dids = useStore((s) => s.dids);
   const [entries, setEntries] = useState<ActivityDto[] | null>(null);
   const [more, setMore] = useState(false);
-  const [shown, setShown] = useState(FIRST);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -39,18 +39,22 @@ export function ActivitySection() {
 
   const older = async () => {
     if (!entries) return;
-    if (shown < entries.length) return setShown((n) => n + FIRST * 2);
-    setLoading(true);
-    try {
-      const page = await api.activity(entries.at(-1)?.id);
-      setEntries([...entries, ...page.entries]);
-      setMore(page.more);
-      setShown((n) => n + FIRST * 2);
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setLoading(false);
+    let loaded = entries;
+    if ((page + 1) * PAGE >= loaded.length && more) {
+      setLoading(true);
+      try {
+        const fetched = await api.activity(loaded.at(-1)?.id);
+        loaded = [...loaded, ...fetched.entries];
+        setEntries(loaded);
+        setMore(fetched.more);
+      } catch (err) {
+        toastError(err);
+        return;
+      } finally {
+        setLoading(false);
+      }
     }
+    if ((page + 1) * PAGE < loaded.length) setPage(page + 1);
   };
 
   const details = (entry: ActivityDto): string[] => {
@@ -71,7 +75,7 @@ export function ActivitySection() {
       <div className="card">
         {entries === null && <div className="row muted">{t('common.loading')}</div>}
         {entries?.length === 0 && <div className="row muted">{t('activity.empty')}</div>}
-        {entries?.slice(0, shown).map((entry) => {
+        {entries?.slice(page * PAGE, (page + 1) * PAGE).map((entry) => {
           const what = target(entry);
           const extra = details(entry);
           const who = entry.actor === null ? t('activity.nobody') : (entry.actor.name ?? t('team.owner'));
@@ -90,11 +94,20 @@ export function ActivitySection() {
           );
         })}
       </div>
-      {entries && (shown < entries.length || more) && (
-        <button className="btn text" style={{ marginTop: 8 }} onClick={() => void older()} disabled={loading}>
-          {loading && <Loader2 size={18} className="spin" />}
-          {t('activity.older')}
-        </button>
+      {entries && (page > 0 || (page + 1) * PAGE < entries.length || more) && (
+        <div className="pager">
+          <button className="btn text" onClick={() => setPage(page - 1)} disabled={page === 0 || loading}>
+            <ChevronLeft size={18} />
+            {t('activity.newer')}
+          </button>
+          <span className="muted">
+            {t('activity.range', { from: page * PAGE + 1, to: Math.min((page + 1) * PAGE, entries.length) })}
+          </span>
+          <button className="btn text" onClick={() => void older()} disabled={loading || ((page + 1) * PAGE >= entries.length && !more)}>
+            {t('activity.older')}
+            {loading ? <Loader2 size={18} className="spin" /> : <ChevronRight size={18} />}
+          </button>
+        </div>
       )}
     </section>
   );

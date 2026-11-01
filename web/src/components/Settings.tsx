@@ -10,18 +10,18 @@ import { disablePush, enablePush, pushEnabledHere, pushSupport, refreshPush, sen
 import { navigate } from '../lib/router';
 import { applyTheme, getTheme, type Theme } from '../lib/theme';
 import { loadDids, loadSession, resetData, toast, toastError, useStore } from '../store';
-import { AccountsSection } from './Accounts';
+import { AccountGroups, AccountsSection } from './Accounts';
 import { ActivitySection } from './Activity';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
-import { ReceivingPanel } from './Receiving';
+import { HistoryImportRow } from './HistoryImport';
+import { ReceivingSection } from './Receiving';
 import { MyNumbersSection } from './MyNumbers';
 import { MyAccountSection, TeamSection } from './Team';
 import { UpdatesSection } from './Updates';
 import { Ago, Switch, useNow } from './ui';
 import { WEBHOOK_SAFETY_MINUTES } from '../../../shared/webhook';
 
-const IMPORT_CHOICES = [30, 90, 365, 730];
 
 /** The PHP version's cron job, which checks VoIP.ms while the app is closed. */
 function CronRow({ cron }: { cron: CronInfo }) {
@@ -56,7 +56,6 @@ export function Settings() {
   const [pushBusy, setPushBusy] = useState(false);
   const support = pushSupport();
   const [refreshing, setRefreshing] = useState(false);
-  const [importDays, setImportDays] = useState(90);
   const langChoice = prefs.get('lang') ?? 'auto';
   // A user of the Team mode texts; the numbers, VoIP.ms and the server are the admins'.
   const admin = session?.user?.role !== 'user';
@@ -132,14 +131,6 @@ export function Settings() {
     navigate({ name: 'home' }, { replace: true });
   };
 
-  const startImport = async () => {
-    try {
-      await api.importHistory(importDays);
-    } catch (err) {
-      toastError(err);
-    }
-  };
-
   return (
     <>
       <header className="page-header">
@@ -157,11 +148,10 @@ export function Settings() {
               <h3>{t('settings.numbers')}</h3>
               <p>{t('settings.numbersHint')}</p>
               {session?.didsRestricted && <p className="muted">{t('settings.numbersRestricted')}</p>}
-              <div className="card">
-                {dids.map((d) => (
-                  <DidEditor key={d.did} did={d} team={session?.mode === 'team'} onChange={() => void loadDids()} />
-                ))}
-              </div>
+              <AccountGroups
+                dids={dids}
+                render={(d) => <DidEditor key={d.did} did={d} team={session?.mode === 'team'} onChange={() => void loadDids()} />}
+              />
               <button className="btn text" style={{ marginTop: 8 }} onClick={refreshDids} disabled={refreshing}>
                 <RefreshCw size={18} className={refreshing ? 'spin' : ''} />
                 {t('settings.refreshNumbers')}
@@ -266,13 +256,7 @@ export function Settings() {
 
           {admin && <AccountsSection />}
 
-          {admin && (
-            <section className="section">
-              <h3>{t('receiving.title')}</h3>
-              <p>{t('receiving.intro')}</p>
-              <ReceivingPanel pollActive={session?.pollActiveSeconds ?? 10} pollIdle={session?.pollIdleSeconds ?? 60} />
-            </section>
-          )}
+          {admin && <ReceivingSection pollActive={session?.pollActiveSeconds ?? 10} pollIdle={session?.pollIdleSeconds ?? 60} />}
 
           <section className="section">
             <h3>{t('settings.sync')}</h3>
@@ -307,26 +291,7 @@ export function Settings() {
                 </button>
               </div>
               {sync?.cron && <CronRow cron={sync.cron} />}
-              {admin && (
-                <div className="row">
-                  <div className="row-main">
-                    <div className="row-title">{t('settings.importHistory')}</div>
-                    {sync?.importing && <div className="row-sub">{t('sync.importing', sync.importing)}</div>}
-                  </div>
-                  <div className="row-actions">
-                    <select className="input" style={{ width: 'auto', height: 36 }} value={importDays} onChange={(e) => setImportDays(Number(e.target.value))}>
-                      {IMPORT_CHOICES.map((d) => (
-                        <option key={d} value={d}>
-                          {d === 365 ? t('setup.history.year') : t('setup.history.days', { n: d })}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="btn tonal small" onClick={startImport} disabled={!!sync?.importing}>
-                      {t('settings.history')}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {admin && <HistoryImportRow title={t('settings.importHistory')} />}
             </div>
           </section>
 

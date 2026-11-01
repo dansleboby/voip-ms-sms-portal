@@ -6,6 +6,8 @@ Une interface web moderne et auto-hébergée pour les textos (SMS/MMS) de vos nu
 
 **Première fois que vous hébergez une application?** Le [guide d'installation pas à pas](docs/install.fr.md) part de zéro : ce qu'il vous faut, puis chaque clic, sur un hébergement cPanel ou avec Docker.
 
+**Vous utilisez déjà la 1.x?** La 2.0 se met à jour sur place et garde tout : voyez [Passer à la 2.0](#passer-à-la-20) pour quoi faire avant, et quoi activer après.
+
 ![Conversations sur deux numéros, avec une photo reçue par MMS](docs/screenshots/fr/hero.png)
 
 - **Tous vos numéros au même endroit.** Un menu latéral (des pastilles sur mobile) bascule entre « tous les numéros » et chaque DID. Donnez un nom et une couleur à chaque numéro ; chaque conversation indique à quel numéro elle appartient et les réponses partent toujours de ce numéro.
@@ -93,7 +95,8 @@ Activez-les dans les Réglages, sur chaque appareil : téléphone, ordinateur, t
 
 Par défaut, le portail interroge VoIP.ms à intervalles réguliers, ce qui fonctionne partout, même sur un réseau maison sans rien d'ouvert sur Internet. Quand le portail est joignable en HTTPS (toujours le cas sur un hébergement mutualisé ; avec Docker, réglez `PUBLIC_URL`), choisissez *Instantanée, par webhook VoIP.ms* dans l'assistant ou dans *Réglages* → *Réception des textos* : le portail règle lui-même le « SMS/MMS URL Callback » de chaque numéro chez VoIP.ms, et VoIP.ms appelle alors le portail dès qu'un de vos numéros reçoit un texto.
 
-- Un numéro qui envoie déjà ses textos à une autre adresse (un CRM, une autre application) la garde, sauf si vous choisissez *Remplacer* ; revenir à la vérification régulière la lui rend.
+- *Réglages* → *Réception des textos* règle chaque numéro de chaque compte VoIP.ms à part : instantanée, ou vérification régulière. Gardez un numéro en vérification régulière quand une autre application doit continuer de recevoir ses textos chez VoIP.ms ; son compte est alors vérifié au rythme habituel.
+- Un numéro qui envoie déjà ses textos à une autre adresse (un CRM, une autre application) la garde, sauf si vous choisissez *Remplacer* (ou *Instantanée* pour ce numéro dans les *Réglages*) ; revenir à la vérification régulière la lui rend.
 - Un appel de VoIP.ms ne fait que déclencher une vérification immédiate de VoIP.ms : un appel qui ne viendrait pas de VoIP.ms ne peut donc pas ajouter de faux texto. Son adresse contient tout de même un secret.
 - Une vérification a encore lieu toutes les 15 minutes : VoIP.ms n'appelle que pour les textos que reçoivent vos numéros, pas pour ceux envoyés depuis d'autres applications, et un appel peut se perdre pendant un arrêt du serveur.
 
@@ -107,7 +110,7 @@ Renommez ou recolorez vos numéros, désactivez ceux que vous n'utilisez pas, sy
 
 ### Mode Équipe
 
-Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*; chacun peut aussi masquer un numéro pour lui seul, ou couper ses notifications, dans *Réglages* → *Mes numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mon compte*, et les administrateurs voient qui s'est connecté et ce qui a changé dans *Réglages* → *Journal d'activité*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut. Le [guide du mode Équipe](docs/team.fr.md) le présente pas à pas.
+Pour un bureau ou une famille, où plusieurs personnes répondent aux textos. Le propriétaire l'active dans *Réglages* → *Mode Équipe* en créant le premier administrateur, pour de bon. Chacun se connecte ensuite avec son propre courriel et son mot de passe. Les administrateurs ajoutent les utilisateurs et choisissent les numéros avec lesquels chacun texte, en lecture seule ou avec l'envoi; ils donnent un nouveau mot de passe à qui a oublié le sien, et suspendent ou suppriment un compte. Un utilisateur ne voit que les conversations et les notifications de ses numéros, et ses propres réglages. Chaque texto envoyé du portail indique qui l'a envoyé. Pour chaque numéro, les administrateurs choisissent si tous partagent ce qui est lu et archivé (par défaut) ou si chacun garde le sien, dans *Réglages* → *Numéros*; chacun peut aussi masquer un numéro pour lui seul, ou couper ses notifications, dans *Réglages* → *Mes numéros*. Chacun voit les navigateurs connectés à son compte et peut en déconnecter n'importe lequel, dans *Réglages* → *Mes sessions*, et les administrateurs voient qui s'est connecté et ce qui a changé dans *Réglages* → *Journal d'activité*. `APP_PASSWORD` ouvre toujours le portail en propriétaire (*Connexion du propriétaire*), pour quand aucun administrateur ne le peut. Le [guide du mode Équipe](docs/team.fr.md) le présente pas à pas.
 
 | Un numéro en lecture seule : qui a envoyé chaque texto | Les utilisateurs et leurs numéros |
 | --- | --- |
@@ -126,6 +129,33 @@ L'interface s'adapte aux petits écrans (les numéros deviennent des pastilles d
 | ![Liste des conversations sur téléphone](docs/screenshots/fr/mobile-list.png) | ![Conversation sur téléphone](docs/screenshots/fr/mobile-thread.png) |
 
 ![Thème sombre](docs/screenshots/fr/dark.png)
+
+## Nouveautés de la 2.0
+
+- **Mode Équipe.** Plusieurs personnes, chacune avec son courriel, son mot de passe et ses numéros, en lecture seule ou avec l'envoi; chaque texto dit qui l'a envoyé. Voir le [guide du mode Équipe](docs/team.fr.md).
+- **Plusieurs comptes VoIP.ms**, par exemple un par client. *Réglages* → *Comptes VoIP.ms* en ajoute un pas à pas, avec l'adresse IP à autoriser affichée dès le début, puis propose d'importer ses anciens textos et de les recevoir instantanément.
+- **Réception instantanée, numéro par numéro, pour tous les comptes**, dans *Réglages* → *Réception des textos*. Un numéro relié à une autre application peut rester en vérification régulière.
+- **Carnets de contacts par numéro**, et un carnet personnel pour chacun.
+- **Mes numéros** : masquer un numéro ou couper ses notifications pour soi seulement.
+- **Journal d'activité** pour les administrateurs, et **Mes sessions** pour voir les navigateurs connectés à votre compte et les déconnecter.
+- **Un seul serveur pour Docker et l'hébergement mutualisé** : l'image Docker fait maintenant tourner le même serveur PHP que le paquet cPanel.
+
+Le [journal des modifications](CHANGELOG.md) donne tous les détails.
+
+## Passer à la 2.0
+
+La mise à jour garde vos conversations, contacts, réglages, notifications push et identifiants VoIP.ms : la base de données est mise à jour au premier démarrage. Tout le monde se reconnecte une fois.
+
+**Docker.** Là où se trouve `docker-compose.yml` : `docker compose pull && docker compose up -d`. Le premier démarrage prend quelques secondes de plus, le temps de relire une fois les identifiants saisis dans l'assistant et de les enregistrer de nouveau. `LIVE_UPDATES`, `LOG_LEVEL`, `HOST` et `WEB_DIR` ne sont plus lus; vous pouvez les retirer. Pour recevoir les textos instantanément, le portail doit être joignable en HTTPS : réglez `PUBLIC_URL`, et `TRUST_PROXY` derrière un proxy inverse.
+
+**Hébergement mutualisé (cPanel).** La 2.0 demande PHP 8.4 ou plus récent. Choisissez-le dans cPanel (*MultiPHP Manager*, ou *Select PHP Version*), puis *Réglages* → *Mises à jour* installe la 2.0. Les versions 1.8.1 et suivantes attendent ce PHP avant d'installer, et le disent; sur une version plus ancienne, choisissez PHP 8.4 d'abord.
+
+**Ensuite, activez ce qu'il vous faut :**
+
+1. *Réglages* → *Réception des textos* : instantanée ou vérification régulière, numéro par numéro.
+2. *Réglages* → *Comptes VoIP.ms* → **Ajouter un compte VoIP.ms**, pour chaque autre compte.
+3. *Réglages* → *Mode Équipe*, pour donner à chacun sa propre connexion (il ne se désactive pas), puis ajoutez les utilisateurs et leurs numéros. Vos contacts sont dans le carnet *Tous les numéros* : si les utilisateurs ne doivent pas voir les contacts des autres clients, déplacez-les dans le carnet de leur numéro.
+4. Chaque personne : *Réglages* → *Mes numéros*, pour masquer des numéros ou couper leurs notifications pour elle-même.
 
 ## Démarrage rapide (Docker)
 
@@ -198,7 +228,7 @@ La même application fonctionne sur un hébergement web PHP ordinaire, sans Dock
 
 - Le mot de passe API de VoIP.ms **donne accès à tout le compte** (commander ou annuler des numéros, routage des appels, messagerie vocale…) et ne peut pas être restreint. Gardez cette instance privée et protégée par un `APP_PASSWORD` solide.
 - Mettez-la derrière HTTPS si vous l'ouvrez sur Internet (voir plus bas) et définissez `TRUST_PROXY=true`. Assurez-vous alors que le port de l'application n'est joignable que par le proxy (par exemple `127.0.0.1:8080:8080` dans `docker-compose.yml`).
-- Les tentatives de connexion sont limitées, les sessions sont des cookies signés `HttpOnly`/`SameSite=Lax` et les écritures provenant d'un autre site sont refusées. Les sessions sont gardées dans la base de données, qui ne conserve qu'un hachage de leurs identifiants : se déconnecter, ou déconnecter un autre appareil depuis *Réglages* → *Mon compte*, en termine une pour de bon. En mode Équipe, les mots de passe sont gardés sous forme de hachages PBKDF2-SHA256 (600 000 itérations). Les fichiers reçus sont servis avec une CSP de type « sandbox ». La CSP de l'application n'exécute que ses propres scripts, plus le WebAssembly (`'wasm-unsafe-eval'`) qui décode les messages vocaux AMR.
+- Les tentatives de connexion sont limitées, les sessions sont des cookies signés `HttpOnly`/`SameSite=Lax` et les écritures provenant d'un autre site sont refusées. Les sessions sont gardées dans la base de données, qui ne conserve qu'un hachage de leurs identifiants : se déconnecter, ou déconnecter un autre appareil depuis *Réglages* → *Mes sessions*, en termine une pour de bon. En mode Équipe, les mots de passe sont gardés sous forme de hachages PBKDF2-SHA256 (600 000 itérations). Les fichiers reçus sont servis avec une CSP de type « sandbox ». La CSP de l'application n'exécute que ses propres scripts, plus le WebAssembly (`'wasm-unsafe-eval'`) qui décode les messages vocaux AMR.
 
 ### Derrière un proxy inverse
 
