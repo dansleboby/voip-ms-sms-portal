@@ -47,3 +47,9 @@ test('empties a body that shows nothing, as some voice messages come', function 
     assertSame('', $m['body']);
     assertSame(" ok\n", RestClient::parseMessage('sms', ['id' => '4', 'message' => " ok\n"])['body']);
 });
+
+test('reads the GSM letters VoIP.ms leaves as control characters, as some short codes send them', function (): void {
+    $m = RestClient::parseMessage('sms', ['id' => '5', 'type' => '1', 'message' => "Premi\x04re utilisation. R\x05pondre F. \x09A COMPTE: 2 \x1Be \x7F la station"]);
+    assertSame('Première utilisation. Répondre F. ÇA COMPTE: 2 € à la station', $m['body']);
+    assertSame("a\nb\r\nc", RestClient::parseMessage('sms', ['id' => '6', 'message' => "a\nb\r\nc"])['body']);
+});

@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## Unreleased
+
+- **Texting short codes.** A text can now go to a 5- or 6-digit short code, for the services that answer a keyword (transit times, for instance), from a conversation it started or from *Start a conversation*. The portal refused them as an invalid number ([#24](https://github.com/dansleboby/voip-ms-sms-portal/issues/24)).
+- Texts from some short codes no longer lose their accented letters ("Premire" for "Première"): VoIP.ms passes them on as GSM codes, which the portal now reads as letters, also in the texts already received.
+
 ## 2.0.0 (2026-10-30)
 
 - **Team mode.** Several people can use the same portal, each with their own email and password. The owner turns it on in *Settings* → *Team mode* by creating the first administrator; it does not turn off. Administrators add users, give them a new password when they forget theirs, suspend or delete them, and choose the numbers each user texts from, read only or with sending. Users see only the settings that concern them: notifications, appearance and their account. The server's `APP_PASSWORD` still opens the portal as its owner, with *Owner sign-in* on the sign-in page. Without Team mode, nothing changes: `APP_PASSWORD` alone opens the portal. The [Team mode guide](docs/team.md) ([en français](docs/team.fr.md)) takes it step by step.
@@ -21,7 +26,6 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 - **PHP 8.4 or later**, on shared hosting. PHP 8.1 has had no security fixes since the end of 2025, and 8.2 has none after 2026. Choose the version in cPanel (*MultiPHP Manager*, or *Select PHP Version*): with 1.8.1 or later, *Settings* → *Updates* waits for it before installing 2.0, and says so. The Docker image brings its own PHP 8.4.
 - **Signed-in devices.** *Settings* → *My sessions* lists the browsers signed in, with when each was last active, and signs out any of them, or all but the one in use. Changing your password signs out the others. Signing out now ends a session for good: before, a copy of its cookie kept working until it expired. Everyone signs in again once after this update.
 - When several texts from the same person arrive within the same second, as the parts of a long text can, the push notification now shows the last one instead of the first.
-- **Texting short codes.** A text can now go to a 5- or 6-digit short code, for the services that answer a keyword (transit times, for instance), from a conversation it started or from *Start a conversation*. The portal refused them as an invalid number ([#24](https://github.com/dansleboby/voip-ms-sms-portal/issues/24)).
 
 ## 1.8.1 (2026-10-30)
 
