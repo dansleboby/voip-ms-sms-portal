@@ -2,7 +2,7 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
-## Unreleased
+## 2.0.3 (2026-11-03)
 
 - Password fields have an eye button that shows what was typed, and hides it again: easier to check on a phone keyboard. It is on the sign-in page, in the setup wizard, for VoIP.ms accounts and for the users of the Team mode.
 
