@@ -7,7 +7,7 @@ import { loadDids, toastError, useStore } from '../store';
 import { cronState, CronStatus, type CronInfo } from './Cron';
 import { DidEditor } from './DidEditor';
 import { ReceivingPanel } from './Receiving';
-import { Logo, useNow } from './ui';
+import { Logo, PasswordInput, useNow } from './ui';
 import type { ConnectionTestDto, DidDto, SetupStatusDto } from '../../../shared/types';
 
 type Step = 'welcome' | 'api' | 'creds' | 'ip' | 'numbers' | 'receiving' | 'history' | 'cron' | 'done';
@@ -168,14 +168,7 @@ function CredentialsStep({
       </label>
       <label className="field">
         <span>{t('setup.creds.password')}</span>
-        <input
-          className="input"
-          type="password"
-          autoComplete="new-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <PasswordInput autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       </label>
       <p className="muted" style={{ fontSize: 12 }}>
         {t('setup.creds.stored')}

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org/); the running version is shown at the bottom of *Settings*.
 
+## Unreleased
+
+- Password fields have an eye button that shows what was typed, and hides it again: easier to check on a phone keyboard. It is on the sign-in page, in the setup wizard, for VoIP.ms accounts and for the users of the Team mode.
+
 ## 2.0.2 (2026-11-01)
 
 - On phones and tablets, the message box no longer has an emoji button: their keyboard has emoji already, and the box keeps the room.

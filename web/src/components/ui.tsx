@@ -6,6 +6,8 @@ import {
   Car,
   Dog,
   EllipsisVertical,
+  Eye,
+  EyeOff,
   GraduationCap,
   Heart,
   House,
@@ -159,6 +161,32 @@ export function PhoneInput({
         onChange(formatted);
       }}
     />
+  );
+}
+
+/**
+ * A password field with a button that shows what was typed, to check it on a
+ * phone keyboard. Tapping the button keeps the keyboard and the caret where
+ * they are.
+ */
+export function PasswordInput({ className = 'input', ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="password-input">
+      <input {...rest} className={className} type={shown ? 'text' : 'password'} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label={t('common.showPassword')}
+        title={t(shown ? 'common.hidePassword' : 'common.showPassword')}
+        aria-pressed={shown}
+        // Not the focus: the field keeps it, with the keyboard open.
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => setShown((s) => !s)}
+      >
+        {shown ? <EyeOff size={20} /> : <Eye size={20} />}
+      </button>
+    </div>
   );
 }
 

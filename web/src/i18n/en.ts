@@ -15,6 +15,8 @@ export const en: Record<MessageKey, string> = {
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
   'common.copy': 'Copy',
+  'common.showPassword': 'Show password',
+  'common.hidePassword': 'Hide password',
   'common.done': 'Done',
   'common.copied': 'Copied',
   'common.search': 'Search',

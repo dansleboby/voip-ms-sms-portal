@@ -13,6 +13,8 @@ export const fr = {
   'common.retry': 'Réessayer',
   'common.loading': 'Chargement…',
   'common.copy': 'Copier',
+  'common.showPassword': 'Afficher le mot de passe',
+  'common.hidePassword': 'Masquer le mot de passe',
   'common.done': 'Terminé',
   'common.copied': 'Copié',
   'common.search': 'Rechercher',

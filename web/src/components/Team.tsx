@@ -6,7 +6,7 @@ import { assignableDids, groupByAccount } from '../lib/accounts';
 import { accountName, didName, formatDateTime } from '../lib/format';
 import { navigate } from '../lib/router';
 import { loadSession, resetData, toast, toastError, useStore } from '../store';
-import { Ago, Avatar, Dialog, Logo, Switch } from './ui';
+import { Ago, Avatar, Dialog, Logo, PasswordInput, Switch } from './ui';
 import type { SessionInfoDto, UserDto } from '../../../shared/types';
 
 /** As the server asks (server/routes/users.ts). */
@@ -73,7 +73,7 @@ function PasswordField({ label, value, onChange, autoComplete }: { label: string
   return (
     <label className="field">
       <span>{label}</span>
-      <input className="input" type="password" autoComplete={autoComplete} minLength={MIN_PASSWORD_LENGTH} value={value} onChange={(e) => onChange(e.target.value)} />
+      <PasswordInput autoComplete={autoComplete} minLength={MIN_PASSWORD_LENGTH} value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }

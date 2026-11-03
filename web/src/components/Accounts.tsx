@@ -9,7 +9,7 @@ import { loadAccounts, loadDids, toast, toastError, updateAccounts, useStore } f
 import { DidEditor } from './DidEditor';
 import { HistoryImportRow } from './HistoryImport';
 import { AccountReceiving } from './Receiving';
-import { Dialog } from './ui';
+import { Dialog, PasswordInput } from './ui';
 import type { AccountCheckDto, AccountDto, ConnectionTestDto, DidDto } from '../../../shared/types';
 
 const API_PAGE = 'https://voip.ms/m/api.php';
@@ -207,7 +207,7 @@ function CredentialFields({
       </label>
       <label className="field">
         <span>{t('setup.creds.password')}</span>
-        <input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => onPassword(e.target.value)} />
+        <PasswordInput autoComplete="new-password" value={password} onChange={(e) => onPassword(e.target.value)} />
         <small className="muted">{passwordHint ?? t('setup.creds.stored')}</small>
       </label>
     </>
