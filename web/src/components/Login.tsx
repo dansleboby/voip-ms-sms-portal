@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api, ApiError, configProblem } from '../api';
 import { errorText, getLang, t } from '../i18n';
-import { Logo } from './ui';
+import { Logo, PasswordInput } from './ui';
 import type { PortalMode } from '../../../shared/types';
 
 /** Where a first install goes wrong, the guide's "Something went wrong?" section. */
@@ -91,14 +91,7 @@ export function Login({
           )}
           <label className="field">
             <span>{t('login.password')}</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              autoFocus={!byEmail}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <PasswordInput autoComplete="current-password" autoFocus={!byEmail} value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
           {error && (
             <div className="error-text" role="alert">
